@@ -39,6 +39,14 @@ const buildTextResult = (value: unknown): TextToolResult => ({
   content: [{ type: 'text', text: JSON.stringify(value) }],
 });
 
+const SIM_STEP_ARGS_SCHEMA = z.object({
+  steps: z.number().int().min(1).optional(),
+}).strict();
+
+const SIM_ENQUEUE_ARGS_SCHEMA = z.object({
+  commands: z.array(z.unknown()),
+}).strict();
+
 const assertObject = (value: unknown, message: string): Record<string, unknown> => {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) {
     throw new TypeError(message);
@@ -124,19 +132,8 @@ const normalizeCommandForEnqueue = (
 };
 
 const parseStepCount = (args: unknown): number => {
-  const record = assertObject(args, 'Invalid sim.step payload: expected an object');
-  const candidate = record['steps'];
-  if (candidate === undefined) {
-    return 1;
-  }
-  if (typeof candidate !== 'number' || !Number.isFinite(candidate)) {
-    throw new TypeError('Invalid sim.step payload: expected { steps?: number }');
-  }
-  const steps = Math.floor(candidate);
-  if (steps < 1 || steps !== candidate) {
-    throw new TypeError('Invalid sim.step payload: expected { steps: integer >= 1 }');
-  }
-  return steps;
+  const parsed = SIM_STEP_ARGS_SCHEMA.parse(args ?? {});
+  return parsed.steps ?? 1;
 };
 
 export function registerSimTools(server: ToolRegistrar, controller: SimMcpController): void {
@@ -190,9 +187,7 @@ export function registerSimTools(server: ToolRegistrar, controller: SimMcpContro
     {
       title: 'Sim step',
       description: 'Advances the simulation by N steps while paused.',
-      inputSchema: {
-        steps: z.number().optional(),
-      },
+      inputSchema: SIM_STEP_ARGS_SCHEMA.shape,
     },
     async (args: unknown) => {
       const steps = parseStepCount(args);
@@ -205,16 +200,10 @@ export function registerSimTools(server: ToolRegistrar, controller: SimMcpContro
     {
       title: 'Sim enqueue',
       description: 'Enqueues runtime commands onto the simulation command queue deterministically.',
-      inputSchema: {
-        commands: z.array(z.unknown()),
-      },
+      inputSchema: SIM_ENQUEUE_ARGS_SCHEMA.shape,
     },
     async (args: unknown) => {
-      const record = assertObject(args, 'Invalid sim.enqueue payload: expected an object');
-      const rawCommands = record['commands'];
-      if (!Array.isArray(rawCommands)) {
-        throw new TypeError('Invalid sim.enqueue payload: expected { commands: Command[] }');
-      }
+      const { commands: rawCommands } = SIM_ENQUEUE_ARGS_SCHEMA.parse(args);
 
       const status = controller.getStatus();
       const commands = rawCommands.map((command) =>

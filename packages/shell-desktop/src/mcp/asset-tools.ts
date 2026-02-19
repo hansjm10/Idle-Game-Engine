@@ -28,62 +28,16 @@ const buildTextResult = (value: unknown): TextToolResult => ({
   content: [{ type: 'text', text: JSON.stringify(value) }],
 });
 
-const assertObject = (value: unknown, message: string): Record<string, unknown> => {
-  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
-    throw new TypeError(message);
-  }
+const ASSET_LIST_ARGS_SCHEMA = z.object({
+  path: z.string().optional(),
+  recursive: z.boolean().optional(),
+  maxEntries: z.number().int().min(1).optional(),
+}).strict();
 
-  return value as Record<string, unknown>;
-};
-
-const assertString = (value: unknown, message: string): string => {
-  if (typeof value !== 'string') {
-    throw new TypeError(message);
-  }
-
-  return value;
-};
-
-const assertOptionalString = (value: unknown, message: string): string | undefined => {
-  if (value === undefined) {
-    return undefined;
-  }
-
-  return assertString(value, message);
-};
-
-const assertOptionalBoolean = (value: unknown, message: string): boolean | undefined => {
-  if (value === undefined) {
-    return undefined;
-  }
-
-  if (value === true || value === false) {
-    return value;
-  }
-
-  throw new TypeError(message);
-};
-
-const assertPositiveInt = (value: unknown, message: string): number => {
-  if (typeof value !== 'number' || !Number.isFinite(value)) {
-    throw new TypeError(message);
-  }
-
-  const parsed = Math.floor(value);
-  if (parsed !== value || parsed < 1) {
-    throw new TypeError(message);
-  }
-
-  return parsed;
-};
-
-const assertOptionalPositiveInt = (value: unknown, message: string): number | undefined => {
-  if (value === undefined) {
-    return undefined;
-  }
-
-  return assertPositiveInt(value, message);
-};
+const ASSET_READ_ARGS_SCHEMA = z.object({
+  path: z.string().min(1),
+  maxBytes: z.number().int().min(1).optional(),
+}).strict();
 
 const toPosixPath = (value: string): string => value.split(path.sep).join('/');
 
@@ -217,26 +171,13 @@ export function registerAssetTools(server: ToolRegistrar, controller: AssetMcpCo
     {
       title: 'Asset list',
       description: 'Lists compiled assets under the configured assets root directory.',
-      inputSchema: {
-        path: z.string().optional(),
-        recursive: z.boolean().optional(),
-        maxEntries: z.number().optional(),
-      },
+      inputSchema: ASSET_LIST_ARGS_SCHEMA.shape,
     },
     async (args: unknown) => {
-      const record = assertObject(args, 'Invalid asset.list payload: expected an object');
-
-      const requestedPath =
-        assertOptionalString(record['path'], 'Invalid asset.list payload: expected { path?: string }') ?? '';
-
-      const recursive =
-        assertOptionalBoolean(record['recursive'], 'Invalid asset.list payload: expected { recursive?: boolean }') ?? false;
-
-      const maxEntries =
-        assertOptionalPositiveInt(
-          record['maxEntries'],
-          'Invalid asset.list payload: expected { maxEntries?: integer >= 1 }',
-        ) ?? 500;
+      const parsed = ASSET_LIST_ARGS_SCHEMA.parse(args ?? {});
+      const requestedPath = parsed.path ?? '';
+      const recursive = parsed.recursive ?? false;
+      const maxEntries = parsed.maxEntries ?? 500;
 
       const rootRealPath = await getCompiledAssetsRootRealPath();
       const { entries, truncated } = await listAssets(rootRealPath, requestedPath, {
@@ -257,23 +198,12 @@ export function registerAssetTools(server: ToolRegistrar, controller: AssetMcpCo
     {
       title: 'Asset read',
       description: 'Reads a compiled asset file from the configured assets root directory.',
-      inputSchema: {
-        path: z.string(),
-        maxBytes: z.number().optional(),
-      },
+      inputSchema: ASSET_READ_ARGS_SCHEMA.shape,
     },
     async (args: unknown) => {
-      const record = assertObject(args, 'Invalid asset.read payload: expected an object');
-      const requestedPath = assertString(
-        record['path'],
-        'Invalid asset.read payload: expected { path: string }',
-      );
-
-      const maxBytes =
-        assertOptionalPositiveInt(
-          record['maxBytes'],
-          'Invalid asset.read payload: expected { maxBytes?: integer >= 1 }',
-        ) ?? 5_000_000;
+      const parsed = ASSET_READ_ARGS_SCHEMA.parse(args);
+      const requestedPath = parsed.path;
+      const maxBytes = parsed.maxBytes ?? 5_000_000;
 
       const rootRealPath = await getCompiledAssetsRootRealPath();
       const { path: resolvedPath, buffer } = await readAsset(rootRealPath, requestedPath, maxBytes);

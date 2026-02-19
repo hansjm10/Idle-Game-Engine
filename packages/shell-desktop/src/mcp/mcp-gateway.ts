@@ -42,7 +42,7 @@ const MCP_HTTP_PATH = '/mcp/sse';
 const MCP_HTTP_PATH_ALIAS = '/mcp';
 const DEFAULT_GATEWAY_HOST = '127.0.0.1';
 const DEFAULT_GATEWAY_PORT = 8570;
-const DEFAULT_PROXY_TIMEOUT_MS = 1000;
+const DEFAULT_PROXY_TIMEOUT_MS = 5000;
 const DEFAULT_BACKEND_URL = new URL('http://127.0.0.1:8571/mcp/sse');
 const MAX_POST_BYTES = 5_000_000;
 
@@ -85,12 +85,21 @@ const FALLBACK_TOOLS = [
   {
     name: 'sim.step',
     description: 'Advances the simulation by N steps while paused.',
-    inputSchema: { type: 'object', properties: { steps: { type: 'number' } }, additionalProperties: true },
+    inputSchema: {
+      type: 'object',
+      properties: { steps: { type: 'integer', minimum: 1 } },
+      additionalProperties: false,
+    },
   },
   {
     name: 'sim.enqueue',
     description: 'Enqueues runtime commands onto the simulation command queue deterministically.',
-    inputSchema: { type: 'object', properties: { commands: { type: 'array' } }, additionalProperties: true },
+    inputSchema: {
+      type: 'object',
+      properties: { commands: { type: 'array' } },
+      required: ['commands'],
+      additionalProperties: false,
+    },
   },
   {
     name: 'window.info',
@@ -102,8 +111,12 @@ const FALLBACK_TOOLS = [
     description: 'Resizes the main window to the requested width/height.',
     inputSchema: {
       type: 'object',
-      properties: { width: { type: 'number' }, height: { type: 'number' } },
-      additionalProperties: true,
+      properties: {
+        width: { type: 'integer', minimum: 1 },
+        height: { type: 'integer', minimum: 1 },
+      },
+      required: ['width', 'height'],
+      additionalProperties: false,
     },
   },
   {
@@ -112,13 +125,18 @@ const FALLBACK_TOOLS = [
     inputSchema: {
       type: 'object',
       properties: { action: { enum: ['open', 'close', 'toggle'] } },
-      additionalProperties: true,
+      required: ['action'],
+      additionalProperties: false,
     },
   },
   {
     name: 'window.screenshot',
     description: 'Captures a PNG screenshot of the main window web contents (bounded).',
-    inputSchema: { type: 'object', properties: { maxBytes: { type: 'number' } }, additionalProperties: true },
+    inputSchema: {
+      type: 'object',
+      properties: { maxBytes: { type: 'integer', minimum: 1 } },
+      additionalProperties: false,
+    },
   },
   {
     name: 'input.controlEvent',
@@ -131,7 +149,8 @@ const FALLBACK_TOOLS = [
         value: { type: 'number' },
         metadata: { type: 'object' },
       },
-      additionalProperties: true,
+      required: ['intent', 'phase'],
+      additionalProperties: false,
     },
   },
   {
@@ -142,9 +161,9 @@ const FALLBACK_TOOLS = [
       properties: {
         path: { type: 'string' },
         recursive: { type: 'boolean' },
-        maxEntries: { type: 'number' },
+        maxEntries: { type: 'integer', minimum: 1 },
       },
-      additionalProperties: true,
+      additionalProperties: false,
     },
   },
   {
@@ -152,8 +171,12 @@ const FALLBACK_TOOLS = [
     description: 'Reads a compiled asset file from the configured assets root directory.',
     inputSchema: {
       type: 'object',
-      properties: { path: { type: 'string' }, maxBytes: { type: 'number' } },
-      additionalProperties: true,
+      properties: {
+        path: { type: 'string', minLength: 1 },
+        maxBytes: { type: 'integer', minimum: 1 },
+      },
+      required: ['path'],
+      additionalProperties: false,
     },
   },
 ] as const;
@@ -212,13 +235,21 @@ function parsePort(value: string): number {
   return parsed;
 }
 
+function isLoopbackHostname(hostname: string): boolean {
+  return hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1';
+}
+
 function normalizeTargetUrl(targetUrl: URL | string | undefined): URL {
   const resolved = targetUrl === undefined
     ? new URL(DEFAULT_BACKEND_URL.toString())
     : new URL(targetUrl.toString());
 
-  if (resolved.protocol !== 'http:' && resolved.protocol !== 'https:') {
-    throw new TypeError(`Unsupported MCP backend protocol: ${resolved.protocol}`);
+  if (resolved.protocol !== 'http:') {
+    throw new TypeError(`Unsupported MCP backend protocol: ${resolved.protocol}. Expected http:`);
+  }
+
+  if (!isLoopbackHostname(resolved.hostname)) {
+    throw new TypeError(`Invalid MCP backend host: ${resolved.hostname}. Expected a loopback host.`);
   }
 
   if (resolved.pathname.length === 0 || resolved.pathname === '/') {

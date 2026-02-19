@@ -82,6 +82,8 @@ Expected host signal: `GPU0` should report `Intel(R) Arc(tm) A310 Graphics (DG2)
 - Port override:
   - Env var: `IDLE_ENGINE_MCP_PORT=8571`
   - Arg: `--mcp-port=8571`
+- Asset root override (for non-sample games):
+  - Env var: `IDLE_ENGINE_COMPILED_ASSETS_ROOT=/abs/path/to/your/content/compiled`
 - Headless gateway mode:
   - Env var: `IDLE_ENGINE_MCP_GATEWAY_MODE=1` (defaults shell-desktop MCP port to `8571` when not explicitly set)
 
@@ -100,7 +102,7 @@ pnpm shell:desktop:mcp:gateway
 Optional overrides for the gateway:
 - `IDLE_ENGINE_MCP_PORT` (gateway listen port, default `8570`)
 - `IDLE_ENGINE_MCP_BACKEND_PORT` (shell-desktop backend port, default `8571`)
-- `IDLE_ENGINE_MCP_BACKEND_URL` (full backend URL, overrides backend port)
+- `IDLE_ENGINE_MCP_BACKEND_URL` (full backend URL, overrides backend port; must use `http://` loopback)
 
 Terminal B (start shell-desktop later, backend on 8571):
 

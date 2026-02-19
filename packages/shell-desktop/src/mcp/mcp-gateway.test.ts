@@ -45,6 +45,20 @@ describe('shell-desktop MCP gateway', () => {
     await Promise.allSettled(closers.splice(0).map((close) => close()));
   });
 
+  it('rejects non-http backend URLs', async () => {
+    await expect(startShellDesktopMcpGateway({
+      port: 0,
+      targetUrl: 'https://127.0.0.1:8571/mcp/sse',
+    })).rejects.toThrow(/protocol/i);
+  });
+
+  it('rejects non-loopback backend URLs', async () => {
+    await expect(startShellDesktopMcpGateway({
+      port: 0,
+      targetUrl: 'http://example.com:8571/mcp/sse',
+    })).rejects.toThrow(/loopback/i);
+  });
+
   it('supports initialize with application/json when backend is offline', async () => {
     const gateway = await startShellDesktopMcpGateway({
       port: 0,

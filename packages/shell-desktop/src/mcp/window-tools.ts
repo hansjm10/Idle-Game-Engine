@@ -39,41 +39,18 @@ const buildTextResult = (value: unknown): TextToolResult => ({
   content: [{ type: 'text', text: JSON.stringify(value) }],
 });
 
-const assertObject = (value: unknown, message: string): Record<string, unknown> => {
-  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
-    throw new TypeError(message);
-  }
+const WINDOW_RESIZE_ARGS_SCHEMA = z.object({
+  width: z.number().int().min(1),
+  height: z.number().int().min(1),
+}).strict();
 
-  return value as Record<string, unknown>;
-};
+const WINDOW_DEVTOOLS_ARGS_SCHEMA = z.object({
+  action: z.enum(['open', 'close', 'toggle']),
+}).strict();
 
-const assertPositiveInt = (value: unknown, message: string): number => {
-  if (typeof value !== 'number' || !Number.isFinite(value)) {
-    throw new TypeError(message);
-  }
-
-  const parsed = Math.floor(value);
-  if (parsed !== value || parsed < 1) {
-    throw new TypeError(message);
-  }
-
-  return parsed;
-};
-
-const assertOptionalPositiveInt = (value: unknown, message: string): number | undefined => {
-  if (value === undefined) {
-    return undefined;
-  }
-
-  return assertPositiveInt(value, message);
-};
-
-const assertDevToolsAction = (value: unknown): WindowMcpDevToolsAction => {
-  if (value === 'open' || value === 'close' || value === 'toggle') {
-    return value;
-  }
-  throw new TypeError('Invalid window.devtools payload: expected { action: "open" | "close" | "toggle" }');
-};
+const WINDOW_SCREENSHOT_ARGS_SCHEMA = z.object({
+  maxBytes: z.number().int().min(1).optional(),
+}).strict();
 
 export function registerWindowTools(server: ToolRegistrar, controller: WindowMcpController): void {
   server.registerTool(
@@ -90,21 +67,10 @@ export function registerWindowTools(server: ToolRegistrar, controller: WindowMcp
     {
       title: 'Window resize',
       description: 'Resizes the main window to the requested width/height.',
-      inputSchema: {
-        width: z.number(),
-        height: z.number(),
-      },
+      inputSchema: WINDOW_RESIZE_ARGS_SCHEMA.shape,
     },
     async (args: unknown) => {
-      const record = assertObject(args, 'Invalid window.resize payload: expected an object');
-      const width = assertPositiveInt(
-        record['width'],
-        'Invalid window.resize payload: expected { width: integer >= 1, height: integer >= 1 }',
-      );
-      const height = assertPositiveInt(
-        record['height'],
-        'Invalid window.resize payload: expected { width: integer >= 1, height: integer >= 1 }',
-      );
+      const { width, height } = WINDOW_RESIZE_ARGS_SCHEMA.parse(args);
 
       return buildTextResult({ ok: true, info: controller.resize(width, height) });
     },
@@ -115,13 +81,10 @@ export function registerWindowTools(server: ToolRegistrar, controller: WindowMcp
     {
       title: 'Window devtools',
       description: 'Opens, closes, or toggles the main window devtools.',
-      inputSchema: {
-        action: z.enum(['open', 'close', 'toggle']),
-      },
+      inputSchema: WINDOW_DEVTOOLS_ARGS_SCHEMA.shape,
     },
     async (args: unknown) => {
-      const record = assertObject(args, 'Invalid window.devtools payload: expected an object');
-      const action = assertDevToolsAction(record['action']);
+      const { action } = WINDOW_DEVTOOLS_ARGS_SCHEMA.parse(args);
       return buildTextResult({ ok: true, ...controller.setDevTools(action) });
     },
   );
@@ -131,18 +94,11 @@ export function registerWindowTools(server: ToolRegistrar, controller: WindowMcp
     {
       title: 'Window screenshot',
       description: 'Captures a PNG screenshot of the main window web contents (bounded).',
-      inputSchema: {
-        maxBytes: z.number().optional(),
-      },
+      inputSchema: WINDOW_SCREENSHOT_ARGS_SCHEMA.shape,
     },
     async (args: unknown) => {
-      const record = assertObject(args, 'Invalid window.screenshot payload: expected an object');
-
-      const maxBytes =
-        assertOptionalPositiveInt(
-          record['maxBytes'],
-          'Invalid window.screenshot payload: expected { maxBytes?: integer >= 1 }',
-        ) ?? 5_000_000;
+      const { maxBytes: requestedMaxBytes } = WINDOW_SCREENSHOT_ARGS_SCHEMA.parse(args ?? {});
+      const maxBytes = requestedMaxBytes ?? 5_000_000;
 
       const buffer = await controller.captureScreenshotPng();
 

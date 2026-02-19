@@ -33,6 +33,8 @@ pnpm shell:desktop:mcp:smoke
 pnpm shell:desktop:headless:stop
 ```
 
+Set `IDLE_ENGINE_COMPILED_ASSETS_ROOT=/abs/path/to/content/compiled` to reuse the MCP asset tools with a non-sample game content pack.
+
 Always-on MCP gateway (for Codex/Cursor startup before shell launch):
 
 ```bash

@@ -22,57 +22,17 @@ const buildTextResult = (value: unknown): TextToolResult => ({
   content: [{ type: 'text', text: JSON.stringify(value) }],
 });
 
-const assertObject = (value: unknown, message: string): Record<string, unknown> => {
-  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
-    throw new TypeError(message);
-  }
-
-  return value as Record<string, unknown>;
-};
-
-const assertOptionalFiniteNumber = (value: unknown, message: string): number | undefined => {
-  if (value === undefined) {
-    return undefined;
-  }
-
-  if (typeof value !== 'number' || !Number.isFinite(value)) {
-    throw new TypeError(message);
-  }
-
-  return value;
-};
-
-const assertOptionalMetadata = (value: unknown): Readonly<Record<string, unknown>> | undefined => {
-  if (value === undefined) {
-    return undefined;
-  }
-
-  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
-    throw new TypeError('Invalid input.controlEvent payload: expected { metadata?: object }');
-  }
-
-  return value as Readonly<Record<string, unknown>>;
-};
+const INPUT_CONTROL_EVENT_ARGS_SCHEMA = z.object({
+  intent: z.string().refine((value) => value.trim().length > 0, {
+    message: 'Invalid input.controlEvent payload: expected { intent: string }',
+  }),
+  phase: z.enum(['start', 'repeat', 'end']),
+  value: z.number().finite().optional(),
+  metadata: z.record(z.string(), z.unknown()).optional(),
+}).strict();
 
 const assertControlEvent = (args: unknown): ShellControlEvent => {
-  const record = assertObject(args, 'Invalid input.controlEvent payload: expected an object');
-
-  const intent = record['intent'];
-  if (typeof intent !== 'string' || intent.trim().length === 0) {
-    throw new TypeError('Invalid input.controlEvent payload: expected { intent: string }');
-  }
-
-  const phase = record['phase'];
-  if (phase !== 'start' && phase !== 'repeat' && phase !== 'end') {
-    throw new TypeError('Invalid input.controlEvent payload: expected { phase: "start" | "repeat" | "end" }');
-  }
-
-  const value = assertOptionalFiniteNumber(
-    record['value'],
-    'Invalid input.controlEvent payload: expected { value?: number }',
-  );
-
-  const metadata = assertOptionalMetadata(record['metadata']);
+  const { intent, phase, value, metadata } = INPUT_CONTROL_EVENT_ARGS_SCHEMA.parse(args);
 
   const base = { intent, phase } satisfies ShellControlEvent;
   const withValue = value === undefined ? base : ({ ...base, value } satisfies ShellControlEvent);
@@ -87,12 +47,7 @@ export function registerInputTools(server: ToolRegistrar, controller: InputMcpCo
     {
       title: 'Input controlEvent',
       description: 'Injects a shell control event into the active simulation control scheme.',
-      inputSchema: {
-        intent: z.string(),
-        phase: z.enum(['start', 'repeat', 'end']),
-        value: z.number().optional(),
-        metadata: z.record(z.string(), z.unknown()).optional(),
-      },
+      inputSchema: INPUT_CONTROL_EVENT_ARGS_SCHEMA.shape,
     },
     async (args: unknown) => {
       const event = assertControlEvent(args);
