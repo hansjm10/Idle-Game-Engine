@@ -257,6 +257,57 @@ describe('shell-desktop MCP server', () => {
     await client.close();
   });
 
+  it('exposes diagnostics tools when diagnostics controllers are provided', async () => {
+    const server = await startShellDesktopMcpServer({
+      port: 0,
+      diagnostics: {
+        getRendererStatus: () => ({
+          outputText: 'IPC ok\nSim running\nWebGPU ok.',
+          rendererState: 'running',
+          updatedAtMs: 1234,
+        }),
+        getLogs: () => ([
+          {
+            id: 1,
+            timestampMs: 1234,
+            source: 'renderer',
+            subsystem: 'webgpu',
+            severity: 'info',
+            message: 'WebGPU initialized',
+          },
+        ]),
+        getWebGpuHealth: () => ({
+          status: 'ok',
+          lastEventTimestampMs: 1234,
+        }),
+      },
+    });
+    servers.push(server);
+
+    const client = new Client({ name: 'shell-desktop-test-client', version: '1.0.0' });
+    const transport = new StreamableHTTPClientTransport(server.url);
+    await client.connect(transport);
+
+    const tools = await client.listTools();
+    const toolNames = tools.tools.map((tool) => tool.name);
+    expect(toolNames).toContain('renderer.status');
+    expect(toolNames).toContain('logs.tail');
+    expect(toolNames).toContain('logs.since');
+    expect(toolNames).toContain('probe.webgpuHealth');
+
+    const probeRaw = await client.callTool({ name: 'probe.webgpuHealth', arguments: {} }, CallToolResultSchema);
+    const probeResult = CallToolResultSchema.parse(probeRaw);
+    const probeContent = probeResult.content[0];
+    if (probeContent?.type !== 'text') {
+      throw new Error('Expected text content for probe.webgpuHealth');
+    }
+    const probePayload = JSON.parse(probeContent.text) as { ok?: unknown; health?: { status?: unknown } };
+    expect(probePayload.ok).toBe(true);
+    expect(probePayload.health?.status).toBe('ok');
+
+    await client.close();
+  });
+
   it('accepts initialization requests that only advertise application/json', async () => {
     const server = await startShellDesktopMcpServer({ port: 0 });
     servers.push(server);

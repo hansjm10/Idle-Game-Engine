@@ -12,6 +12,7 @@ import type { WebGpuBitmapFont, WebGpuRenderer } from '@idle-engine/renderer-web
 
 const output = document.querySelector<HTMLPreElement>('#output');
 const canvas = document.querySelector<HTMLCanvasElement>('#canvas');
+const errorBanner = document.querySelector<HTMLParagraphElement>('#error-banner');
 
 const SAMPLE_PACK_SLUG = '@idle-engine/sample-pack';
 const SAMPLE_PACK_ASSETS_ROOT_URL = new URL(
@@ -242,12 +243,78 @@ async function run(): Promise<void> {
   const canvasElement = canvas;
   const idleEngineApi = getIdleEngineApi();
 
+  type RendererLogSeverity = 'debug' | 'info' | 'warn' | 'error';
+  type RendererWebGpuHealthStatus = 'ok' | 'lost' | 'recovered';
+
   let ipcStatus = 'IPC pending…';
   let simStatus = 'Sim pending…';
   let webgpuStatus = 'WebGPU pending…';
+  let rendererState = 'initializing';
+  let webgpuHealthStatus: RendererWebGpuHealthStatus = 'lost';
+  let webgpuLastLossReason: string | undefined = 'WebGPU status pending.';
+
+  const sendRendererLog = (
+    severity: RendererLogSeverity,
+    subsystem: string,
+    message: string,
+    metadata?: Readonly<Record<string, unknown>>,
+  ): void => {
+    try {
+      idleEngineApi.sendRendererLog({
+        severity,
+        subsystem,
+        message,
+        ...(metadata === undefined ? {} : { metadata }),
+      });
+    } catch {
+      // Keep renderer UI flow resilient even when diagnostics transport fails.
+    }
+  };
+
+  const deriveErrorBannerText = (): string | undefined => {
+    const candidates = [ipcStatus, simStatus, webgpuStatus];
+    return candidates.find((value) => /\b(error|failed|crashed|lost|stopped)\b/i.test(value));
+  };
+
+  const setErrorBannerText = (nextText: string | undefined): void => {
+    if (!errorBanner) {
+      return;
+    }
+
+    if (nextText === undefined) {
+      errorBanner.textContent = '';
+      errorBanner.hidden = true;
+      return;
+    }
+
+    errorBanner.textContent = nextText;
+    errorBanner.hidden = false;
+  };
+
+  const publishRendererDiagnostics = (): void => {
+    try {
+      const bannerText = errorBanner?.hidden === true
+        ? undefined
+        : errorBanner?.textContent?.trim() || undefined;
+
+      idleEngineApi.sendRendererDiagnostics({
+        outputText: outputElement.textContent ?? '',
+        ...(bannerText === undefined ? {} : { errorBannerText: bannerText }),
+        rendererState,
+        webgpu: {
+          status: webgpuHealthStatus,
+          ...(webgpuLastLossReason === undefined ? {} : { lastLossReason: webgpuLastLossReason }),
+        },
+      });
+    } catch {
+      // Keep renderer UI flow resilient even when diagnostics transport fails.
+    }
+  };
 
   function updateOutput(): void {
     outputElement.textContent = [ipcStatus, simStatus, webgpuStatus].join('\n');
+    setErrorBannerText(deriveErrorBannerText());
+    publishRendererDiagnostics();
   }
 
   updateOutput();
@@ -255,8 +322,10 @@ async function run(): Promise<void> {
   try {
     const pong = await idleEngineApi.ping('hello');
     ipcStatus = `IPC ok: ${pong}`;
+    sendRendererLog('info', 'ipc', 'Renderer ping succeeded.');
   } catch (error: unknown) {
     ipcStatus = `IPC error: ${String(error)}`;
+    sendRendererLog('error', 'ipc', 'Renderer ping failed.', { error: String(error) });
   }
 
   updateOutput();
@@ -296,16 +365,27 @@ async function run(): Promise<void> {
     unsubscribeSimStatus = idleEngineApi.onSimStatus((status) => {
       if (status.kind === 'starting') {
         simStatus = 'Sim starting…';
+        rendererState = 'starting';
       } else if (status.kind === 'running') {
         simStatus = 'Sim running.';
+        if (rendererState === 'starting') {
+          rendererState = 'running';
+        }
       } else {
         const exitCode = status.exitCode === undefined ? '' : ` (exitCode=${status.exitCode})`;
         simStatus = `Sim ${status.kind}${exitCode}: ${status.reason}. Reload to restart.`;
+        rendererState = status.kind;
+        sendRendererLog('error', 'sim', `Sim ${status.kind}.`, {
+          reason: status.reason,
+          ...(status.exitCode === undefined ? {} : { exitCode: status.exitCode }),
+        });
       }
       updateOutput();
     });
   } catch (error: unknown) {
     simStatus = `Sim error: ${String(error)}`;
+    rendererState = 'sim-error';
+    sendRendererLog('error', 'sim', 'Failed to subscribe to sim status updates.', { error: String(error) });
     updateOutput();
   }
 
@@ -313,10 +393,15 @@ async function run(): Promise<void> {
     unsubscribeFrames = idleEngineApi.onFrame((frame) => {
       latestRcb = frame;
       simStatus = `Sim step=${frame.frame.step} simTimeMs=${frame.frame.simTimeMs}`;
+      if (rendererState === 'starting') {
+        rendererState = 'running';
+      }
       updateOutput();
     });
   } catch (error: unknown) {
     simStatus = `Sim error: ${String(error)}`;
+    rendererState = 'sim-error';
+    sendRendererLog('error', 'sim', 'Failed to subscribe to frame updates.', { error: String(error) });
     updateOutput();
   }
 
@@ -512,6 +597,9 @@ async function run(): Promise<void> {
       renderer.resize();
       renderer.render(strippedRcb);
     } catch (error: unknown) {
+      sendRendererLog('error', 'webgpu', 'Renderer frame render failed; attempting recovery.', {
+        error: String(error),
+      });
       void recover(String(error));
       return;
     }
@@ -532,12 +620,16 @@ async function run(): Promise<void> {
     }
 
     recovering = true;
+    rendererState = 'recovering';
+    webgpuHealthStatus = 'lost';
+    webgpuLastLossReason = reason;
     stopLoop();
     renderer?.dispose();
     renderer = undefined;
     rendererAssetsLoaded = false;
 
     webgpuStatus = `WebGPU lost (${reason}). Attempting recovery…`;
+    sendRendererLog('warn', 'webgpu', 'WebGPU device lost; attempting recovery.', { reason });
     updateOutput();
 
     await new Promise((resolve) => setTimeout(resolve, 1000));
@@ -554,10 +646,23 @@ async function run(): Promise<void> {
       webgpuStatus = assetsError
         ? `WebGPU ok (recovered). Assets unavailable: ${assetsError}`
         : 'WebGPU ok (recovered). Assets loaded.';
+      webgpuHealthStatus = 'recovered';
+      rendererState = 'running';
+      if (assetsError) {
+        sendRendererLog('warn', 'webgpu', 'WebGPU recovered, but renderer assets failed to load.', {
+          assetsError,
+        });
+      } else {
+        sendRendererLog('info', 'webgpu', 'WebGPU recovered and renderer assets loaded.');
+      }
       updateOutput();
       animationFrame = requestAnimationFrame(render);
     } catch (error: unknown) {
       webgpuStatus = `WebGPU recovery failed: ${String(error)}`;
+      webgpuHealthStatus = 'lost';
+      webgpuLastLossReason = String(error);
+      rendererState = 'webgpu-error';
+      sendRendererLog('error', 'webgpu', 'WebGPU recovery failed.', { error: String(error) });
       updateOutput();
     } finally {
       recovering = false;
@@ -575,10 +680,24 @@ async function run(): Promise<void> {
     webgpuStatus = assetsError
       ? `WebGPU ok. Assets unavailable: ${assetsError}`
       : 'WebGPU ok. Assets loaded.';
+    webgpuHealthStatus = 'ok';
+    webgpuLastLossReason = undefined;
+    rendererState = 'running';
+    if (assetsError) {
+      sendRendererLog('warn', 'webgpu', 'WebGPU initialized, but renderer assets failed to load.', {
+        assetsError,
+      });
+    } else {
+      sendRendererLog('info', 'webgpu', 'WebGPU initialized and renderer assets loaded.');
+    }
     updateOutput();
     animationFrame = requestAnimationFrame(render);
   } catch (error: unknown) {
     webgpuStatus = `WebGPU error: ${String(error)}`;
+    webgpuHealthStatus = 'lost';
+    webgpuLastLossReason = String(error);
+    rendererState = 'webgpu-error';
+    sendRendererLog('error', 'webgpu', 'WebGPU initialization failed.', { error: String(error) });
     updateOutput();
   }
 
@@ -594,6 +713,9 @@ async function run(): Promise<void> {
     unsubscribeSimStatus?.();
     renderer?.dispose();
     rendererAssetsLoaded = false;
+    rendererState = 'stopped';
+    publishRendererDiagnostics();
+    sendRendererLog('info', 'renderer', 'Renderer disposed during unload.');
   });
 }
 

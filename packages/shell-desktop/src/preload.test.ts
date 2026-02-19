@@ -34,6 +34,8 @@ describe('shell-desktop preload', () => {
     expect(typeof api.readAsset).toBe('function');
     expect(typeof api.sendControlEvent).toBe('function');
     expect(typeof api.sendInputEvent).toBe('function');
+    expect(typeof api.sendRendererDiagnostics).toBe('function');
+    expect(typeof api.sendRendererLog).toBe('function');
     expect(typeof api.onFrame).toBe('function');
     expect(typeof api.onSimStatus).toBe('function');
 
@@ -67,6 +69,23 @@ describe('shell-desktop preload', () => {
     };
     api.sendInputEvent(inputEventEnvelope);
     expect(send).toHaveBeenCalledWith(IPC_CHANNELS.inputEvent, inputEventEnvelope);
+
+    const rendererDiagnostics = {
+      outputText: 'IPC ok\nSim running\nWebGPU ok.',
+      rendererState: 'running',
+      webgpu: { status: 'ok' as const },
+    };
+    api.sendRendererDiagnostics(rendererDiagnostics);
+    expect(send).toHaveBeenCalledWith(IPC_CHANNELS.rendererDiagnostics, rendererDiagnostics);
+
+    const rendererLog = {
+      severity: 'info' as const,
+      subsystem: 'webgpu',
+      message: 'WebGPU initialized',
+      metadata: { adapter: 'test' },
+    };
+    api.sendRendererLog(rendererLog);
+    expect(send).toHaveBeenCalledWith(IPC_CHANNELS.rendererLog, rendererLog);
 
     const frameHandler = vi.fn();
     const simStatusHandler = vi.fn();

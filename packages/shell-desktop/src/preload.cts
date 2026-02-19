@@ -3,6 +3,8 @@ import type {
   IpcInvokeMap,
   ShellFramePayload,
   ShellInputEventEnvelope,
+  ShellRendererDiagnosticsPayload,
+  ShellRendererLogPayload,
   ShellSimStatusPayload,
 } from './ipc.js';
 
@@ -17,6 +19,8 @@ const IPC_CHANNELS = {
   readAsset: 'idle-engine:read-asset',
   controlEvent: 'idle-engine:control-event',
   inputEvent: 'idle-engine:input-event',
+  rendererDiagnostics: 'idle-engine:renderer-diagnostics',
+  rendererLog: 'idle-engine:renderer-log',
   frame: 'idle-engine:frame',
   simStatus: 'idle-engine:sim-status',
 } as const;
@@ -39,6 +43,12 @@ const idleEngineApi: IdleEngineApi = {
   },
   sendInputEvent: (envelope: ShellInputEventEnvelope) => {
     ipcRenderer.send(IPC_CHANNELS.inputEvent, envelope);
+  },
+  sendRendererDiagnostics: (payload: ShellRendererDiagnosticsPayload) => {
+    ipcRenderer.send(IPC_CHANNELS.rendererDiagnostics, payload);
+  },
+  sendRendererLog: (payload: ShellRendererLogPayload) => {
+    ipcRenderer.send(IPC_CHANNELS.rendererLog, payload);
   },
   onFrame: (handler) => {
     const listener = (_event: unknown, frame: unknown) => {

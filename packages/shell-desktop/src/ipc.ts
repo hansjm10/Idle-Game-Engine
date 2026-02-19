@@ -8,6 +8,8 @@ export const IPC_CHANNELS = {
   readAsset: 'idle-engine:read-asset',
   controlEvent: 'idle-engine:control-event',
   inputEvent: 'idle-engine:input-event',
+  rendererDiagnostics: 'idle-engine:renderer-diagnostics',
+  rendererLog: 'idle-engine:renderer-log',
   frame: 'idle-engine:frame',
   simStatus: 'idle-engine:sim-status',
 } as const;
@@ -62,6 +64,27 @@ export type ShellInputEventEnvelope = Readonly<{
   event: InputEvent;
 }>;
 
+export type ShellRendererLogSeverity = 'debug' | 'info' | 'warn' | 'error';
+
+export type ShellRendererLogPayload = Readonly<{
+  severity: ShellRendererLogSeverity;
+  subsystem: string;
+  message: string;
+  metadata?: Readonly<Record<string, unknown>>;
+}>;
+
+export type ShellRendererWebGpuHealthStatus = 'ok' | 'lost' | 'recovered';
+
+export type ShellRendererDiagnosticsPayload = Readonly<{
+  outputText: string;
+  errorBannerText?: string;
+  rendererState?: string;
+  webgpu?: Readonly<{
+    status: ShellRendererWebGpuHealthStatus;
+    lastLossReason?: string;
+  }>;
+}>;
+
 export type ShellFramePayload = RenderCommandBuffer;
 
 export type ShellSimStatusPayload =
@@ -89,6 +112,8 @@ export type IdleEngineApi = {
   readAsset: (url: string) => Promise<ArrayBuffer>;
   sendControlEvent: (event: ShellControlEvent) => void;
   sendInputEvent: (envelope: ShellInputEventEnvelope) => void;
+  sendRendererDiagnostics: (payload: ShellRendererDiagnosticsPayload) => void;
+  sendRendererLog: (payload: ShellRendererLogPayload) => void;
   onFrame: (handler: (frame: ShellFramePayload) => void) => () => void;
   onSimStatus: (handler: (status: ShellSimStatusPayload) => void) => () => void;
 };

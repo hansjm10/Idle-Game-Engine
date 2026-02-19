@@ -9,6 +9,8 @@ describe('shell-desktop IPC contract', () => {
     expect(IPC_CHANNELS.readAsset).toBe('idle-engine:read-asset');
     expect(IPC_CHANNELS.controlEvent).toBe('idle-engine:control-event');
     expect(IPC_CHANNELS.inputEvent).toBe('idle-engine:input-event');
+    expect(IPC_CHANNELS.rendererDiagnostics).toBe('idle-engine:renderer-diagnostics');
+    expect(IPC_CHANNELS.rendererLog).toBe('idle-engine:renderer-log');
     expect(IPC_CHANNELS.frame).toBe('idle-engine:frame');
     expect(IPC_CHANNELS.simStatus).toBe('idle-engine:sim-status');
     expect(SHELL_CONTROL_EVENT_COMMAND_TYPE).toBe('SHELL_CONTROL_EVENT');
