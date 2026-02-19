@@ -1,0 +1,4 @@
+interface:
+  display_name: "Shell Desktop MCP"
+  short_description: "Operate the shell-desktop MCP tools"
+  default_prompt: "Use $shell-desktop-mcp to run deterministic shell-desktop MCP workflows."
