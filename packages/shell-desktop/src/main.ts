@@ -69,7 +69,7 @@ const assetMcpController: AssetMcpController = {
 let rendererDiagnosticsStatus: RendererDiagnosticsStatus | undefined;
 let webGpuHealthProbe: WebGpuHealthProbe = {
   status: 'lost',
-  lastLossReason: 'WebGPU status pending renderer diagnostics.',
+  lastLossReason: 'WebGPU status pending.',
 };
 let diagnosticsLogId = 0;
 const diagnosticsLogs: DiagnosticsLogEntry[] = [];
