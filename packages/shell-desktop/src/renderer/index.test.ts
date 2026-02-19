@@ -80,6 +80,8 @@ describe('shell-desktop renderer entrypoint', () => {
       ping: vi.fn(async () => 'pong'),
       sendControlEvent: vi.fn(),
       sendInputEvent: vi.fn(),
+      sendRendererDiagnostics: vi.fn(),
+      sendRendererLog: vi.fn(),
       onFrame: vi.fn(() => vi.fn()),
       onSimStatus: vi.fn(() => vi.fn()),
     };

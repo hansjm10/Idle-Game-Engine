@@ -12,11 +12,27 @@ import {
   type InputEventCommandPayload,
   type RuntimeCommand,
 } from '@idle-engine/core';
-import { IPC_CHANNELS, type IpcInvokeMap, type ShellControlEvent, type ShellInputEventEnvelope, type ShellSimStatusPayload } from './ipc.js';
+import {
+  IPC_CHANNELS,
+  type IpcInvokeMap,
+  type ShellControlEvent,
+  type ShellInputEventEnvelope,
+  type ShellRendererDiagnosticsPayload,
+  type ShellRendererLogPayload,
+  type ShellSimStatusPayload,
+} from './ipc.js';
 import { monotonicNowMs } from './monotonic-time.js';
 import type { MenuItemConstructorOptions } from 'electron';
 import type { ControlScheme } from '@idle-engine/controls';
 import type { AssetMcpController } from './mcp/asset-tools.js';
+import type {
+  DiagnosticsLogEntry,
+  DiagnosticsLogSeverity,
+  DiagnosticsMcpController,
+  DiagnosticsWebGpuHealthStatus,
+  RendererDiagnosticsStatus,
+  WebGpuHealthProbe,
+} from './mcp/diagnostics-tools.js';
 import type { InputMcpController } from './mcp/input-tools.js';
 import type { ShellDesktopMcpServer } from './mcp/mcp-server.js';
 import { SIM_MCP_MAX_STEP_COUNT, type SimMcpController, type SimMcpStatus } from './mcp/sim-tools.js';
@@ -44,10 +60,70 @@ const configuredCompiledAssetsRootPath = process.env.IDLE_ENGINE_COMPILED_ASSETS
 const compiledAssetsRootPath = configuredCompiledAssetsRootPath
   ? path.resolve(configuredCompiledAssetsRootPath)
   : defaultCompiledAssetsRootPath;
+const MAX_DIAGNOSTICS_LOG_ENTRIES = 2_000;
 
 const assetMcpController: AssetMcpController = {
   compiledAssetsRootPath,
 };
+
+let rendererDiagnosticsStatus: RendererDiagnosticsStatus | undefined;
+let webGpuHealthProbe: WebGpuHealthProbe = {
+  status: 'lost',
+  lastLossReason: 'WebGPU status pending.',
+};
+let diagnosticsLogId = 0;
+const diagnosticsLogs: DiagnosticsLogEntry[] = [];
+
+function pushDiagnosticsLog(
+  entry: Readonly<{
+    source: DiagnosticsLogEntry['source'];
+    subsystem: string;
+    severity: DiagnosticsLogSeverity;
+    message: string;
+    metadata?: Readonly<Record<string, unknown>>;
+  }>,
+): void {
+  const nowMs = Date.now();
+  diagnosticsLogId += 1;
+  diagnosticsLogs.push({
+    id: diagnosticsLogId,
+    timestampMs: nowMs,
+    source: entry.source,
+    subsystem: entry.subsystem,
+    severity: entry.severity,
+    message: entry.message,
+    ...(entry.metadata === undefined ? {} : { metadata: entry.metadata }),
+  });
+
+  const overflow = diagnosticsLogs.length - MAX_DIAGNOSTICS_LOG_ENTRIES;
+  if (overflow > 0) {
+    diagnosticsLogs.splice(0, overflow);
+  }
+}
+
+function stringifyUnknown(value: unknown): string {
+  if (typeof value === 'string') {
+    return value;
+  }
+
+  if (value instanceof Error) {
+    return value.stack ?? `${value.name}: ${value.message}`;
+  }
+
+  if (typeof value === 'object' && value !== null) {
+    try {
+      const jsonValue = JSON.stringify(value);
+      if (jsonValue !== undefined) {
+        return jsonValue;
+      }
+    } catch {
+      return '[Unserializable object]';
+    }
+    return Object.prototype.toString.call(value);
+  }
+
+  return String(value);
+}
 
 const DEMO_CONTROL_SCHEME: ControlScheme = {
   id: 'shell-desktop-demo',
@@ -264,6 +340,78 @@ function isValidShellInputEventEnvelope(value: unknown): value is ShellInputEven
   return isValidInputEvent(obj.event);
 }
 
+function isNonEmptyString(value: unknown): value is string {
+  return typeof value === 'string' && value.trim().length > 0;
+}
+
+function isDiagnosticsLogSeverity(value: unknown): value is DiagnosticsLogSeverity {
+  return value === 'debug' || value === 'info' || value === 'warn' || value === 'error';
+}
+
+function isDiagnosticsWebGpuHealthStatus(value: unknown): value is DiagnosticsWebGpuHealthStatus {
+  return value === 'ok' || value === 'lost' || value === 'recovered';
+}
+
+function isRendererLogPayload(value: unknown): value is ShellRendererLogPayload {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    return false;
+  }
+
+  const severity = (value as { severity?: unknown }).severity;
+  const subsystem = (value as { subsystem?: unknown }).subsystem;
+  const message = (value as { message?: unknown }).message;
+  const metadata = (value as { metadata?: unknown }).metadata;
+
+  if (!isDiagnosticsLogSeverity(severity) || !isNonEmptyString(subsystem) || !isNonEmptyString(message)) {
+    return false;
+  }
+
+  if (metadata !== undefined && (typeof metadata !== 'object' || metadata === null || Array.isArray(metadata))) {
+    return false;
+  }
+
+  return true;
+}
+
+function isRendererDiagnosticsPayload(value: unknown): value is ShellRendererDiagnosticsPayload {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    return false;
+  }
+
+  const outputText = (value as { outputText?: unknown }).outputText;
+  if (typeof outputText !== 'string') {
+    return false;
+  }
+
+  const errorBannerText = (value as { errorBannerText?: unknown }).errorBannerText;
+  if (errorBannerText !== undefined && typeof errorBannerText !== 'string') {
+    return false;
+  }
+
+  const rendererState = (value as { rendererState?: unknown }).rendererState;
+  if (rendererState !== undefined && typeof rendererState !== 'string') {
+    return false;
+  }
+
+  const webgpu = (value as { webgpu?: unknown }).webgpu;
+  if (webgpu !== undefined) {
+    if (typeof webgpu !== 'object' || webgpu === null || Array.isArray(webgpu)) {
+      return false;
+    }
+
+    const status = (webgpu as { status?: unknown }).status;
+    const lastLossReason = (webgpu as { lastLossReason?: unknown }).lastLossReason;
+    if (!isDiagnosticsWebGpuHealthStatus(status)) {
+      return false;
+    }
+    if (lastLossReason !== undefined && typeof lastLossReason !== 'string') {
+      return false;
+    }
+  }
+
+  return true;
+}
+
 type SimWorkerController = Readonly<{
   sendControlEvent: (event: ShellControlEvent) => void;
   sendInputEvent: (envelope: ShellInputEventEnvelope) => void;
@@ -396,6 +544,19 @@ function createSimWorkerController(mainWindow: BrowserWindow): SimWorkerControll
     stopTickLoop();
     rejectPendingStepCompletions(new Error(`Sim ${status.kind}: ${status.reason}`));
 
+    pushDiagnosticsLog({
+      source: 'main',
+      subsystem: 'sim',
+      severity: status.kind === 'stopped' ? 'warn' : 'error',
+      message: `Sim ${status.kind}: ${status.reason}`,
+      metadata: details === undefined
+        ? undefined
+        : {
+            details: stringifyUnknown(details),
+            ...(status.exitCode === undefined ? {} : { exitCode: status.exitCode }),
+          },
+    });
+
     // eslint-disable-next-line no-console
     console.error(status.kind === 'stopped' ? `[shell-desktop] Sim stopped: ${status.reason}` : `[shell-desktop] Sim crashed: ${status.reason}`, details);
 
@@ -415,7 +576,7 @@ function createSimWorkerController(mainWindow: BrowserWindow): SimWorkerControll
     try {
       worker.postMessage(message);
     } catch (error: unknown) {
-      const reason = error instanceof Error ? error.message : String(error);
+      const reason = error instanceof Error ? error.message : stringifyUnknown(error);
       handleWorkerFailure({ kind: 'crashed', reason }, error);
     }
   };
@@ -438,6 +599,13 @@ function createSimWorkerController(mainWindow: BrowserWindow): SimWorkerControll
   };
 
   safePostMessage({ kind: 'init', stepSizeMs, maxStepsPerFrame });
+  pushDiagnosticsLog({
+    source: 'main',
+    subsystem: 'sim',
+    severity: 'info',
+    message: 'Sim worker init requested.',
+    metadata: { stepSizeMs, maxStepsPerFrame },
+  });
 
   // Emit sim-status 'starting' when the worker controller is created
   sendSimStatus({ kind: 'starting' });
@@ -452,6 +620,13 @@ function createSimWorkerController(mainWindow: BrowserWindow): SimWorkerControll
       stepSizeMs = message.stepSizeMs;
       nextStep = message.nextStep;
       isReady = true;
+      pushDiagnosticsLog({
+        source: 'main',
+        subsystem: 'sim',
+        severity: 'info',
+        message: 'Sim worker is ready.',
+        metadata: { stepSizeMs, nextStep },
+      });
       resolvePendingStepCompletions();
       // Emit sim-status 'running' when the worker is ready
       sendSimStatus({ kind: 'running' });
@@ -481,14 +656,14 @@ function createSimWorkerController(mainWindow: BrowserWindow): SimWorkerControll
 
   worker.on('error', (error: unknown) => {
     handleWorkerFailure(
-      { kind: 'crashed', reason: error instanceof Error ? error.message : String(error) },
+      { kind: 'crashed', reason: error instanceof Error ? error.message : stringifyUnknown(error) },
       error,
     );
   });
 
   worker.on('messageerror', (error: unknown) => {
     handleWorkerFailure(
-      { kind: 'crashed', reason: error instanceof Error ? error.message : String(error) },
+      { kind: 'crashed', reason: error instanceof Error ? error.message : stringifyUnknown(error) },
       error,
     );
   });
@@ -526,7 +701,7 @@ function createSimWorkerController(mainWindow: BrowserWindow): SimWorkerControll
     } catch (error: unknown) {
       // Treat control-event mapping exceptions as fatal bridge failures per issue #850 design doc.
       // Transition to sim-status crashed, stop the tick loop, and terminate the worker.
-      const reason = error instanceof Error ? error.message : String(error);
+      const reason = error instanceof Error ? error.message : stringifyUnknown(error);
       handleWorkerFailure({ kind: 'crashed', reason }, error);
       return;
     }
@@ -662,12 +837,24 @@ const simMcpController: SimMcpController = {
     }
 
     simWorkerController = createSimWorkerController(mainWindow);
+    pushDiagnosticsLog({
+      source: 'main',
+      subsystem: 'sim',
+      severity: 'info',
+      message: 'Simulation started via MCP.',
+    });
     return simWorkerController.getStatus();
   },
   stop: () => {
     const current = simWorkerController?.getStatus();
     simWorkerController?.dispose();
     simWorkerController = undefined;
+    pushDiagnosticsLog({
+      source: 'main',
+      subsystem: 'sim',
+      severity: 'info',
+      message: 'Simulation stopped via MCP.',
+    });
     return current ? { ...current, state: 'stopped' } : buildStoppedSimStatus();
   },
   pause: () => {
@@ -676,6 +863,12 @@ const simMcpController: SimMcpController = {
     }
 
     simWorkerController.pause();
+    pushDiagnosticsLog({
+      source: 'main',
+      subsystem: 'sim',
+      severity: 'info',
+      message: 'Simulation paused via MCP.',
+    });
     return simWorkerController.getStatus();
   },
   resume: () => {
@@ -684,6 +877,12 @@ const simMcpController: SimMcpController = {
     }
 
     simWorkerController.resume();
+    pushDiagnosticsLog({
+      source: 'main',
+      subsystem: 'sim',
+      severity: 'info',
+      message: 'Simulation resumed via MCP.',
+    });
     return simWorkerController.getStatus();
   },
   step: async (steps) => {
@@ -773,6 +972,12 @@ const inputMcpController: InputMcpController = {
   },
 };
 
+const diagnosticsMcpController: DiagnosticsMcpController = {
+  getRendererStatus: () => rendererDiagnosticsStatus,
+  getLogs: () => diagnosticsLogs,
+  getWebGpuHealth: () => webGpuHealthProbe,
+};
+
 function registerIpcHandlers(): void {
   ipcMain.handle(
     IPC_CHANNELS.ping,
@@ -821,6 +1026,61 @@ function registerIpcHandlers(): void {
     // When sim is not running (stopped/crashed/disposing), input events are ignored
     // This is handled by safePostMessage inside sendInputEvent, which checks hasFailed/isDisposing
     simWorkerController?.sendInputEvent(envelope);
+  });
+
+  ipcMain.on(IPC_CHANNELS.rendererDiagnostics, (_event, payload: unknown) => {
+    if (!isRendererDiagnosticsPayload(payload)) {
+      return;
+    }
+
+    const nowMs = Date.now();
+    rendererDiagnosticsStatus = {
+      outputText: payload.outputText,
+      ...(payload.errorBannerText === undefined ? {} : { errorBannerText: payload.errorBannerText }),
+      ...(payload.rendererState === undefined ? {} : { rendererState: payload.rendererState }),
+      updatedAtMs: nowMs,
+    };
+
+    if (payload.webgpu !== undefined) {
+      const previous = webGpuHealthProbe;
+      webGpuHealthProbe = {
+        status: payload.webgpu.status,
+        ...(payload.webgpu.lastLossReason === undefined ? {} : { lastLossReason: payload.webgpu.lastLossReason }),
+        lastEventTimestampMs: nowMs,
+      };
+
+      if (
+        previous.status !== webGpuHealthProbe.status
+        || previous.lastLossReason !== webGpuHealthProbe.lastLossReason
+      ) {
+        const severity: DiagnosticsLogSeverity = webGpuHealthProbe.status === 'lost' ? 'warn' : 'info';
+        pushDiagnosticsLog({
+          source: 'renderer',
+          subsystem: 'webgpu',
+          severity,
+          message: `WebGPU status: ${webGpuHealthProbe.status}`,
+          metadata: {
+            ...(webGpuHealthProbe.lastLossReason === undefined
+              ? {}
+              : { lastLossReason: webGpuHealthProbe.lastLossReason }),
+          },
+        });
+      }
+    }
+  });
+
+  ipcMain.on(IPC_CHANNELS.rendererLog, (_event, payload: unknown) => {
+    if (!isRendererLogPayload(payload)) {
+      return;
+    }
+
+    pushDiagnosticsLog({
+      source: 'renderer',
+      subsystem: payload.subsystem.trim(),
+      severity: payload.severity,
+      message: payload.message,
+      ...(payload.metadata === undefined ? {} : { metadata: payload.metadata }),
+    });
   });
 }
 
@@ -910,7 +1170,17 @@ app
         window: windowMcpController,
         input: inputMcpController,
         asset: assetMcpController,
+        diagnostics: diagnosticsMcpController,
       });
+      if (mcpServer) {
+        pushDiagnosticsLog({
+          source: 'main',
+          subsystem: 'mcp',
+          severity: 'info',
+          message: 'Embedded MCP server started.',
+          metadata: { url: mcpServer.url.toString() },
+        });
+      }
     }
     mainWindow = await createMainWindow();
     simWorkerController = createSimWorkerController(mainWindow);

@@ -5,6 +5,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { CommandPriority, RUNTIME_COMMAND_TYPES } from '@idle-engine/core';
 import type { createControlCommands as CreateControlCommandsFn } from '@idle-engine/controls';
 import { IPC_CHANNELS, SHELL_CONTROL_EVENT_COMMAND_TYPE } from './ipc.js';
+import type { DiagnosticsMcpController } from './mcp/diagnostics-tools.js';
 import type { ShellDesktopMcpServer } from './mcp/mcp-server.js';
 import { SIM_MCP_MAX_STEP_COUNT, type SimMcpController } from './mcp/sim-tools.js';
 
@@ -253,6 +254,64 @@ describe('shell-desktop main process entrypoint', () => {
     await flushMicrotasks();
 
     expect(maybeStartShellDesktopMcpServer).toHaveBeenCalledTimes(1);
+  });
+
+  it('captures renderer diagnostics and structured renderer logs for MCP tools', async () => {
+    process.env.IDLE_ENGINE_ENABLE_MCP_SERVER = '1';
+
+    await import('./main.js');
+    await flushMicrotasks();
+
+    const maybeStartCalls = maybeStartShellDesktopMcpServer.mock.calls as unknown as Array<[
+      { diagnostics?: DiagnosticsMcpController }?,
+    ]>;
+    const diagnostics = maybeStartCalls[0]?.[0]?.diagnostics;
+    if (!diagnostics) {
+      throw new Error('Expected MCP diagnostics controller to be registered');
+    }
+
+    const diagnosticsHandlerCall = ipcMain.on.mock.calls.find(
+      (call) => call[0] === IPC_CHANNELS.rendererDiagnostics,
+    );
+    const diagnosticsHandler = diagnosticsHandlerCall?.[1] as undefined | ((event: unknown, payload: unknown) => void);
+    expect(diagnosticsHandler).toBeTypeOf('function');
+
+    const logHandlerCall = ipcMain.on.mock.calls.find((call) => call[0] === IPC_CHANNELS.rendererLog);
+    const logHandler = logHandlerCall?.[1] as undefined | ((event: unknown, payload: unknown) => void);
+    expect(logHandler).toBeTypeOf('function');
+
+    diagnosticsHandler?.({}, null);
+    logHandler?.({}, null);
+
+    diagnosticsHandler?.({}, {
+      outputText: 'IPC ok\nSim running\nWebGPU ok.',
+      rendererState: 'running',
+      webgpu: { status: 'ok' },
+    });
+    logHandler?.({}, {
+      severity: 'warn',
+      subsystem: 'webgpu',
+      message: 'WebGPU device lost',
+      metadata: { reason: 'test-loss' },
+    });
+
+    expect(diagnostics.getRendererStatus()).toEqual(expect.objectContaining({
+      outputText: 'IPC ok\nSim running\nWebGPU ok.',
+      rendererState: 'running',
+    }));
+    expect(diagnostics.getWebGpuHealth()).toEqual(expect.objectContaining({ status: 'ok' }));
+    expect(diagnostics.getLogs()).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        source: 'renderer',
+        subsystem: 'webgpu',
+        severity: 'warn',
+        message: 'WebGPU device lost',
+      }),
+    ]));
+
+    const windowAllClosedCall = app.on.mock.calls.find((call) => call[0] === 'window-all-closed');
+    const windowAllClosedHandler = windowAllClosedCall?.[1] as undefined | (() => void);
+    windowAllClosedHandler?.();
   });
 
   it('steps simulation in bounded batches and returns status after worker progress', async () => {

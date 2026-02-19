@@ -104,6 +104,46 @@ const FALLBACK_TOOLS = [
     },
   },
   {
+    name: 'renderer.status',
+    description: 'Returns renderer UI diagnostics including output text, banner text, and last renderer state.',
+    inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+  },
+  {
+    name: 'logs.tail',
+    description: 'Returns the latest structured shell-desktop diagnostic logs with optional filters.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        source: { enum: ['main', 'renderer'] },
+        subsystem: { type: 'string', minLength: 1 },
+        severity: { enum: ['debug', 'info', 'warn', 'error'] },
+        limit: { type: 'integer', minimum: 1, maximum: 1000 },
+      },
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'logs.since',
+    description: 'Returns structured shell-desktop diagnostic logs newer than a cursor ID.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        cursor: { type: 'integer', minimum: 0 },
+        source: { enum: ['main', 'renderer'] },
+        subsystem: { type: 'string', minLength: 1 },
+        severity: { enum: ['debug', 'info', 'warn', 'error'] },
+        limit: { type: 'integer', minimum: 1, maximum: 1000 },
+      },
+      required: ['cursor'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'probe.webgpuHealth',
+    description: 'Returns structured WebGPU health state suitable for deterministic assertions.',
+    inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+  },
+  {
     name: 'window.info',
     description: 'Returns basic information about the main window (bounds, url, devtools state).',
     inputSchema: { type: 'object', properties: {}, additionalProperties: false },

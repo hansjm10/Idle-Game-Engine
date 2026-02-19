@@ -157,6 +157,10 @@ describe('shell-desktop MCP gateway', () => {
     expect(toolNames).toContain('health');
     expect(toolNames).toContain('sim.status');
     expect(toolNames).toContain('window.resize');
+    expect(toolNames).toContain('renderer.status');
+    expect(toolNames).toContain('logs.tail');
+    expect(toolNames).toContain('logs.since');
+    expect(toolNames).toContain('probe.webgpuHealth');
 
     const simStep = tools.tools.find((tool) => tool.name === 'sim.step');
     expect(simStep?.inputSchema).toMatchObject({
@@ -168,6 +172,18 @@ describe('shell-desktop MCP gateway', () => {
           maximum: SIM_MCP_MAX_STEP_COUNT,
         },
       },
+    });
+
+    const logsSince = tools.tools.find((tool) => tool.name === 'logs.since');
+    expect(logsSince?.inputSchema).toMatchObject({
+      type: 'object',
+      properties: {
+        cursor: {
+          type: 'integer',
+          minimum: 0,
+        },
+      },
+      required: ['cursor'],
     });
 
     const healthRaw = await client.callTool({ name: 'health', arguments: {} }, CallToolResultSchema);

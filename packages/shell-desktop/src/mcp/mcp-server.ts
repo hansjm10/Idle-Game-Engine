@@ -4,6 +4,8 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { registerAssetTools } from './asset-tools.js';
 import type { AssetMcpController } from './asset-tools.js';
+import { registerDiagnosticsTools } from './diagnostics-tools.js';
+import type { DiagnosticsMcpController } from './diagnostics-tools.js';
 import { registerInputTools } from './input-tools.js';
 import type { InputMcpController } from './input-tools.js';
 import { registerSimTools } from './sim-tools.js';
@@ -22,6 +24,7 @@ type ShellDesktopMcpServerOptions = Readonly<{
   window?: WindowMcpController;
   input?: InputMcpController;
   asset?: AssetMcpController;
+  diagnostics?: DiagnosticsMcpController;
 }>;
 
 const MCP_SERVER_INFO = {
@@ -74,6 +77,7 @@ function createShellDesktopMcpServer(
     window?: WindowMcpController;
     input?: InputMcpController;
     asset?: AssetMcpController;
+    diagnostics?: DiagnosticsMcpController;
   }>,
 ): McpServer {
   const server = new McpServer(MCP_SERVER_INFO);
@@ -110,6 +114,10 @@ function createShellDesktopMcpServer(
     registerAssetTools(server, options.asset);
   }
 
+  if (options.diagnostics) {
+    registerDiagnosticsTools(server, options.diagnostics);
+  }
+
   return server;
 }
 
@@ -123,6 +131,7 @@ export async function startShellDesktopMcpServer(
     window: options.window,
     input: options.input,
     asset: options.asset,
+    diagnostics: options.diagnostics,
   });
   const transport = new StreamableHTTPServerTransport({ enableJsonResponse: true });
 
@@ -267,6 +276,7 @@ export async function maybeStartShellDesktopMcpServer(
     window?: WindowMcpController;
     input?: InputMcpController;
     asset?: AssetMcpController;
+    diagnostics?: DiagnosticsMcpController;
   }> = {},
 ): Promise<ShellDesktopMcpServer | undefined> {
   const argv = options.argv ?? process.argv;
@@ -286,6 +296,7 @@ export async function maybeStartShellDesktopMcpServer(
       window: options.window,
       input: options.input,
       asset: options.asset,
+      diagnostics: options.diagnostics,
     });
   } catch (error: unknown) {
     const isPortBusy = error instanceof Error
@@ -300,6 +311,7 @@ export async function maybeStartShellDesktopMcpServer(
         window: options.window,
         input: options.input,
         asset: options.asset,
+        diagnostics: options.diagnostics,
       });
 
       if (env.NODE_ENV !== 'test') {

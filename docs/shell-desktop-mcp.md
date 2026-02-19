@@ -131,9 +131,14 @@ Behavior:
 
 - `health`: basic health/capabilities snapshot.
 - `sim`: `sim.status`, `sim.start`, `sim.stop`, `sim.pause`, `sim.resume`, `sim.step`, `sim.enqueue`.
+- `renderer`: `renderer.status` (returns `#output` text, optional error banner text, and renderer state snapshot).
+- `logs`: `logs.tail`, `logs.since` (structured logs with `source`, `subsystem`, and `severity` filters).
+- `probe`: `probe.webgpuHealth` (machine-readable WebGPU status, last loss reason, and event timestamp).
 - `window`: `window.info`, `window.resize`, `window.devtools`, `window.screenshot` (bounded, returns base64 PNG).
 - `input`: `input.controlEvent` (reuses `ShellControlEvent` semantics).
 - `asset`: `asset.list`, `asset.read` (scoped to compiled assets root with traversal protection).
+
+Naming note: issue discussions may use underscore examples (`renderer_status`, `logs_since`, `probe_webgpu_health`), but the shell-desktop MCP uses dotted namespaces consistently (`renderer.status`, `logs.since`, `probe.webgpuHealth`).
 
 ## Client setup
 
@@ -176,6 +181,12 @@ Prompt template:
 Prompt template:
 
 > Call `window.info`, open devtools via `window.devtools`, then `sim.status`. If the sim is running, pause it and step 1 frame. Summarize what changed.
+
+### Diagnostics triage
+
+Prompt template:
+
+> Call `renderer.status`, then `logs.tail` filtered to `{ "source": "renderer", "subsystem": "webgpu", "severity": "error" }`, then `probe.webgpuHealth`. Report whether WebGPU is `ok`, `lost`, or `recovered` and include the last loss reason.
 
 ### Content iteration
 

@@ -38,6 +38,16 @@ h1 {
   font-weight: 600;
 }
 
+.error-banner {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(239, 68, 68, 0.7);
+  background: rgba(127, 29, 29, 0.55);
+  color: #fecaca;
+  font-weight: 600;
+}
+
 pre {
   background: rgba(255, 255, 255, 0.06);
   border: 1px solid rgba(255, 255, 255, 0.12);
