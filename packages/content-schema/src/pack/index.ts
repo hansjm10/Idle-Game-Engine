@@ -55,6 +55,7 @@ export type {
   ContentSchemaOptions,
   NormalizedContentPack,
   NormalizedMetadata,
+  NormalizedFontAsset,
   NormalizedResource,
   NormalizedEntity,
   NormalizedGenerator,

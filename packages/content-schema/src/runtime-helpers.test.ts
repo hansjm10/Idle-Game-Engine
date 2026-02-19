@@ -18,6 +18,7 @@ const createDigestInput = (
     version: '1.2.3',
     ...(overrides.metadata ?? {}),
   },
+  fonts: overrides.fonts ?? freezeArray([{ id: 'font.ui' }]),
   resources: overrides.resources ?? freezeArray([{ id: 'resource.a' }]),
   entities: overrides.entities ?? freezeArray([{ id: 'entity.a' }]),
   generators: overrides.generators ?? freezeArray([{ id: 'generator.a' }]),

@@ -4,12 +4,12 @@ import {
 } from '@idle-engine/content-compiler/runtime';
 
 const serialized = {
-  "artifactHash": "e6adf3be76002ed6a97b152add6df56e5d1cc72b617f4a355e109d2755a3dc23",
+  "artifactHash": "a41823751b303b55119a2a62bd12a9eb1930dcc525d3ef261f78daeb5489a267",
   "digest": {
-    "hash": "fnv1a-1dbda158",
+    "hash": "fnv1a-389c08d4",
     "version": 1
   },
-  "formatVersion": 1,
+  "formatVersion": 2,
   "metadata": {
     "authors": [
       "Idle Engine Team"
@@ -281,6 +281,23 @@ const serialized = {
       }
     ],
     "entities": [],
+    "fonts": [
+      {
+        "baseSizePx": 32,
+        "codePointRanges": [
+          [
+            32,
+            126
+          ]
+        ],
+        "id": "sample-pack.ui-font",
+        "msdf": {
+          "pxRange": 4
+        },
+        "source": "fonts/ibm-plex-mono/IBMPlexMono-Regular.ttf",
+        "technique": "msdf"
+      }
+    ],
     "generators": [
       {
         "baseUnlock": {

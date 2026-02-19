@@ -1,0 +1,184 @@
+---
+title: Shell Desktop MCP Guide
+description: Enable and use the embedded MCP server shipped with @idle-engine/shell-desktop
+sidebar_position: 25
+---
+
+# Shell Desktop MCP Guide
+
+The Electron desktop shell (`@idle-engine/shell-desktop`) ships an embedded [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) server for local, developer-only automation.
+
+- Disabled by default.
+- Binds to `127.0.0.1` only.
+- Uses SSE (Server-Sent Events) over HTTP.
+
+## Quickstart
+
+Start the desktop shell with MCP enabled:
+
+```bash
+IDLE_ENGINE_ENABLE_MCP_SERVER=1 pnpm --filter @idle-engine/shell-desktop run start
+```
+
+By default the server listens on port `8570` and prints a line like:
+
+```text
+[shell-desktop] MCP server listening at http://127.0.0.1:8570/mcp/sse
+```
+
+If port `8570` is already taken and you did not explicitly set `IDLE_ENGINE_MCP_PORT`/`--mcp-port`, the shell auto-falls back to `8571`.
+
+### Headless Linux (xpra)
+
+For remote/headless hosts, use the workspace launcher:
+
+```bash
+pnpm shell:desktop:headless
+```
+
+This launcher:
+- starts or reuses an xpra display (`:121` by default),
+- uses an Xorg-backed xpra server by default (`IDLE_ENGINE_XPRA_BACKEND=xorg`) so Linux hosts can use hardware GL instead of llvmpipe,
+- runs Electron with `--no-sandbox` (needed on many rootless hosts),
+- enables the Chromium Vulkan feature (`--enable-features=Vulkan`) for Linux WebGPU adapter bring-up,
+- enables MCP by default (`http://127.0.0.1:8570/mcp/sse`).
+
+Smoke-test the MCP server from the same host:
+
+```bash
+pnpm shell:desktop:mcp:smoke
+```
+
+Stop the xpra session:
+
+```bash
+pnpm shell:desktop:headless:stop
+```
+
+### Fast GPU checks
+
+Use these after launch to confirm hardware bring-up:
+
+Inside Electron DevTools:
+
+```js
+navigator.gpu
+const a = await navigator.gpu.requestAdapter(); a?.name
+```
+
+On the host CLI:
+
+```bash
+vulkaninfo --summary
+```
+
+Expected host signal: `GPU0` should report `Intel(R) Arc(tm) A310 Graphics (DG2)`.
+
+### Configuration
+
+- Enablement:
+  - Env var: `IDLE_ENGINE_ENABLE_MCP_SERVER=1`
+  - Arg: `--enable-mcp-server`
+- Port override:
+  - Env var: `IDLE_ENGINE_MCP_PORT=8571`
+  - Arg: `--mcp-port=8571`
+- Asset root override (for non-sample games):
+  - Env var: `IDLE_ENGINE_COMPILED_ASSETS_ROOT=/abs/path/to/your/content/compiled`
+- Headless gateway mode:
+  - Env var: `IDLE_ENGINE_MCP_GATEWAY_MODE=1` (defaults shell-desktop MCP port to `8571` when not explicitly set)
+
+The endpoint is `/mcp/sse` (with `/mcp` accepted as an alias for streamable-HTTP clients).
+
+## Always-On Gateway (Codex-friendly)
+
+If you want Codex/Cursor MCP startup to succeed even before shell-desktop is running, run the MCP gateway on `8570` and let shell-desktop use `8571`.
+
+Terminal A (keep running):
+
+```bash
+pnpm shell:desktop:mcp:gateway
+```
+
+Background daemon mode (recommended for frequent Codex usage):
+
+```bash
+pnpm shell:desktop:mcp:gateway:daemon:start
+pnpm shell:desktop:mcp:gateway:daemon:status
+pnpm shell:desktop:mcp:gateway:daemon:stop
+```
+
+The daemon stores state in:
+- PID file: `/tmp/idle-engine-shell-desktop-mcp-gateway.pid`
+- Log file: `/tmp/idle-engine-shell-desktop-mcp-gateway.log`
+
+Optional overrides for the gateway:
+- `IDLE_ENGINE_MCP_PORT` (gateway listen port, default `8570`)
+- `IDLE_ENGINE_MCP_BACKEND_PORT` (shell-desktop backend port, default `8571`)
+- `IDLE_ENGINE_MCP_BACKEND_URL` (full backend URL, overrides backend port; must use `http://` loopback)
+
+Terminal B (start shell-desktop later, backend on 8571):
+
+```bash
+pnpm shell:desktop:headless:gateway-backend
+```
+
+Behavior:
+- Gateway on `8570` is always reachable.
+- `health` returns `ok: false` while shell-desktop backend is down.
+- Once shell-desktop comes up on `8571`, the gateway proxies all MCP calls and `health` returns backend `ok: true`.
+
+## Tool surface (MVP)
+
+- `health`: basic health/capabilities snapshot.
+- `sim`: `sim.status`, `sim.start`, `sim.stop`, `sim.pause`, `sim.resume`, `sim.step`, `sim.enqueue`.
+- `window`: `window.info`, `window.resize`, `window.devtools`, `window.screenshot` (bounded, returns base64 PNG).
+- `input`: `input.controlEvent` (reuses `ShellControlEvent` semantics).
+- `asset`: `asset.list`, `asset.read` (scoped to compiled assets root with traversal protection).
+
+## Client setup
+
+### Cursor
+
+Create `.cursor/mcp.json` (repo-local) and point it at the SSE URL:
+
+```json
+{
+  "mcpServers": {
+    "idle-engine-shell-desktop": {
+      "url": "http://127.0.0.1:8570/mcp/sse"
+    }
+  }
+}
+```
+
+Restart Cursor (or reload MCP servers) after editing the file.
+
+### Claude Desktop
+
+Claude Desktop configures remote MCP servers via its UI (Settings → Connectors). Add a custom MCP server that points at:
+
+```text
+http://127.0.0.1:8570/mcp/sse
+```
+
+If your Claude Desktop build does not support remote MCP servers (or refuses `http://localhost` URLs), use Cursor or an SSE→stdio bridge tool and then configure the bridge as a local stdio MCP server in Claude Desktop.
+
+## Example workflows
+
+### Regression testing
+
+Prompt template:
+
+> Start the sim, pause it, step 120 frames, take a screenshot, and report `sim.status` plus the screenshot bytes count.
+
+### Debugging
+
+Prompt template:
+
+> Call `window.info`, open devtools via `window.devtools`, then `sim.status`. If the sim is running, pause it and step 1 frame. Summarize what changed.
+
+### Content iteration
+
+Prompt template:
+
+> List assets under the compiled assets root (limit to the top 25 entries). If you find any JSON content, read one file (max 50KB) and summarize what knobs it exposes. Then enqueue a command that would exercise the change, and step 10 frames.

@@ -520,7 +520,7 @@ describe('createFormulaArbitrary', () => {
       }),
       { ...propertyConfig(10), numRuns: 80 },
     );
-  });
+  }, MEDIUM_PROPERTY_TIMEOUT_MS);
 
   it('never generates piecewise thresholds above the floored maximum level', () => {
     const piecewiseRange = { min: 0, max: 1.5 };

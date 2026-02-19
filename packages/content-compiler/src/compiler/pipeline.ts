@@ -409,6 +409,7 @@ function withSerializedModules(
   pack: SchemaNormalizedContentPack,
 ): NormalizedContentPack {
   const modules: SerializedNormalizedModules = {
+    fonts: pack.fonts,
     resources: pack.resources,
     entities: pack.entities,
     generators: pack.generators,

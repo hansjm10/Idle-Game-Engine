@@ -2,6 +2,9 @@ import {
   CommandPriority,
   IdleEngineRuntime,
   RUNTIME_COMMAND_TYPES,
+  type Command,
+  type InputEventCommandPayload,
+  type RuntimeCommandPayloads,
 } from '@idle-engine/core';
 // eslint-disable-next-line no-restricted-imports -- shell-desktop drives an engine-level test harness that needs access to coordinator + save helpers.
 import {
@@ -20,8 +23,7 @@ import {
 } from '@idle-engine/renderer-contract';
 import { testGameContent, testGameContentArtifactHash } from '@idle-engine/content-test-game';
 import { SHELL_CONTROL_EVENT_COMMAND_TYPE, type ShellControlEvent } from '../ipc.js';
-import type { Command, RuntimeCommandPayloads } from '@idle-engine/core';
-import type { RenderCommandBuffer } from '@idle-engine/renderer-contract';
+import type { AssetId, RenderCommandBuffer } from '@idle-engine/renderer-contract';
 
 export type SimRuntimeOptions = Readonly<{
   stepSizeMs?: number;
@@ -50,11 +52,23 @@ type ShellControlEventCommandPayload = Readonly<{
   event: ShellControlEvent;
 }>;
 
+/**
+ * Demo UI hit-test region (matches buildFrame panel rect).
+ */
+const DEMO_UI_PANEL = {
+  x: 16,
+  y: 16,
+  width: 320,
+  height: 72,
+} as const;
+
 type DemoState = {
   tickCount: number;
   resourceCount: number;
   lastCollectedStep: number | null;
 };
+
+const SAMPLE_FONT_ASSET_ID = 'sample-pack.ui-font' as AssetId;
 
 const clampByte = (value: number): number => Math.min(255, Math.max(0, Math.floor(value)));
 
@@ -189,6 +203,17 @@ function createDemoSimRuntime(options: SimRuntimeOptions = {}): SimRuntime {
           height: meterHeight,
           colorRgba: state.lastCollectedStep === step ? 0x8a_2a_4f_ff : 0x2a_4f_8a_ff,
         },
+        {
+          kind: 'text',
+          passId: 'ui',
+          sortKey: { sortKeyHi: 0, sortKeyLo: 3 },
+          x: panelX + 16,
+          y: panelY + 16,
+          text: `Resources: ${state.resourceCount}`,
+          colorRgba: 0xff_ff_ff_ff,
+          fontAssetId: SAMPLE_FONT_ASSET_ID,
+          fontSizePx: 18,
+        },
       ],
     };
   };
@@ -203,6 +228,36 @@ function createDemoSimRuntime(options: SimRuntimeOptions = {}): SimRuntime {
   });
 
   dispatcher.register(SHELL_CONTROL_EVENT_COMMAND_TYPE, (_payload: ShellControlEventCommandPayload) => undefined);
+
+  dispatcher.register(RUNTIME_COMMAND_TYPES.INPUT_EVENT, (payload: InputEventCommandPayload, context) => {
+    // Fail-fast on unknown schema version (sim worker crashes)
+    if (payload.schemaVersion !== 1) {
+      throw new Error(`Unsupported InputEventCommandPayload schemaVersion: ${payload.schemaVersion}`);
+    }
+
+    const { event } = payload;
+
+    // Only handle pointer mouse-down events for demo UI hit-testing
+    if (event.kind !== 'pointer' || event.intent !== 'mouse-down') {
+      return;
+    }
+
+    // Hit-test against the demo UI panel
+    const { x, y } = event;
+    const inBounds =
+      x >= DEMO_UI_PANEL.x &&
+      x < DEMO_UI_PANEL.x + DEMO_UI_PANEL.width &&
+      y >= DEMO_UI_PANEL.y &&
+      y < DEMO_UI_PANEL.y + DEMO_UI_PANEL.height;
+
+    if (!inBounds) {
+      return;
+    }
+
+    // In-bounds click: trigger the same effect as COLLECT_RESOURCE
+    state.resourceCount += 1;
+    state.lastCollectedStep = context.step;
+  });
 
   const hasCommandHandler = (type: string): boolean => dispatcher.getHandler(type) !== undefined;
 
@@ -223,6 +278,22 @@ function createDemoSimRuntime(options: SimRuntimeOptions = {}): SimRuntime {
   const tick = (deltaMs: number): SimTickResult => {
     frameQueue.length = 0;
     runtime.tick(deltaMs);
+
+    // Check for fatal command execution failures and rethrow them.
+    // This ensures schemaVersion mismatches in INPUT_EVENT handlers crash the worker.
+    const failures = runtime.drainCommandFailures();
+    for (const failure of failures) {
+      if (
+        failure.error.code === 'COMMAND_EXECUTION_FAILED' &&
+        failure.type === RUNTIME_COMMAND_TYPES.INPUT_EVENT
+      ) {
+        const originalError =
+          (failure.error.details as { error?: string } | undefined)?.error ??
+          failure.error.message;
+        throw new Error(originalError);
+      }
+    }
+
     return {
       frames: Array.from(frameQueue),
       nextStep: runtime.getNextExecutableStep(),

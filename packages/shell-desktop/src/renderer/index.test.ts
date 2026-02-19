@@ -79,6 +79,7 @@ describe('shell-desktop renderer entrypoint', () => {
     (globalThis as unknown as { idleEngine?: unknown }).idleEngine = {
       ping: vi.fn(async () => 'pong'),
       sendControlEvent: vi.fn(),
+      sendInputEvent: vi.fn(),
       onFrame: vi.fn(() => vi.fn()),
       onSimStatus: vi.fn(() => vi.fn()),
     };
@@ -217,17 +218,13 @@ describe('shell-desktop renderer entrypoint', () => {
     expect(idleEngine.sendControlEvent).toHaveBeenCalledWith({ intent: 'collect', phase: 'start' });
   });
 
-  it('forwards pointer events with passthrough metadata', async () => {
+  it('sends typed input events for pointer down/up with schemaVersion 1', async () => {
     const idleEngine = (
-      globalThis as unknown as { idleEngine: { sendControlEvent: ReturnType<typeof vi.fn> } }
+      globalThis as unknown as { idleEngine: { sendInputEvent: ReturnType<typeof vi.fn> } }
     ).idleEngine;
 
     await import('./index.js');
     await flushMicrotasks();
-
-    expect(pointerDownHandler).toBeTypeOf('function');
-    expect(pointerUpHandler).toBeTypeOf('function');
-    expect(wheelHandler).toBeTypeOf('function');
 
     pointerDownHandler?.({
       clientX: 30,
@@ -240,6 +237,57 @@ describe('shell-desktop renderer entrypoint', () => {
       metaKey: false,
       shiftKey: true,
     } as PointerEvent);
+
+    expect(idleEngine.sendInputEvent).toHaveBeenCalledWith({
+      schemaVersion: 1,
+      event: {
+        kind: 'pointer',
+        intent: 'mouse-down',
+        phase: 'start',
+        x: 30 - canvasRect.left,
+        y: 45 - canvasRect.top,
+        button: 0,
+        buttons: 1,
+        pointerType: 'mouse',
+        modifiers: { alt: false, ctrl: false, meta: false, shift: true },
+      },
+    });
+
+    pointerUpHandler?.({
+      clientX: 50,
+      clientY: 60,
+      button: 1,
+      buttons: 0,
+      pointerType: 'pen',
+      altKey: false,
+      ctrlKey: false,
+      metaKey: true,
+      shiftKey: false,
+    } as PointerEvent);
+
+    expect(idleEngine.sendInputEvent).toHaveBeenCalledWith({
+      schemaVersion: 1,
+      event: {
+        kind: 'pointer',
+        intent: 'mouse-up',
+        phase: 'end',
+        x: 50 - canvasRect.left,
+        y: 60 - canvasRect.top,
+        button: 1,
+        buttons: 0,
+        pointerType: 'pen',
+        modifiers: { alt: false, ctrl: false, meta: true, shift: false },
+      },
+    });
+  });
+
+  it('sends typed input events for wheel with schemaVersion 1 and finite deltas', async () => {
+    const idleEngine = (
+      globalThis as unknown as { idleEngine: { sendInputEvent: ReturnType<typeof vi.fn> } }
+    ).idleEngine;
+
+    await import('./index.js');
+    await flushMicrotasks();
 
     wheelHandler?.({
       clientX: 40,
@@ -256,43 +304,26 @@ describe('shell-desktop renderer entrypoint', () => {
       shiftKey: false,
     } as WheelEvent);
 
-    expect(idleEngine.sendControlEvent).toHaveBeenCalledWith(
-      expect.objectContaining({
-        intent: 'mouse-down',
-        phase: 'start',
-        metadata: expect.objectContaining({
-          passthrough: true,
-          x: 30 - canvasRect.left,
-          y: 45 - canvasRect.top,
-          button: 0,
-          buttons: 1,
-          pointerType: 'mouse',
-          modifiers: { alt: false, ctrl: false, meta: false, shift: true },
-        }),
-      }),
-    );
-
-    expect(idleEngine.sendControlEvent).toHaveBeenCalledWith(
-      expect.objectContaining({
+    expect(idleEngine.sendInputEvent).toHaveBeenCalledWith({
+      schemaVersion: 1,
+      event: {
+        kind: 'wheel',
         intent: 'mouse-wheel',
         phase: 'repeat',
-        metadata: expect.objectContaining({
-          passthrough: true,
-          x: 40 - canvasRect.left,
-          y: 55 - canvasRect.top,
-          deltaX: 1,
-          deltaY: 2,
-          deltaZ: 0,
-          deltaMode: 0,
-          modifiers: { alt: false, ctrl: true, meta: false, shift: false },
-        }),
-      }),
-    );
+        x: 40 - canvasRect.left,
+        y: 55 - canvasRect.top,
+        deltaX: 1,
+        deltaY: 2,
+        deltaZ: 0,
+        deltaMode: 0,
+        modifiers: { alt: false, ctrl: true, meta: false, shift: false },
+      },
+    });
   });
 
   it('coalesces pointer move events to one per frame', async () => {
     const idleEngine = (
-      globalThis as unknown as { idleEngine: { sendControlEvent: ReturnType<typeof vi.fn> } }
+      globalThis as unknown as { idleEngine: { sendInputEvent: ReturnType<typeof vi.fn> } }
     ).idleEngine;
 
     await import('./index.js');
@@ -324,31 +355,33 @@ describe('shell-desktop renderer entrypoint', () => {
       shiftKey: false,
     } as PointerEvent);
 
-    expect(idleEngine.sendControlEvent).not.toHaveBeenCalled();
+    expect(idleEngine.sendInputEvent).not.toHaveBeenCalled();
 
     const rafEntries = Array.from(rafCallbacks.entries());
     const [moveId, moveCallback] = rafEntries[rafEntries.length - 1] as [number, FrameRequestCallback];
     rafCallbacks.delete(moveId);
     moveCallback(0);
 
-    expect(idleEngine.sendControlEvent).toHaveBeenCalledTimes(1);
-    expect(idleEngine.sendControlEvent).toHaveBeenCalledWith(
-      expect.objectContaining({
+    expect(idleEngine.sendInputEvent).toHaveBeenCalledTimes(1);
+    expect(idleEngine.sendInputEvent).toHaveBeenCalledWith({
+      schemaVersion: 1,
+      event: {
+        kind: 'pointer',
         intent: 'mouse-move',
         phase: 'repeat',
-        metadata: expect.objectContaining({
-          passthrough: true,
-          x: 36 - canvasRect.left,
-          y: 50 - canvasRect.top,
-          pointerType: 'mouse',
-        }),
-      }),
-    );
+        x: 36 - canvasRect.left,
+        y: 50 - canvasRect.top,
+        button: 0,
+        buttons: 1,
+        pointerType: 'mouse',
+        modifiers: { alt: false, ctrl: false, meta: false, shift: false },
+      },
+    });
   });
 
-  it('ignores empty pointer move flushes and forwards pointer-up events', async () => {
+  it('ignores empty pointer move flushes and sends pointer-up via sendInputEvent', async () => {
     const idleEngine = (
-      globalThis as unknown as { idleEngine: { sendControlEvent: ReturnType<typeof vi.fn> } }
+      globalThis as unknown as { idleEngine: { sendInputEvent: ReturnType<typeof vi.fn> } }
     ).idleEngine;
 
     await import('./index.js');
@@ -373,9 +406,9 @@ describe('shell-desktop renderer entrypoint', () => {
     rafCallbacks.delete(moveId);
     moveCallback(0);
 
-    expect(idleEngine.sendControlEvent).toHaveBeenCalledTimes(1);
+    expect(idleEngine.sendInputEvent).toHaveBeenCalledTimes(1);
     moveCallback(0);
-    expect(idleEngine.sendControlEvent).toHaveBeenCalledTimes(1);
+    expect(idleEngine.sendInputEvent).toHaveBeenCalledTimes(1);
 
     expect(pointerUpHandler).toBeTypeOf('function');
     pointerUpHandler?.({
@@ -390,21 +423,20 @@ describe('shell-desktop renderer entrypoint', () => {
       shiftKey: false,
     } as PointerEvent);
 
-    expect(idleEngine.sendControlEvent).toHaveBeenCalledWith(
-      expect.objectContaining({
+    expect(idleEngine.sendInputEvent).toHaveBeenCalledWith({
+      schemaVersion: 1,
+      event: {
+        kind: 'pointer',
         intent: 'mouse-up',
         phase: 'end',
-        metadata: expect.objectContaining({
-          passthrough: true,
-          x: 50 - canvasRect.left,
-          y: 60 - canvasRect.top,
-          button: 1,
-          buttons: 0,
-          pointerType: 'pen',
-          modifiers: { alt: false, ctrl: false, meta: true, shift: false },
-        }),
-      }),
-    );
+        x: 50 - canvasRect.left,
+        y: 60 - canvasRect.top,
+        button: 1,
+        buttons: 0,
+        pointerType: 'pen',
+        modifiers: { alt: false, ctrl: false, meta: true, shift: false },
+      },
+    });
   });
 
   it('cancels pending pointer move raf callbacks on unload', async () => {
@@ -483,7 +515,7 @@ describe('shell-desktop renderer entrypoint', () => {
     beforeUnloadHandler?.();
   });
 
-  it('uses the latest frame values in fallback render buffers', async () => {
+  it('strips image/text draws until renderer assets are loaded', async () => {
     let frameListener: ((frame: unknown) => void) | undefined;
 
     const idleEngine = (
@@ -499,49 +531,226 @@ describe('shell-desktop renderer entrypoint', () => {
       return vi.fn();
     });
 
-    vi.doMock('@idle-engine/renderer-contract', () => {
-      let injected = false;
+    await import('./index.js');
+    await flushMicrotasks();
 
-      return {
-        get RENDERER_CONTRACT_SCHEMA_VERSION() {
-          if (!injected) {
-            injected = true;
-            frameListener?.({ frame: { step: 123, simTimeMs: 456 } });
-          }
-          return 1;
-        },
-      };
+    const frame = {
+      frame: { step: 1, simTimeMs: 2 },
+      draws: [
+        { kind: 'image' },
+        'keep-me',
+        { kind: 'text' },
+        { kind: 'rect', colorRgba: 0xff_ff_ff_ff },
+      ],
+    };
+    frameListener?.(frame);
+
+    const renderer = (await createWebGpuRenderer.mock.results[0]?.value) as unknown as {
+      render: ReturnType<typeof vi.fn>;
+    };
+
+    const [id, callback] = rafCallbacks.entries().next().value as [number, FrameRequestCallback];
+    rafCallbacks.delete(id);
+    callback(0);
+
+    expect(frame.draws).toHaveLength(4);
+    expect(renderer.render).toHaveBeenCalledTimes(1);
+
+    const rendered = renderer.render.mock.calls[0]?.[0] as { draws?: unknown };
+    expect(Array.isArray(rendered.draws)).toBe(true);
+    expect((rendered.draws as unknown[]).map((draw) => (draw as { kind?: string })?.kind)).not.toContain('image');
+    expect((rendered.draws as unknown[]).map((draw) => (draw as { kind?: string })?.kind)).not.toContain('text');
+    expect(rendered.draws).toHaveLength(2);
+    expect((rendered.draws as unknown[])[0]).toBe('keep-me');
+    expect((rendered.draws as unknown[])[1]).toMatchObject({ kind: 'rect' });
+  });
+
+  it('loads font assets and renders text draws once assets are loaded', async () => {
+    let frameListener: ((frame: unknown) => void) | undefined;
+    let loadedFont: unknown;
+
+    const renderer = {
+      loadAssets: vi.fn(async (_manifest: unknown, loaders: { loadFont: (assetId: string, contentHash: string) => Promise<unknown> }) => {
+        loadedFont = await loaders.loadFont('ui-font', 'deadbeef');
+      }),
+      render: vi.fn(),
+      resize: vi.fn(),
+      dispose: vi.fn(),
+    };
+
+    createWebGpuRenderer.mockResolvedValueOnce(renderer);
+
+    const idleEngine = (
+      globalThis as unknown as {
+        idleEngine: {
+          onFrame: ReturnType<typeof vi.fn>;
+          readAsset: ReturnType<typeof vi.fn>;
+        };
+      }
+    ).idleEngine;
+
+    idleEngine.onFrame.mockImplementation((handler: (frame: unknown) => void) => {
+      frameListener = handler;
+      return vi.fn();
     });
+
+    idleEngine.readAsset = vi.fn(async (url: string) => {
+      if (url.endsWith('renderer-assets.manifest.json')) {
+        return new TextEncoder()
+          .encode(JSON.stringify({ schemaVersion: 4, assets: [{ id: 'ui-font', kind: 'font', contentHash: 'deadbeef' }] }))
+          .buffer;
+      }
+      if (url.includes('/fonts/ui-font/font.json')) {
+        return new TextEncoder()
+          .encode(
+            JSON.stringify({
+              schemaVersion: 1,
+              id: 'ui-font',
+              technique: 'msdf',
+              baseFontSizePx: 42,
+              lineHeightPx: 50,
+              glyphs: [
+                null,
+                {
+                  codePoint: 65,
+                  x: 0,
+                  y: 0,
+                  width: 4,
+                  height: 5,
+                  xOffsetPx: 0,
+                  yOffsetPx: 0,
+                  xAdvancePx: 6,
+                },
+              ],
+              fallbackCodePoint: 65,
+              msdf: { pxRange: 3 },
+            }),
+          )
+          .buffer;
+      }
+      if (url.includes('/fonts/ui-font/atlas.png')) {
+        return new Uint8Array([1, 2, 3]).buffer;
+      }
+      throw new Error(`Unexpected asset read: ${url}`);
+    });
+
+    const bitmap = { kind: 'bitmap' };
+    (globalThis as unknown as { createImageBitmap?: unknown }).createImageBitmap = vi.fn(async () => bitmap);
 
     try {
       await import('./index.js');
       await flushMicrotasks();
 
-      const renderer = (await createWebGpuRenderer.mock.results[0]?.value) as unknown as {
-        render: ReturnType<typeof vi.fn>;
+      expect(renderer.loadAssets).toHaveBeenCalledTimes(1);
+      expect(loadedFont).toMatchObject({
+        image: bitmap,
+        baseFontSizePx: 42,
+        lineHeightPx: 50,
+        fallbackCodePoint: 65,
+        technique: 'msdf',
+        msdf: { pxRange: 3 },
+      });
+      expect((loadedFont as { glyphs?: unknown })?.glyphs).toHaveLength(1);
+
+      const frame = {
+        frame: { step: 7, simTimeMs: 112 },
+        draws: [{ kind: 'text', content: 'hello' }],
       };
+      frameListener?.(frame);
 
       const [id, callback] = rafCallbacks.entries().next().value as [number, FrameRequestCallback];
       rafCallbacks.delete(id);
       callback(0);
 
       expect(renderer.render).toHaveBeenCalledTimes(1);
-      expect(renderer.render).toHaveBeenCalledWith(
-        expect.objectContaining({
-          frame: expect.objectContaining({
-            step: 123,
-            simTimeMs: 456,
-          }),
-        }),
-      );
+      const rendered = renderer.render.mock.calls[0]?.[0] as { draws?: unknown };
+      expect(rendered.draws).toEqual([{ kind: 'text', content: 'hello' }]);
     } finally {
-      vi.doUnmock('@idle-engine/renderer-contract');
+      delete (globalThis as unknown as { createImageBitmap?: unknown }).createImageBitmap;
     }
   });
 
-  it('uses the latest camera values in fallback render buffers', async () => {
-    let frameListener: ((frame: unknown) => void) | undefined;
+  it('loads font assets with encoded ids containing reserved characters', async () => {
+    let loadedFont: unknown;
+    const assetId = 'ui/font:100%';
+    const encodedAssetId = encodeURIComponent(encodeURIComponent(assetId));
 
+    const renderer = {
+      loadAssets: vi.fn(async (_manifest: unknown, loaders: { loadFont: (id: string, contentHash: string) => Promise<unknown> }) => {
+        loadedFont = await loaders.loadFont(assetId, 'deadbeef');
+      }),
+      render: vi.fn(),
+      resize: vi.fn(),
+      dispose: vi.fn(),
+    };
+
+    createWebGpuRenderer.mockResolvedValueOnce(renderer);
+
+    const idleEngine = (
+      globalThis as unknown as {
+        idleEngine: {
+          onFrame: ReturnType<typeof vi.fn>;
+          readAsset: ReturnType<typeof vi.fn>;
+        };
+      }
+    ).idleEngine;
+
+    idleEngine.onFrame.mockImplementation((_handler: (frame: unknown) => void) => vi.fn());
+
+    idleEngine.readAsset = vi.fn(async (url: string) => {
+      if (url.endsWith('renderer-assets.manifest.json')) {
+        return new TextEncoder()
+          .encode(JSON.stringify({ schemaVersion: 4, assets: [{ id: assetId, kind: 'font', contentHash: 'deadbeef' }] }))
+          .buffer;
+      }
+      if (url.includes(`/fonts/${encodedAssetId}/font.json`)) {
+        return new TextEncoder()
+          .encode(
+            JSON.stringify({
+              schemaVersion: 1,
+              id: assetId,
+              technique: 'msdf',
+              baseFontSizePx: 42,
+              lineHeightPx: 50,
+              glyphs: [],
+              msdf: { pxRange: 3 },
+            }),
+          )
+          .buffer;
+      }
+      if (url.includes(`/fonts/${encodedAssetId}/atlas.png`)) {
+        return new Uint8Array([1, 2, 3]).buffer;
+      }
+      throw new Error(`Unexpected asset read: ${url}`);
+    });
+
+    const bitmap = { kind: 'bitmap' };
+    (globalThis as unknown as { createImageBitmap?: unknown }).createImageBitmap = vi.fn(async () => bitmap);
+
+    try {
+      await import('./index.js');
+      await flushMicrotasks();
+
+      expect(renderer.loadAssets).toHaveBeenCalledTimes(1);
+      expect(loadedFont).toMatchObject({
+        image: bitmap,
+        baseFontSizePx: 42,
+        lineHeightPx: 50,
+        technique: 'msdf',
+        msdf: { pxRange: 3 },
+      });
+      expect(idleEngine.readAsset).toHaveBeenCalledWith(
+        expect.stringContaining(`/fonts/${encodedAssetId}/font.json`),
+      );
+      expect(idleEngine.readAsset).toHaveBeenCalledWith(
+        expect.stringContaining(`/fonts/${encodedAssetId}/atlas.png`),
+      );
+    } finally {
+      delete (globalThis as unknown as { createImageBitmap?: unknown }).createImageBitmap;
+    }
+  });
+
+  it('uses the latest frame values in fallback render buffers', async () => {
     const idleEngine = (
       globalThis as unknown as {
         idleEngine: {
@@ -551,47 +760,65 @@ describe('shell-desktop renderer entrypoint', () => {
     ).idleEngine;
 
     idleEngine.onFrame.mockImplementation((handler: (frame: unknown) => void) => {
-      frameListener = handler;
+      handler({ frame: { step: 123, simTimeMs: 456 } });
       return vi.fn();
     });
 
-    vi.doMock('@idle-engine/renderer-contract', () => {
-      let injected = false;
+    await import('./index.js');
+    await flushMicrotasks();
 
-      return {
-        get RENDERER_CONTRACT_SCHEMA_VERSION() {
-          if (!injected) {
-            injected = true;
-            frameListener?.({
-              frame: { step: 7, simTimeMs: 112 },
-              scene: { camera: { x: 12, y: 34, zoom: 2 } },
-            });
-          }
-          return 1;
-        },
-      };
+    const renderer = (await createWebGpuRenderer.mock.results[0]?.value) as unknown as {
+      render: ReturnType<typeof vi.fn>;
+    };
+
+    const [id, callback] = rafCallbacks.entries().next().value as [number, FrameRequestCallback];
+    rafCallbacks.delete(id);
+    callback(0);
+
+    expect(renderer.render).toHaveBeenCalledTimes(1);
+    expect(renderer.render).toHaveBeenCalledWith(
+      expect.objectContaining({
+        frame: expect.objectContaining({
+          step: 123,
+          simTimeMs: 456,
+        }),
+      }),
+    );
+  });
+
+  it('uses the latest camera values in fallback render buffers', async () => {
+    const idleEngine = (
+      globalThis as unknown as {
+        idleEngine: {
+          onFrame: ReturnType<typeof vi.fn>;
+        };
+      }
+    ).idleEngine;
+
+    idleEngine.onFrame.mockImplementation((handler: (frame: unknown) => void) => {
+      handler({
+        frame: { step: 7, simTimeMs: 112 },
+        scene: { camera: { x: 12, y: 34, zoom: 2 } },
+      });
+      return vi.fn();
     });
 
-    try {
-      await import('./index.js');
-      await flushMicrotasks();
+    await import('./index.js');
+    await flushMicrotasks();
 
-      const renderer = (await createWebGpuRenderer.mock.results[0]?.value) as unknown as {
-        render: ReturnType<typeof vi.fn>;
-      };
+    const renderer = (await createWebGpuRenderer.mock.results[0]?.value) as unknown as {
+      render: ReturnType<typeof vi.fn>;
+    };
 
-      const [id, callback] = rafCallbacks.entries().next().value as [number, FrameRequestCallback];
-      rafCallbacks.delete(id);
-      callback(0);
+    const [id, callback] = rafCallbacks.entries().next().value as [number, FrameRequestCallback];
+    rafCallbacks.delete(id);
+    callback(0);
 
-      expect(renderer.render).toHaveBeenCalledWith(
-        expect.objectContaining({
-          scene: { camera: { x: 12, y: 34, zoom: 2 } },
-        }),
-      );
-    } finally {
-      vi.doUnmock('@idle-engine/renderer-contract');
-    }
+    expect(renderer.render).toHaveBeenCalledWith(
+      expect.objectContaining({
+        scene: { camera: { x: 12, y: 34, zoom: 2 } },
+      }),
+    );
   });
 
   it('renders IPC errors to the output view', async () => {

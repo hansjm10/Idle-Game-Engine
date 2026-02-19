@@ -4,12 +4,12 @@ import {
 } from '@idle-engine/content-compiler/runtime';
 
 const serialized = {
-  "artifactHash": "23d7fdc3c2d00a9644a8768b3b23c9df6f7ea62b05bd51e5b56fbb4bffde2505",
+  "artifactHash": "82c274ebfbec918966b0197d02d059697511e186e5d50e619cd2036e708d3a42",
   "digest": {
-    "hash": "fnv1a-86633006",
+    "hash": "fnv1a-2d2b4610",
     "version": 1
   },
-  "formatVersion": 1,
+  "formatVersion": 2,
   "metadata": {
     "authors": [
       "Idle Engine Team"
@@ -992,6 +992,7 @@ const serialized = {
         "visible": true
       }
     ],
+    "fonts": [],
     "generators": [
       {
         "baseUnlock": {

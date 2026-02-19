@@ -74,6 +74,27 @@ describe('isModuleNotFoundError', () => {
 
     expect(isModuleNotFoundError(error, packageName)).toBe(true);
   });
+
+  it('falls back when custom toString throws', () => {
+    const error = {
+      code: 'ERR_MODULE_NOT_FOUND',
+      toString: () => {
+        throw new Error('boom');
+      },
+      value: packageName,
+    };
+
+    expect(isModuleNotFoundError(error, packageName)).toBe(true);
+  });
+
+  it('returns false when error cannot be stringified', () => {
+    const error: Record<string, unknown> = {
+      code: 'ERR_MODULE_NOT_FOUND',
+    };
+    error.self = error;
+
+    expect(isModuleNotFoundError(error, packageName)).toBe(false);
+  });
 });
 
 // ============================================================================
@@ -357,4 +378,10 @@ describe('loadContentCompiler', () => {
       expect.objectContaining({ cwd: '/custom/root' }),
     );
   });
+
+  it('uses the default importer when no dependencies are provided', async () => {
+    const result = await loadContentCompiler();
+
+    expect(result).toHaveProperty('compileWorkspacePacks');
+  }, 15000);
 });

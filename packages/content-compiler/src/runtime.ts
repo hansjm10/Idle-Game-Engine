@@ -7,8 +7,8 @@ import {
   type NormalizedContentPack,
   type RehydrateOptions,
   type SerializedContentDigest,
-  type SerializedNormalizedContentPack,
   type SerializedNormalizedModules,
+  type SupportedSerializedNormalizedContentPack,
 } from './types.js';
 
 type LookupKey = Extract<keyof NormalizedContentPack['lookup'], string>;
@@ -55,6 +55,7 @@ function cloneDigest(digest: SerializedContentDigest): SerializedContentDigest {
 }
 
 const LOOKUP_PROPERTY: Record<ModuleName, LookupKey> = {
+  fonts: 'fonts',
   resources: 'resources',
   entities: 'entities',
   generators: 'generators',
@@ -68,6 +69,7 @@ const LOOKUP_PROPERTY: Record<ModuleName, LookupKey> = {
 };
 
 const SERIALIZED_LOOKUP_PROPERTY: Record<ModuleName, SerializedLookupKey> = {
+  fonts: 'fontById',
   resources: 'resourceById',
   entities: 'entityById',
   generators: 'generatorById',
@@ -166,6 +168,7 @@ function resolveModulesObject(
   packModules: SerializedNormalizedModules,
 ): SerializedNormalizedModules {
   return Object.freeze({
+    fonts: packModules.fonts,
     resources: packModules.resources,
     entities: packModules.entities,
     generators: packModules.generators,
@@ -179,17 +182,54 @@ function resolveModulesObject(
   });
 }
 
+function normalizeSerializedModules(
+  serialized: SupportedSerializedNormalizedContentPack,
+): SerializedNormalizedModules {
+  const formatVersion = serialized.formatVersion;
+
+  if (formatVersion === SERIALIZED_PACK_FORMAT_VERSION) {
+    return serialized.modules;
+  }
+
+  if (formatVersion === 1) {
+    return {
+      fonts:
+        serialized.modules.fonts ??
+        (Object.freeze([]) as SerializedNormalizedModules['fonts']),
+      resources: serialized.modules.resources,
+      entities: serialized.modules.entities,
+      generators: serialized.modules.generators,
+      upgrades: serialized.modules.upgrades,
+      metrics: serialized.modules.metrics,
+      achievements: serialized.modules.achievements,
+      automations: serialized.modules.automations,
+      transforms: serialized.modules.transforms,
+      prestigeLayers: serialized.modules.prestigeLayers,
+      runtimeEvents: serialized.modules.runtimeEvents,
+    };
+  }
+
+  throw new Error(
+    `Unsupported serialized content pack format ${formatVersion}. Expected ${SERIALIZED_PACK_FORMAT_VERSION}.`,
+  );
+}
+
 export function rehydrateNormalizedPack(
-  serialized: SerializedNormalizedContentPack,
+  serialized: SupportedSerializedNormalizedContentPack,
   options?: RehydrateOptions,
 ): NormalizedContentPack {
-  if (serialized.formatVersion !== SERIALIZED_PACK_FORMAT_VERSION) {
+  const formatVersion = serialized.formatVersion;
+
+  if (
+    formatVersion !== SERIALIZED_PACK_FORMAT_VERSION &&
+    formatVersion !== 1
+  ) {
     throw new Error(
-      `Unsupported serialized content pack format ${serialized.formatVersion}. Expected ${SERIALIZED_PACK_FORMAT_VERSION}.`,
+      `Unsupported serialized content pack format ${formatVersion}. Expected ${SERIALIZED_PACK_FORMAT_VERSION}.`,
     );
   }
 
-  const clonedModules = cloneModuleArrays(serialized.modules);
+  const clonedModules = cloneModuleArrays(normalizeSerializedModules(serialized));
   const packId = serialized.metadata.id;
   const { lookup, serializedLookup } = createLookupRecords(clonedModules, packId);
   const digestInput = {
@@ -235,6 +275,7 @@ export function rehydrateNormalizedPack(
 
   const pack: NormalizedContentPack = Object.freeze({
     metadata: serialized.metadata,
+    fonts: clonedModules.fonts,
     resources: clonedModules.resources,
     entities: clonedModules.entities,
     generators: clonedModules.generators,

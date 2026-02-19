@@ -1,4 +1,14 @@
-# Ensure executable scripts work on Unix/WSL (prevents "/usr/bin/env: bash\r" errors).
+# Prevent CRLF in shebang-driven scripts (WSL can interpret `bash\r`).
 *.sh text eol=lf
 *.mjs text eol=lf
 tools/**/*.ts text eol=lf
+
+# Node tooling scripts are sometimes executed directly via shebang.
+tools/scripts/*.mjs text eol=lf
+packages/content-schema/benchmarks/*.mjs text eol=lf
+
+# TS entrypoints executed via `tsx` shebang.
+tools/runtime-sim/src/index.ts text eol=lf
+tools/economy-verification/src/index.ts text eol=lf
+tools/content-schema-cli/src/compile.ts text eol=lf
+tools/content-schema-cli/src/generate.ts text eol=lf

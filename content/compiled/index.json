@@ -6,9 +6,9 @@
       "version": "0.3.0",
       "digest": {
         "version": 1,
-        "hash": "fnv1a-1dbda158"
+        "hash": "fnv1a-389c08d4"
       },
-      "artifactHash": "e6adf3be76002ed6a97b152add6df56e5d1cc72b617f4a355e109d2755a3dc23",
+      "artifactHash": "a41823751b303b55119a2a62bd12a9eb1930dcc525d3ef261f78daeb5489a267",
       "warnings": [],
       "balance": {
         "warnings": [],
@@ -32,9 +32,9 @@
       "version": "0.1.0",
       "digest": {
         "version": 1,
-        "hash": "fnv1a-86633006"
+        "hash": "fnv1a-2d2b4610"
       },
-      "artifactHash": "23d7fdc3c2d00a9644a8768b3b23c9df6f7ea62b05bd51e5b56fbb4bffde2505",
+      "artifactHash": "82c274ebfbec918966b0197d02d059697511e186e5d50e619cd2036e708d3a42",
       "warnings": [],
       "balance": {
         "warnings": [

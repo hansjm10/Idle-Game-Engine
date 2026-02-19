@@ -58,6 +58,18 @@ export type {
 } from './command.js';
 
 // ---------------------------------------------------------------------------
+// Input events (shell -> runtime typed input contracts)
+// ---------------------------------------------------------------------------
+
+export type {
+  InputEvent,
+  InputEventCommandPayload,
+  InputEventModifiers,
+  PointerInputEvent,
+  WheelInputEvent,
+} from './input-event.js';
+
+// ---------------------------------------------------------------------------
 // Events (runtime -> presentation)
 // ---------------------------------------------------------------------------
 

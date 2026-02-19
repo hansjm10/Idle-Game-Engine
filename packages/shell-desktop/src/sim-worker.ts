@@ -1,76 +1,11 @@
 import { parentPort } from 'node:worker_threads';
 import { createSimRuntime } from './sim/sim-runtime.js';
-import type { Command } from '@idle-engine/core';
-import type { RenderCommandBuffer } from '@idle-engine/renderer-contract';
 import type { SimRuntime } from './sim/sim-runtime.js';
-
-type WorkerInitMessage = Readonly<{
-  kind: 'init';
-  stepSizeMs?: number;
-  maxStepsPerFrame?: number;
-}>;
-
-type WorkerTickMessage = Readonly<{
-  kind: 'tick';
-  deltaMs: number;
-}>;
-
-type WorkerEnqueueCommandsMessage = Readonly<{
-  kind: 'enqueueCommands';
-  commands: readonly Command[];
-}>;
-
-type WorkerSerializeMessage = Readonly<{
-  kind: 'serialize';
-  requestId: string;
-}>;
-
-type WorkerHydrateMessage = Readonly<{
-  kind: 'hydrate';
-  requestId: string;
-  save: unknown;
-}>;
-
-type WorkerReadyMessage = Readonly<{
-  kind: 'ready';
-  stepSizeMs: number;
-  nextStep: number;
-}>;
-
-type WorkerFrameMessage = Readonly<{
-  kind: 'frame';
-  frame?: RenderCommandBuffer;
-  droppedFrames: number;
-  nextStep: number;
-}>;
-
-type WorkerErrorMessage = Readonly<{
-  kind: 'error';
-  error: string;
-}>;
-
-type WorkerSerializedMessage = Readonly<{
-  kind: 'serialized';
-  requestId: string;
-  save?: unknown;
-  error?: string;
-}>;
-
-type WorkerHydratedMessage = Readonly<{
-  kind: 'hydrated';
-  requestId: string;
-  success: boolean;
-  nextStep?: number;
-  stepSizeMs?: number;
-  error?: string;
-}>;
-
-type WorkerOutboundMessage =
-  | WorkerReadyMessage
-  | WorkerFrameMessage
-  | WorkerSerializedMessage
-  | WorkerHydratedMessage
-  | WorkerErrorMessage;
+import type {
+  SimWorkerHydrateMessage,
+  SimWorkerOutboundMessage,
+  SimWorkerSerializeMessage,
+} from './sim/worker-protocol.js';
 
 if (!parentPort) {
   throw new Error('shell-desktop sim worker requires parentPort');
@@ -91,9 +26,12 @@ const ensureRuntime = (
   return runtime;
 };
 
-const emit = (message: WorkerOutboundMessage): void => {
+const emit = (message: SimWorkerOutboundMessage): void => {
   parentPort?.postMessage(message);
 };
+
+const isFiniteAtLeastOne = (value: unknown): value is number =>
+  typeof value === 'number' && Number.isFinite(value) && value >= 1;
 
 parentPort.on('message', (message: unknown) => {
   try {
@@ -103,7 +41,20 @@ parentPort.on('message', (message: unknown) => {
 
     const kind = (message as { kind?: unknown }).kind;
     if (kind === 'init') {
-      const init = message as WorkerInitMessage;
+      const init = message as { stepSizeMs?: unknown; maxStepsPerFrame?: unknown };
+
+      // Validate stepSizeMs
+      if (!isFiniteAtLeastOne(init.stepSizeMs)) {
+        emit({ kind: 'error', error: 'protocol:init invalid stepSizeMs' });
+        return;
+      }
+
+      // Validate maxStepsPerFrame
+      if (!isFiniteAtLeastOne(init.maxStepsPerFrame)) {
+        emit({ kind: 'error', error: 'protocol:init invalid maxStepsPerFrame' });
+        return;
+      }
+
       runtimeOptions = {
         stepSizeMs: init.stepSizeMs,
         maxStepsPerFrame: init.maxStepsPerFrame,
@@ -118,8 +69,8 @@ parentPort.on('message', (message: unknown) => {
     }
 
     if (kind === 'tick') {
-      const tick = message as WorkerTickMessage;
-      if (!Number.isFinite(tick.deltaMs)) {
+      const tick = message as { deltaMs?: unknown };
+      if (typeof tick.deltaMs !== 'number' || !Number.isFinite(tick.deltaMs)) {
         return;
       }
       const activeRuntime = ensureRuntime();
@@ -135,13 +86,15 @@ parentPort.on('message', (message: unknown) => {
     }
 
     if (kind === 'enqueueCommands') {
-      const payload = message as WorkerEnqueueCommandsMessage;
-      ensureRuntime().enqueueCommands(payload.commands);
+      const payload = message as { commands?: unknown };
+      if (Array.isArray(payload.commands)) {
+        ensureRuntime().enqueueCommands(payload.commands);
+      }
       return;
     }
 
     if (kind === 'serialize') {
-      const request = message as WorkerSerializeMessage;
+      const request = message as SimWorkerSerializeMessage;
       const requestId = request.requestId;
       if (typeof requestId !== 'string' || requestId.length === 0) {
         return;
@@ -162,7 +115,7 @@ parentPort.on('message', (message: unknown) => {
     }
 
     if (kind === 'hydrate') {
-      const request = message as WorkerHydrateMessage;
+      const request = message as SimWorkerHydrateMessage;
       const requestId = request.requestId;
       if (typeof requestId !== 'string' || requestId.length === 0) {
         return;

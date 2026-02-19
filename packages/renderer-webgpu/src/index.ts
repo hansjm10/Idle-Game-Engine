@@ -1,6 +1,7 @@
 export type {
   WebGpuBitmapFont,
   WebGpuBitmapFontGlyph,
+  WebGpuFontTechnique,
   WebGpuRenderer,
   WebGpuRendererAssets,
   WebGpuRendererAtlasState,

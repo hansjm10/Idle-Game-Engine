@@ -1,4 +1,10 @@
-import type { IdleEngineApi, IpcInvokeMap, ShellFramePayload, ShellSimStatusPayload } from './ipc.js';
+import type {
+  IdleEngineApi,
+  IpcInvokeMap,
+  ShellFramePayload,
+  ShellInputEventEnvelope,
+  ShellSimStatusPayload,
+} from './ipc.js';
 
 const electron = require('electron') as typeof import('electron');
 
@@ -8,7 +14,9 @@ const IDLE_ENGINE_API_KEY = 'idleEngine' as const;
 
 const IPC_CHANNELS = {
   ping: 'idle-engine:ping',
+  readAsset: 'idle-engine:read-asset',
   controlEvent: 'idle-engine:control-event',
+  inputEvent: 'idle-engine:input-event',
   frame: 'idle-engine:frame',
   simStatus: 'idle-engine:sim-status',
 } as const;
@@ -25,8 +33,12 @@ const idleEngineApi: IdleEngineApi = {
     const response = await invoke(IPC_CHANNELS.ping, { message });
     return response.message;
   },
+  readAsset: async (url) => invoke(IPC_CHANNELS.readAsset, { url }),
   sendControlEvent: (event) => {
     ipcRenderer.send(IPC_CHANNELS.controlEvent, event);
+  },
+  sendInputEvent: (envelope: ShellInputEventEnvelope) => {
+    ipcRenderer.send(IPC_CHANNELS.inputEvent, envelope);
   },
   onFrame: (handler) => {
     const listener = (_event: unknown, frame: unknown) => {

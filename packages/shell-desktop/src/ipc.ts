@@ -1,10 +1,13 @@
+import type { InputEvent } from '@idle-engine/core';
 import type { RenderCommandBuffer } from '@idle-engine/renderer-contract';
 
 export const IDLE_ENGINE_API_KEY = 'idleEngine' as const;
 
 export const IPC_CHANNELS = {
   ping: 'idle-engine:ping',
+  readAsset: 'idle-engine:read-asset',
   controlEvent: 'idle-engine:control-event',
+  inputEvent: 'idle-engine:input-event',
   frame: 'idle-engine:frame',
   simStatus: 'idle-engine:sim-status',
 } as const;
@@ -19,6 +22,10 @@ export type PingResponse = {
   message: string;
 };
 
+export type ReadAssetRequest = Readonly<{
+  url: string;
+}>;
+
 export type ShellControlEventPhase = 'start' | 'repeat' | 'end';
 
 export type ShellControlEvent = Readonly<{
@@ -28,16 +35,31 @@ export type ShellControlEvent = Readonly<{
   /**
    * Optional extra event data passed through the IPC boundary.
    *
-   * Reserved keys used by the desktop shell:
-   * - `passthrough: true`: if the active control scheme produces no commands for
-   *   the event, the main process may enqueue a `SHELL_CONTROL_EVENT` command
-   *   containing the raw event.
+   * **Note:** The desktop shell does not emit `SHELL_CONTROL_EVENT` from renderer
+   * inputs. The `metadata.passthrough` key has no effect; pointer/wheel events are
+   * sent exclusively via the `idle-engine:input-event` channel (see
+   * {@link ShellInputEventEnvelope}). Control events received on
+   * `idle-engine:control-event` are processed by the control scheme mapping only.
    *
-   * Pointer events emitted by the desktop renderer include metadata such as:
-   * - `x`, `y` (canvas-relative coordinates), `button`, `buttons`, `pointerType`,
-   *   `modifiers` and (for wheel) `deltaX`, `deltaY`, `deltaZ`, `deltaMode`.
+   * Legacy code may still include metadata keys such as `x`, `y`, `button`, etc.,
+   * but they are not used for command generation.
    */
   metadata?: Readonly<Record<string, unknown>>;
+}>;
+
+/**
+ * Typed envelope for input events sent from renderer to main.
+ *
+ * The `schemaVersion` field gates IPC-level compatibility:
+ * - Version 1 is the initial release (issue #850).
+ * - Unknown versions are dropped at the IPC boundary (not enqueued).
+ *
+ * The `event` field uses the canonical `InputEvent` type from `@idle-engine/core`
+ * to avoid shell->core dependency issues.
+ */
+export type ShellInputEventEnvelope = Readonly<{
+  schemaVersion: 1;
+  event: InputEvent;
 }>;
 
 export type ShellFramePayload = RenderCommandBuffer;
@@ -56,11 +78,17 @@ export type IpcInvokeMap = {
     request: PingRequest;
     response: PingResponse;
   };
+  [IPC_CHANNELS.readAsset]: {
+    request: ReadAssetRequest;
+    response: ArrayBuffer;
+  };
 };
 
 export type IdleEngineApi = {
   ping: (message: string) => Promise<string>;
+  readAsset: (url: string) => Promise<ArrayBuffer>;
   sendControlEvent: (event: ShellControlEvent) => void;
+  sendInputEvent: (envelope: ShellInputEventEnvelope) => void;
   onFrame: (handler: (frame: ShellFramePayload) => void) => () => void;
   onSimStatus: (handler: (status: ShellSimStatusPayload) => void) => () => void;
 };

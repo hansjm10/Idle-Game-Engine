@@ -8,6 +8,10 @@
   "scripts": {
     "build": "tsc -p tsconfig.json && node ../../tools/scripts/bundle-renderer.mjs && node ../../tools/scripts/copy-renderer-assets.mjs",
     "start": "pnpm run build && electron ./dist/main.js",
+    "start:headless": "bash ../../tools/scripts/start-shell-desktop-headless.sh",
+    "stop:headless": "bash ../../tools/scripts/stop-shell-desktop-xpra.sh",
+    "mcp:gateway": "pnpm run build && node ./dist/mcp/mcp-gateway-cli.js",
+    "mcp:smoke": "node ../../tools/scripts/shell-desktop-mcp-smoke.mjs",
     "lint": "eslint --max-warnings=0 'src/**/*.{ts,cts}'",
     "test": "vitest",
     "test:ci": "vitest run --passWithNoTests",
@@ -19,7 +23,9 @@
     "@idle-engine/content-test-game": "workspace:*",
     "@idle-engine/core": "workspace:*",
     "@idle-engine/renderer-contract": "workspace:*",
-    "@idle-engine/renderer-webgpu": "workspace:*"
+    "@idle-engine/renderer-webgpu": "workspace:*",
+    "@modelcontextprotocol/sdk": "^1.25.3",
+    "zod": "^4.1.12"
   },
   "devDependencies": {
     "@idle-engine/config-eslint": "workspace:*",
@@ -28,9 +34,9 @@
     "@vitest/coverage-v8": "^3.2.4",
     "@webgpu/types": "^0.1.65",
     "electron": "^32.3.1",
+    "esbuild": "^0.25.0",
     "eslint": "^9.37.0",
     "typescript": "^5.9.3",
-    "esbuild": "^0.25.0",
     "vitest": "^3.2.4",
     "vitest-llm-reporter": "^1.2.0"
   }

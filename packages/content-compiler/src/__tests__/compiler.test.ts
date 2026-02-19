@@ -13,13 +13,14 @@ import {
   type SerializedContentDigest,
   type SerializedContentSchemaWarning,
   type SerializedNormalizedContentPack,
+  type SupportedSerializedNormalizedContentPack,
   type SerializedNormalizedModules,
 } from '../types.js';
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 
-const createSchemaDocument = () =>
+  const createSchemaDocument = () =>
   ({
     metadata: {
       id: 'test-pack',
@@ -29,6 +30,7 @@ const createSchemaDocument = () =>
       defaultLocale: 'en-US',
       supportedLocales: ['en-US'],
     },
+    fonts: [],
     resources: [],
     entities: [],
     generators: [],
@@ -45,6 +47,7 @@ const { pack: baseSchemaPack } = parseContentPack(createSchemaDocument());
 const BASE_METADATA = baseSchemaPack.metadata;
 
 const EMPTY_MODULES: SerializedNormalizedModules = {
+  fonts: [] as SerializedNormalizedModules['fonts'],
   resources: [] as SerializedNormalizedModules['resources'],
   entities: [] as SerializedNormalizedModules['entities'],
   generators: [] as SerializedNormalizedModules['generators'],
@@ -61,6 +64,7 @@ function createModules(
   overrides: Partial<SerializedNormalizedModules> = {},
 ): SerializedNormalizedModules {
   return {
+    fonts: overrides.fonts ?? EMPTY_MODULES.fonts,
     resources: overrides.resources ?? EMPTY_MODULES.resources,
     entities: overrides.entities ?? EMPTY_MODULES.entities,
     generators: overrides.generators ?? EMPTY_MODULES.generators,
@@ -276,6 +280,20 @@ describe('content compiler scaffolding', () => {
     expect(() => rehydrateNormalizedPack(unsupported)).toThrow(
       /Unsupported serialized content pack format/,
     );
+  });
+
+  it('rehydrates legacy format packs missing fonts', () => {
+    const serialized = createSerializedPack();
+    const { fonts: _fonts, ...modulesWithoutFonts } = serialized.modules;
+    const legacy = Object.freeze({
+      ...serialized,
+      formatVersion: 1,
+      modules: modulesWithoutFonts,
+    }) as unknown as SupportedSerializedNormalizedContentPack;
+
+    const pack = rehydrateNormalizedPack(legacy);
+
+    expect(pack.modules.fonts).toEqual([]);
   });
 
   it('rejects module entries missing identifiers during rehydration', () => {

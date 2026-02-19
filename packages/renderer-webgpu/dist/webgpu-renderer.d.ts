@@ -42,12 +42,25 @@ export interface WebGpuBitmapFontGlyph {
     readonly yOffsetPx: number;
     readonly xAdvancePx: number;
 }
+export type WebGpuFontTechnique = 'bitmap' | 'msdf';
 export interface WebGpuBitmapFont {
     readonly image: GPUImageCopyExternalImageSource;
     readonly baseFontSizePx: number;
     readonly lineHeightPx: number;
     readonly glyphs: readonly WebGpuBitmapFontGlyph[];
     readonly fallbackCodePoint?: number;
+    /**
+     * Rendering technique used for this font atlas.
+     *
+     * Defaults to `'bitmap'` when omitted.
+     */
+    readonly technique?: WebGpuFontTechnique;
+    /**
+     * MSDF configuration required when `technique === 'msdf'`.
+     */
+    readonly msdf?: {
+        readonly pxRange: number;
+    };
 }
 export interface WebGpuRendererAssets {
     loadImage(assetId: AssetId, contentHash: Sha256Hex): Promise<GPUImageCopyExternalImageSource>;
@@ -110,12 +123,24 @@ declare function getExternalImageSize(source: GPUImageCopyExternalImageSource): 
     width: number;
     height: number;
 };
+/**
+ * Chrome's WebGPU implementation (Dawn) may validate `GPUQueue.copyExternalImageToTexture(...)` destinations as requiring
+ * `RENDER_ATTACHMENT` in addition to `COPY_DST` (it may internally perform the copy via a render pass). We include the
+ * superset of required bits here so atlas uploads remain portable across WebGPU backends.
+ *
+ * References:
+ * - https://github.com/gpuweb/gpuweb/issues/3357
+ * - https://developer.mozilla.org/en-US/docs/Web/API/GPUQueue/copyExternalImageToTexture
+ * - https://gpuweb.github.io/gpuweb/#dom-gpuqueue-copyexternalimagetotexture
+ */
+declare function getCopyExternalImageToTextureDestinationUsage(baseUsage: number): number;
 export declare function createWebGpuRenderer(canvas: HTMLCanvasElement, options?: WebGpuRendererCreateOptions): Promise<WebGpuRenderer>;
 export declare const __test__: {
     colorRgbaToGpuColor: typeof colorRgbaToGpuColor;
     getCanvasPixelSize: typeof getCanvasPixelSize;
     selectClearColor: typeof selectClearColor;
     getExternalImageSize: typeof getExternalImageSize;
+    getCopyExternalImageToTextureDestinationUsage: typeof getCopyExternalImageToTextureDestinationUsage;
 };
 export {};
 //# sourceMappingURL=webgpu-renderer.d.ts.map

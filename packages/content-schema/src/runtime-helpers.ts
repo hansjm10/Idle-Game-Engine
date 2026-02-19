@@ -10,6 +10,7 @@ export interface ContentPackDigestModules {
     readonly id: string;
     readonly version: string;
   };
+  readonly fonts: readonly IdentifiedEntity[];
   readonly resources: readonly IdentifiedEntity[];
   readonly entities: readonly IdentifiedEntity[];
   readonly generators: readonly IdentifiedEntity[];
@@ -44,6 +45,7 @@ export const createContentPackDigest = <Modules extends ContentPackDigestModules
     id: pack.metadata.id,
     version: pack.metadata.version,
     modules: {
+      fonts: pack.fonts.map((font) => font.id),
       resources: pack.resources.map((resource) => resource.id),
       entities: pack.entities.map((entity) => entity.id),
       generators: pack.generators.map((generator) => generator.id),

@@ -4,6 +4,7 @@ import type {
   NormalizedAutomation,
   NormalizedContentPack as SchemaNormalizedContentPack,
   NormalizedEntity,
+  NormalizedFontAsset,
   NormalizedGenerator,
   NormalizedMetadata,
   NormalizedMetric,
@@ -96,6 +97,7 @@ export interface RehydrateOptions {
 export type SerializedContentSchemaWarning = ContentSchemaWarning;
 
 export const MODULE_NAMES = [
+  'fonts',
   'resources',
   'entities',
   'generators',
@@ -111,6 +113,7 @@ export const MODULE_NAMES = [
 export type ModuleName = (typeof MODULE_NAMES)[number];
 
 interface ModuleTypeMap {
+  readonly fonts: NormalizedFontAsset;
   readonly resources: NormalizedResource;
   readonly entities: NormalizedEntity;
   readonly generators: NormalizedGenerator;
@@ -135,7 +138,7 @@ export type SerializableNormalizedContentPackInput = SchemaNormalizedContentPack
   readonly modules?: SerializedNormalizedModules;
 };
 
-export const SERIALIZED_PACK_FORMAT_VERSION = 1;
+export const SERIALIZED_PACK_FORMAT_VERSION = 2;
 
 export type SerializedContentDigest = NormalizedContentPack['digest'];
 
@@ -148,6 +151,20 @@ export interface SerializedNormalizedContentPack {
   readonly artifactHash: string;
 }
 
+export interface SerializedNormalizedContentPackV1 {
+  readonly formatVersion: 1;
+  readonly metadata: NormalizedMetadata;
+  readonly warnings: readonly SerializedContentSchemaWarning[];
+  readonly modules: Omit<SerializedNormalizedModules, 'fonts'> &
+    Partial<Pick<SerializedNormalizedModules, 'fonts'>>;
+  readonly digest: SerializedContentDigest;
+  readonly artifactHash: string;
+}
+
+export type SupportedSerializedNormalizedContentPack =
+  | SerializedNormalizedContentPack
+  | SerializedNormalizedContentPackV1;
+
 export interface SerializedPackArtifact {
   readonly serialized: SerializedNormalizedContentPack;
   readonly canonicalJson: string;
@@ -155,6 +172,7 @@ export interface SerializedPackArtifact {
 }
 
 export interface ModuleIndexTables {
+  readonly fonts: ReadonlyMap<string, number>;
   readonly resources: ReadonlyMap<string, number>;
   readonly entities: ReadonlyMap<string, number>;
   readonly generators: ReadonlyMap<string, number>;
@@ -225,7 +243,7 @@ export interface ArtifactWriterOptions {
   readonly clean?: boolean;
 }
 
-export type ArtifactFileKind = 'json' | 'module';
+export type ArtifactFileKind = 'json' | 'module' | 'asset';
 
 export type ArtifactFileAction =
   | 'written'

@@ -48,7 +48,7 @@ The content compiler transforms validated content packs into deterministic, runt
   - `packages/content-schema` (runtime-helpers export)
   - `packages/content-sample` (consumer migration)
   - `tools/content-schema-cli` (compile command integration)
-- **Compatibility Considerations**: Generated modules must remain compatible with both Node and browser runtimes. `formatVersion` changes require coordinated runtime updates to prevent rehydration failures.
+- **Compatibility Considerations**: Generated modules must remain compatible with both Node and browser runtimes. `formatVersion` changes require coordinated runtime updates to prevent rehydration failures, while preserving any explicitly supported legacy versions.
 
 ## 5. Current State
 - `packages/content-sample/src/index.ts` now imports the compiler's generated module (`src/generated/@idle-engine/sample-pack.generated.ts`), re-exporting the rehydrated pack alongside digest, summary, and module indices. Earlier revisions called `parseContentPack` on `content/pack.json` during import, re-running schema validation for every consumer.
@@ -64,7 +64,7 @@ The content compiler transforms validated content packs into deterministic, runt
 ### 6.2 Detailed Design
 - **Runtime Changes**: Runtime packages import generated TypeScript modules instead of calling `parseContentPack` at startup. Rehydration rebuilds lookup maps and freezes arrays without re-running schema validation. Generated modules conditionally verify digests in non-production environments to catch corruption early.
 - **Data & Schemas**:
-  - `SerializedNormalizedContentPack` captures normalized modules, metadata, warnings, digest, and `artifactHash` in a frozen shape with `formatVersion: 1`.
+  - `SerializedNormalizedContentPack` captures normalized modules, metadata, warnings, digest, and `artifactHash` in a frozen shape with `formatVersion: 2` (legacy `formatVersion: 1` packs remain rehydratable).
   - `ContentDocument` wraps each discovered pack with absolute path, POSIX-relative path, slug, and parsed JSON.
   - `ModuleIndexTables` provides immutable maps from module IDs to array offsets.
   - RFC-8785 canonical JSON ensures byte-identical serialization across runs.
@@ -298,10 +298,11 @@ export interface ModuleIndexTables {
 
    ```ts
    interface SerializedNormalizedContentPack {
-     readonly formatVersion: 1;
+     readonly formatVersion: 2;
      readonly metadata: NormalizedMetadata;
      readonly warnings: readonly SerializedContentSchemaWarning[];
      readonly modules: {
+       readonly fonts: readonly NormalizedFontAsset[];
        readonly resources: readonly NormalizedResource[];
        readonly generators: readonly NormalizedGenerator[];
        readonly upgrades: readonly NormalizedUpgrade[];
@@ -395,7 +396,7 @@ export interface ModuleIndexTables {
 - `artifactHash` is the lowercase hex encoding of the SHA-256 hash of the RFC-8785 canonical JSON representation of the complete `SerializedNormalizedContentPack`, computed with `artifactHash` temporarily set to the empty string.
   - The compiler canonicalizes a clone of the payload with the hash cleared, hashes those bytes, and then writes the emitted JSON with the computed hash reinserted. Integrity checks repeat the same "blank then canonicalize" procedure before hashing.
   - `rehydrateNormalizedPack` recomputes the digest when `verifyDigest` is enabled (artifact hash validation will land alongside the canonical serializer upgrades tracked in #159).
-  - `formatVersion` changes whenever the serialized payload shape or canonicalization rules change. When `formatVersion` increments, the compiler writes new artifacts and the runtime refuses to rehydrate packs whose `formatVersion` it does not understand.
+  - `formatVersion` changes whenever the serialized payload shape or canonicalization rules change. When `formatVersion` increments, the compiler writes new artifacts and the runtime accepts explicitly supported legacy versions (currently v1) while rejecting unknown versions.
   - `digest` remains the schema-defined content identity (used for dependency tracking, change detection, and collision reporting). `artifactHash` guarantees the integrity of the compiled artifact itself. Automation treats `digest` drift as a semantic change in content, while `artifactHash` mismatches indicate corrupted or stale build output.
 
 ## Dependency Handling
