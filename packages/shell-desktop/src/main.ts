@@ -49,7 +49,7 @@ if (enableUnsafeWebGpu) {
 const enableMcpServer = process.env.IDLE_ENGINE_ENABLE_MCP_SERVER === '1'
   || process.argv.includes('--enable-mcp-server');
 
-const preloadPath = fileURLToPath(new URL('./preload.cjs', import.meta.url));
+const preloadPath = fileURLToPath(new URL('./preload.js', import.meta.url));
 const rendererHtmlPath = fileURLToPath(new URL('./renderer/index.html', import.meta.url));
 const repoRootPath = fileURLToPath(new URL('../../../', import.meta.url));
 const defaultCompiledAssetsRootPath = path.resolve(
