@@ -26,6 +26,31 @@ const client = new Client({
 
 const records = [];
 
+function summarizeText(text, maxLength = 240) {
+  if (text.length <= maxLength) {
+    return text;
+  }
+  return `${text.slice(0, maxLength)}...`;
+}
+
+function extractToolErrorMessage(text) {
+  try {
+    const parsed = JSON.parse(text);
+    if (typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)) {
+      if (typeof parsed.error === 'string' && parsed.error.length > 0) {
+        return parsed.error;
+      }
+      if (typeof parsed.message === 'string' && parsed.message.length > 0) {
+        return parsed.message;
+      }
+    }
+  } catch {
+    // Fall back to raw text when tool output is not JSON.
+  }
+
+  return text;
+}
+
 async function callToolJson(name, args = {}) {
   const result = await client.callTool(
     {
@@ -36,15 +61,20 @@ async function callToolJson(name, args = {}) {
   );
 
   const firstContent = result.content?.[0];
-  const text = firstContent?.type === 'text' ? firstContent.text : '{}';
+  if (firstContent?.type !== 'text') {
+    throw new Error(`MCP tool ${name} returned non-text content.`);
+  }
+
+  const text = firstContent.text;
+  if (result.isError === true) {
+    const errorMessage = summarizeText(extractToolErrorMessage(text));
+    throw new Error(`MCP tool ${name} failed: ${errorMessage}`);
+  }
+
   try {
     return JSON.parse(text);
   } catch {
-    return {
-      ok: false,
-      rawText: text,
-      tool: name,
-    };
+    throw new Error(`MCP tool ${name} returned invalid JSON: ${summarizeText(text)}`);
   }
 }
 
@@ -77,23 +107,38 @@ async function waitForReady(maxAttempts = 40, intervalMs = 100) {
 
 async function stepDeterministic(steps) {
   for (let attempt = 0; attempt < 20; attempt += 1) {
-    const result = await callToolJson('sim.step', { steps });
-    if (result?.ok === true && result?.status) {
-      return result;
-    }
+    try {
+      const result = await callToolJson('sim.step', { steps });
+      if (result?.ok === true && result?.status) {
+        return result;
+      }
 
-    if (typeof result?.rawText === 'string' && result.rawText.toLowerCase().includes('not ready')) {
-      await sleep(100);
-      continue;
-    }
+      const resultText = JSON.stringify(result).toLowerCase();
+      if (resultText.includes('not ready')) {
+        await sleep(100);
+        continue;
+      }
 
-    if (typeof result?.rawText === 'string' && result.rawText.toLowerCase().includes('not running')) {
-      await callToolJson('sim.start');
-      await waitForReady();
-      continue;
-    }
+      if (resultText.includes('not running')) {
+        await callToolJson('sim.start');
+        await waitForReady();
+        continue;
+      }
 
-    throw new Error(`sim.step failed: ${JSON.stringify(result)}`);
+      throw new Error(`sim.step returned unexpected payload: ${JSON.stringify(result)}`);
+    } catch (error) {
+      const message = String(error).toLowerCase();
+      if (message.includes('not ready')) {
+        await sleep(100);
+        continue;
+      }
+      if (message.includes('not running')) {
+        await callToolJson('sim.start');
+        await waitForReady();
+        continue;
+      }
+      throw error;
+    }
   }
 
   throw new Error('Timed out stepping simulation.');
