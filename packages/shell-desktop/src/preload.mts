@@ -1,29 +1,15 @@
-import type {
-  IdleEngineApi,
-  IpcInvokeMap,
-  ShellFramePayload,
-  ShellInputEventEnvelope,
-  ShellRendererDiagnosticsPayload,
-  ShellRendererLogPayload,
-  ShellSimStatusPayload,
+import { contextBridge, ipcRenderer } from 'electron';
+import {
+  IDLE_ENGINE_API_KEY,
+  IPC_CHANNELS,
+  type IdleEngineApi,
+  type IpcInvokeMap,
+  type ShellFramePayload,
+  type ShellInputEventEnvelope,
+  type ShellRendererDiagnosticsPayload,
+  type ShellRendererLogPayload,
+  type ShellSimStatusPayload,
 } from './ipc.js';
-
-const electron = require('electron') as typeof import('electron');
-
-const { contextBridge, ipcRenderer } = electron;
-
-const IDLE_ENGINE_API_KEY = 'idleEngine' as const;
-
-const IPC_CHANNELS = {
-  ping: 'idle-engine:ping',
-  readAsset: 'idle-engine:read-asset',
-  controlEvent: 'idle-engine:control-event',
-  inputEvent: 'idle-engine:input-event',
-  rendererDiagnostics: 'idle-engine:renderer-diagnostics',
-  rendererLog: 'idle-engine:renderer-log',
-  frame: 'idle-engine:frame',
-  simStatus: 'idle-engine:sim-status',
-} as const;
 
 async function invoke<K extends keyof IpcInvokeMap>(
   channel: K,

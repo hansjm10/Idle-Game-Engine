@@ -49,7 +49,7 @@ type GeneratedFontMetadata = Readonly<{
 }>;
 
 function getIdleEngineApi(): IdleEngineApi {
-  return (globalThis as unknown as Window & { idleEngine: IdleEngineApi }).idleEngine;
+  return globalThis.idleEngine;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

@@ -17,6 +17,6 @@
       ]
     }
   },
-  "include": ["src/**/*.ts", "src/**/*.cts", "src/array-at.d.ts", "../core/src/object-hasown.d.ts"],
+  "include": ["src/**/*.ts", "src/**/*.mts", "src/**/*.cts", "src/array-at.d.ts", "../core/src/object-hasown.d.ts"],
   "exclude": ["dist", "node_modules"]
 }

@@ -51,6 +51,7 @@ const Menu = {
 
 class BrowserWindow {
   static windows: BrowserWindow[] = [];
+  static constructorOptions: unknown[] = [];
   static shouldRejectLoadFile = false;
 
   static getAllWindows(): BrowserWindow[] {
@@ -75,7 +76,8 @@ class BrowserWindow {
     }
   });
 
-  constructor(_options: unknown) {
+  constructor(options: unknown) {
+    BrowserWindow.constructorOptions.push(options);
     BrowserWindow.windows.push(this);
   }
 }
@@ -183,6 +185,7 @@ describe('shell-desktop main process entrypoint', () => {
     vi.clearAllMocks();
     app.isPackaged = false;
     BrowserWindow.windows = [];
+    BrowserWindow.constructorOptions = [];
     BrowserWindow.shouldRejectLoadFile = false;
     Worker.instances = [];
     monotonicNowSequence = [];
@@ -247,6 +250,18 @@ describe('shell-desktop main process entrypoint', () => {
     await expect(handler?.({}, [])).rejects.toThrow(TypeError);
   }, 15000);
 
+  it('uses an unsandboxed ESM preload tuple', async () => {
+    await import('./main.js');
+    await flushMicrotasks();
+
+    const options = BrowserWindow.constructorOptions[0] as
+      | { webPreferences?: { sandbox?: boolean; preload?: string } }
+      | undefined;
+
+    expect(options?.webPreferences?.sandbox).toBe(false);
+    expect(path.basename(options?.webPreferences?.preload ?? '')).toBe('preload.mjs');
+  });
+
   it('starts the MCP server when enabled', async () => {
     process.env.IDLE_ENGINE_ENABLE_MCP_SERVER = '1';
 
@@ -254,6 +269,57 @@ describe('shell-desktop main process entrypoint', () => {
     await flushMicrotasks();
 
     expect(maybeStartShellDesktopMcpServer).toHaveBeenCalledTimes(1);
+  });
+
+  it('logs and swallows MCP close failures during window-all-closed shutdown', async () => {
+    process.env.IDLE_ENGINE_ENABLE_MCP_SERVER = '1';
+    const close = vi.fn(async () => {
+      throw new Error('mcp close failed');
+    });
+    maybeStartShellDesktopMcpServer.mockResolvedValueOnce({
+      url: new URL('http://127.0.0.1:8570/mcp'),
+      close,
+    } satisfies ShellDesktopMcpServer);
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    await import('./main.js');
+    await flushMicrotasks();
+
+    const windowAllClosedCall = app.on.mock.calls.find((call) => call[0] === 'window-all-closed');
+    const windowAllClosedHandler = windowAllClosedCall?.[1] as undefined | (() => void);
+    windowAllClosedHandler?.();
+    await flushMicrotasks();
+
+    expect(close).toHaveBeenCalledTimes(1);
+    expect(app.quit).toHaveBeenCalledTimes(1);
+    expect(consoleError).toHaveBeenCalledWith(expect.objectContaining({ message: 'mcp close failed' }));
+
+    consoleError.mockRestore();
+  });
+
+  it('closes MCP server during before-quit and logs close failures', async () => {
+    process.env.IDLE_ENGINE_ENABLE_MCP_SERVER = '1';
+    const close = vi.fn(async () => {
+      throw new Error('before-quit close failed');
+    });
+    maybeStartShellDesktopMcpServer.mockResolvedValueOnce({
+      url: new URL('http://127.0.0.1:8570/mcp'),
+      close,
+    } satisfies ShellDesktopMcpServer);
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    await import('./main.js');
+    await flushMicrotasks();
+
+    const beforeQuitCall = app.on.mock.calls.find((call) => call[0] === 'before-quit');
+    const beforeQuitHandler = beforeQuitCall?.[1] as undefined | (() => void);
+    beforeQuitHandler?.();
+    await flushMicrotasks();
+
+    expect(close).toHaveBeenCalledTimes(1);
+    expect(consoleError).toHaveBeenCalledWith(expect.objectContaining({ message: 'before-quit close failed' }));
+
+    consoleError.mockRestore();
   });
 
   it('captures renderer diagnostics and structured renderer logs for MCP tools', async () => {
