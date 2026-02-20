@@ -271,6 +271,57 @@ describe('shell-desktop main process entrypoint', () => {
     expect(maybeStartShellDesktopMcpServer).toHaveBeenCalledTimes(1);
   });
 
+  it('logs and swallows MCP close failures during window-all-closed shutdown', async () => {
+    process.env.IDLE_ENGINE_ENABLE_MCP_SERVER = '1';
+    const close = vi.fn(async () => {
+      throw new Error('mcp close failed');
+    });
+    maybeStartShellDesktopMcpServer.mockResolvedValueOnce({
+      url: new URL('http://127.0.0.1:8570/mcp'),
+      close,
+    } satisfies ShellDesktopMcpServer);
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    await import('./main.js');
+    await flushMicrotasks();
+
+    const windowAllClosedCall = app.on.mock.calls.find((call) => call[0] === 'window-all-closed');
+    const windowAllClosedHandler = windowAllClosedCall?.[1] as undefined | (() => void);
+    windowAllClosedHandler?.();
+    await flushMicrotasks();
+
+    expect(close).toHaveBeenCalledTimes(1);
+    expect(app.quit).toHaveBeenCalledTimes(1);
+    expect(consoleError).toHaveBeenCalledWith(expect.objectContaining({ message: 'mcp close failed' }));
+
+    consoleError.mockRestore();
+  });
+
+  it('closes MCP server during before-quit and logs close failures', async () => {
+    process.env.IDLE_ENGINE_ENABLE_MCP_SERVER = '1';
+    const close = vi.fn(async () => {
+      throw new Error('before-quit close failed');
+    });
+    maybeStartShellDesktopMcpServer.mockResolvedValueOnce({
+      url: new URL('http://127.0.0.1:8570/mcp'),
+      close,
+    } satisfies ShellDesktopMcpServer);
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    await import('./main.js');
+    await flushMicrotasks();
+
+    const beforeQuitCall = app.on.mock.calls.find((call) => call[0] === 'before-quit');
+    const beforeQuitHandler = beforeQuitCall?.[1] as undefined | (() => void);
+    beforeQuitHandler?.();
+    await flushMicrotasks();
+
+    expect(close).toHaveBeenCalledTimes(1);
+    expect(consoleError).toHaveBeenCalledWith(expect.objectContaining({ message: 'before-quit close failed' }));
+
+    consoleError.mockRestore();
+  });
+
   it('captures renderer diagnostics and structured renderer logs for MCP tools', async () => {
     process.env.IDLE_ENGINE_ENABLE_MCP_SERVER = '1';
 
