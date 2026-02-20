@@ -21,7 +21,7 @@ describe('shell-desktop preload', () => {
     const assetBytes = new Uint8Array([1, 2, 3]).buffer;
     invoke.mockResolvedValueOnce({ message: 'pong-from-test' }).mockResolvedValueOnce(assetBytes);
 
-    await import('./preload.js');
+    await import('./preload.mjs');
 
     expect(exposeInMainWorld).toHaveBeenCalledTimes(1);
     const [key, api] = exposeInMainWorld.mock.calls[0] as [string, IdleEngineApi];

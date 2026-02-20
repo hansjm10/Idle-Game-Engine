@@ -12,7 +12,7 @@
     "stop:headless": "bash ../../tools/scripts/stop-shell-desktop-xpra.sh",
     "mcp:gateway": "pnpm run build && node ./dist/mcp/mcp-gateway-cli.js",
     "mcp:smoke": "node ../../tools/scripts/shell-desktop-mcp-smoke.mjs",
-    "lint": "eslint --max-warnings=0 'src/**/*.{ts,cts}'",
+    "lint": "eslint --max-warnings=0 'src/**/*.{ts,mts,cts}'",
     "test": "vitest",
     "test:ci": "vitest run --passWithNoTests",
     "coverage": "vitest run --coverage --passWithNoTests",

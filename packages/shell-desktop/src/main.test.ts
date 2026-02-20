@@ -51,6 +51,7 @@ const Menu = {
 
 class BrowserWindow {
   static windows: BrowserWindow[] = [];
+  static constructorOptions: unknown[] = [];
   static shouldRejectLoadFile = false;
 
   static getAllWindows(): BrowserWindow[] {
@@ -75,7 +76,8 @@ class BrowserWindow {
     }
   });
 
-  constructor(_options: unknown) {
+  constructor(options: unknown) {
+    BrowserWindow.constructorOptions.push(options);
     BrowserWindow.windows.push(this);
   }
 }
@@ -183,6 +185,7 @@ describe('shell-desktop main process entrypoint', () => {
     vi.clearAllMocks();
     app.isPackaged = false;
     BrowserWindow.windows = [];
+    BrowserWindow.constructorOptions = [];
     BrowserWindow.shouldRejectLoadFile = false;
     Worker.instances = [];
     monotonicNowSequence = [];
@@ -246,6 +249,18 @@ describe('shell-desktop main process entrypoint', () => {
     await expect(handler?.({}, null)).rejects.toThrow(TypeError);
     await expect(handler?.({}, [])).rejects.toThrow(TypeError);
   }, 15000);
+
+  it('uses an unsandboxed ESM preload tuple', async () => {
+    await import('./main.js');
+    await flushMicrotasks();
+
+    const options = BrowserWindow.constructorOptions[0] as
+      | { webPreferences?: { sandbox?: boolean; preload?: string } }
+      | undefined;
+
+    expect(options?.webPreferences?.sandbox).toBe(false);
+    expect(path.basename(options?.webPreferences?.preload ?? '')).toBe('preload.mjs');
+  });
 
   it('starts the MCP server when enabled', async () => {
     process.env.IDLE_ENGINE_ENABLE_MCP_SERVER = '1';
