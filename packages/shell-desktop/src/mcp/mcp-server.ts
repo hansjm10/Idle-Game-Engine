@@ -287,8 +287,13 @@ export async function maybeStartShellDesktopMcpServer(
   }
 
   const requested = getRequestedPort(argv, env);
+  const isPortBusyError = (error: unknown): boolean =>
+    error instanceof Error
+      && 'code' in error
+      && (error as NodeJS.ErrnoException).code === 'EADDRINUSE';
 
-  let server: ShellDesktopMcpServer;
+  let selectedPort = requested.port;
+  let server: ShellDesktopMcpServer | undefined;
   try {
     server = await startShellDesktopMcpServer({
       port: requested.port,
@@ -299,35 +304,51 @@ export async function maybeStartShellDesktopMcpServer(
       diagnostics: options.diagnostics,
     });
   } catch (error: unknown) {
-    const isPortBusy = error instanceof Error
-      && 'code' in error
-      && (error as NodeJS.ErrnoException).code === 'EADDRINUSE';
-
-    if (!requested.explicit && isPortBusy && requested.port < 65535) {
-      const fallbackPort = requested.port + 1;
-      server = await startShellDesktopMcpServer({
-        port: fallbackPort,
-        sim: options.sim,
-        window: options.window,
-        input: options.input,
-        asset: options.asset,
-        diagnostics: options.diagnostics,
-      });
-
-      if (env.NODE_ENV !== 'test') {
-        // eslint-disable-next-line no-console
-        console.warn(
-          `[shell-desktop] MCP port ${requested.port} is busy; using ${fallbackPort} instead.`,
-        );
-      }
-    } else {
+    if (requested.explicit || !isPortBusyError(error) || requested.port >= 65535) {
       throw error;
+    }
+
+    let fallbackError: unknown = error;
+    for (let fallbackPort = requested.port + 1; fallbackPort <= 65535; fallbackPort += 1) {
+      try {
+        server = await startShellDesktopMcpServer({
+          port: fallbackPort,
+          sim: options.sim,
+          window: options.window,
+          input: options.input,
+          asset: options.asset,
+          diagnostics: options.diagnostics,
+        });
+        selectedPort = fallbackPort;
+        fallbackError = undefined;
+        break;
+      } catch (nextError: unknown) {
+        fallbackError = nextError;
+        if (!isPortBusyError(nextError) || fallbackPort === 65535) {
+          throw nextError;
+        }
+      }
+    }
+
+    if (!server) {
+      throw fallbackError;
+    }
+
+    if (env.NODE_ENV !== 'test') {
+      // eslint-disable-next-line no-console
+      console.warn(
+        `[shell-desktop] MCP port ${requested.port} is busy; using ${selectedPort} instead.`,
+      );
     }
   }
 
   if (env.NODE_ENV !== 'test') {
     // eslint-disable-next-line no-console
     console.log(`[shell-desktop] MCP server listening at ${server.url.toString()}`);
+  }
+
+  if (!server) {
+    throw new Error('Failed to start MCP server.');
   }
 
   return server;

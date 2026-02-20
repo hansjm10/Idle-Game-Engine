@@ -82,30 +82,40 @@ describe('shell-desktop MCP server', () => {
     expect(server.url.pathname).toBe('/mcp/sse');
   });
 
-  it('falls back to the next port when default MCP port is busy', async () => {
-    const blocker = http.createServer((_req, res) => {
-      res.writeHead(200);
-      res.end('busy');
-    });
+  it('falls back to the next available port when default MCP port is busy', async () => {
+    const createBusyServer = async (port: number): Promise<{
+      server: http.Server;
+      listening: boolean;
+    }> => {
+      const server = http.createServer((_req, res) => {
+        res.writeHead(200);
+        res.end('busy');
+      });
 
-    let blockerListening = false;
-    await new Promise<void>((resolve, reject) => {
-      blocker.once('error', (error: unknown) => {
-        const code = error instanceof Error && 'code' in error
-          ? (error as NodeJS.ErrnoException).code
-          : undefined;
-        if (code === 'EADDRINUSE') {
+      let listening = false;
+      await new Promise<void>((resolve, reject) => {
+        server.once('error', (error: unknown) => {
+          const code = error instanceof Error && 'code' in error
+            ? (error as NodeJS.ErrnoException).code
+            : undefined;
+          if (code === 'EADDRINUSE') {
+            resolve();
+            return;
+          }
+          reject(error);
+        });
+
+        server.listen({ host: '127.0.0.1', port }, () => {
+          listening = true;
           resolve();
-          return;
-        }
-        reject(error);
+        });
       });
 
-      blocker.listen({ host: '127.0.0.1', port: 8570 }, () => {
-        blockerListening = true;
-        resolve();
-      });
-    });
+      return { server, listening };
+    };
+
+    const blockerDefault = await createBusyServer(8570);
+    const blockerNext = await createBusyServer(8571);
 
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => undefined);
@@ -121,9 +131,10 @@ describe('shell-desktop MCP server', () => {
       }
 
       servers.push(server);
-      expect(Number.parseInt(server.url.port, 10)).toBe(8571);
+      const selectedPort = Number.parseInt(server.url.port, 10);
+      expect(selectedPort).toBeGreaterThanOrEqual(8572);
       expect(warnSpy).toHaveBeenCalledWith(
-        '[shell-desktop] MCP port 8570 is busy; using 8571 instead.',
+        `[shell-desktop] MCP port 8570 is busy; using ${selectedPort} instead.`,
       );
       expect(logSpy).toHaveBeenCalledWith(
         `[shell-desktop] MCP server listening at ${server.url.toString()}`,
@@ -132,9 +143,21 @@ describe('shell-desktop MCP server', () => {
       warnSpy.mockRestore();
       logSpy.mockRestore();
 
-      if (blockerListening) {
+      if (blockerDefault.listening) {
         await new Promise<void>((resolve, reject) => {
-          blocker.close((error) => {
+          blockerDefault.server.close((error) => {
+            if (error) {
+              reject(error);
+              return;
+            }
+            resolve();
+          });
+        });
+      }
+
+      if (blockerNext.listening) {
+        await new Promise<void>((resolve, reject) => {
+          blockerNext.server.close((error) => {
             if (error) {
               reject(error);
               return;
