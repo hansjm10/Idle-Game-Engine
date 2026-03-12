@@ -23,6 +23,13 @@ describe('shell-desktop sim worker', () => {
       enqueueCommands: vi.fn(),
       getStepSizeMs: vi.fn(() => 25),
       getNextStep: vi.fn(() => 7),
+      getCapabilities: vi.fn(() => ({
+        canSerialize: true,
+        canHydrate: true,
+        supportsOfflineCatchup: true,
+        saveFileStem: 'sample-pack',
+        saveSchemaVersion: 1,
+      })),
     }));
 
     let messageHandler: MessageHandler;
@@ -42,7 +49,136 @@ describe('shell-desktop sim worker', () => {
     messageHandler?.({ kind: 'init', stepSizeMs: 25, maxStepsPerFrame: 99 });
 
     expect(createSimRuntime).toHaveBeenCalledWith({ stepSizeMs: 25, maxStepsPerFrame: 99 });
-    expect(parentPort.postMessage).toHaveBeenCalledWith({ kind: 'ready', stepSizeMs: 25, nextStep: 7 });
+    expect(parentPort.postMessage).toHaveBeenCalledWith({
+      kind: 'ready',
+      stepSizeMs: 25,
+      nextStep: 7,
+      capabilities: {
+        canSerialize: true,
+        canHydrate: true,
+        supportsOfflineCatchup: true,
+        saveFileStem: 'sample-pack',
+        saveSchemaVersion: 1,
+      },
+    });
+  });
+
+  it('handles serialize and hydrate requests without crashing the worker', async () => {
+    const runtime = {
+      tick: vi.fn(),
+      enqueueCommands: vi.fn(),
+      getStepSizeMs: vi.fn(() => 20),
+      getNextStep: vi.fn(() => 5),
+      getCapabilities: vi.fn(() => ({
+        canSerialize: true,
+        canHydrate: true,
+        supportsOfflineCatchup: true,
+        saveFileStem: 'sample-pack',
+        saveSchemaVersion: 1,
+      })),
+      serialize: vi.fn(() => ({
+        schemaVersion: 1,
+        nextStep: 5,
+        demoState: {
+          tickCount: 8,
+          resourceCount: 3,
+          lastCollectedStep: 4,
+        },
+      })),
+    };
+    const restoredRuntime = {
+      tick: vi.fn(),
+      enqueueCommands: vi.fn(),
+      getStepSizeMs: vi.fn(() => 20),
+      getNextStep: vi.fn(() => 12),
+      getCapabilities: vi.fn(() => ({
+        canSerialize: true,
+        canHydrate: true,
+        supportsOfflineCatchup: true,
+        saveFileStem: 'sample-pack',
+        saveSchemaVersion: 1,
+      })),
+      serialize: vi.fn(),
+    };
+    const createSimRuntime = vi
+      .fn()
+      .mockReturnValueOnce(runtime)
+      .mockReturnValueOnce(restoredRuntime);
+    const loadSerializedSimRuntimeState = vi.fn((value: unknown) => value);
+
+    let messageHandler: MessageHandler;
+    const parentPort = {
+      on: vi.fn((_event: string, handler: (message: unknown) => void) => {
+        messageHandler = handler;
+      }),
+      postMessage: vi.fn(),
+      close: vi.fn(),
+    };
+
+    vi.doMock('node:worker_threads', () => ({ parentPort }));
+    vi.doMock('./sim/sim-runtime.js', () => ({
+      createSimRuntime,
+      loadSerializedSimRuntimeState,
+    }));
+
+    await import('./sim-worker.js');
+
+    messageHandler?.({ kind: 'init', stepSizeMs: 20, maxStepsPerFrame: 30 });
+    parentPort.postMessage.mockClear();
+
+    messageHandler?.({ kind: 'serialize', requestId: 'serialize-1' });
+
+    expect(runtime.serialize).toHaveBeenCalledTimes(1);
+    expect(parentPort.postMessage).toHaveBeenCalledWith({
+      kind: 'serialized',
+      requestId: 'serialize-1',
+      state: {
+        schemaVersion: 1,
+        nextStep: 5,
+        demoState: {
+          tickCount: 8,
+          resourceCount: 3,
+          lastCollectedStep: 4,
+        },
+      },
+    });
+
+    parentPort.postMessage.mockClear();
+
+    const savedState = {
+      schemaVersion: 1,
+      nextStep: 12,
+      demoState: {
+        tickCount: 21,
+        resourceCount: 9,
+        lastCollectedStep: 11,
+      },
+    };
+    messageHandler?.({ kind: 'hydrate', requestId: 'hydrate-1', state: savedState });
+
+    expect(loadSerializedSimRuntimeState).toHaveBeenCalledWith(savedState);
+    expect(createSimRuntime).toHaveBeenLastCalledWith({
+      stepSizeMs: 20,
+      maxStepsPerFrame: 30,
+      initialStep: 12,
+      initialState: {
+        tickCount: 21,
+        resourceCount: 9,
+        lastCollectedStep: 11,
+      },
+    });
+    expect(parentPort.postMessage).toHaveBeenCalledWith({
+      kind: 'hydrated',
+      requestId: 'hydrate-1',
+      nextStep: 12,
+      capabilities: {
+        canSerialize: true,
+        canHydrate: true,
+        supportsOfflineCatchup: true,
+        saveFileStem: 'sample-pack',
+        saveSchemaVersion: 1,
+      },
+    });
   });
 
   it('emits error with protocol:init and stepSizeMs when stepSizeMs is missing', async () => {

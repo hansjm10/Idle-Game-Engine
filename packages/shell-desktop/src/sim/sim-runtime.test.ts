@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { CommandPriority, RUNTIME_COMMAND_TYPES } from '@idle-engine/core';
-import { createSimRuntime } from './sim-runtime.js';
+import { createSimRuntime, loadSerializedSimRuntimeState } from './sim-runtime.js';
 import { SHELL_CONTROL_EVENT_COMMAND_TYPE } from '../ipc.js';
 import type { Command, InputEventCommandPayload, PointerInputEvent } from '@idle-engine/core';
 
@@ -186,6 +186,123 @@ describe('shell-desktop sim runtime', () => {
     const sim = createSimRuntime({ stepSizeMs: 10, maxStepsPerFrame: 50 });
 
     expect(sim.hasCommandHandler(RUNTIME_COMMAND_TYPES.INPUT_EVENT)).toBe(true);
+  });
+
+  it('reports save/load and offline catch-up capabilities', () => {
+    const sim = createSimRuntime({ stepSizeMs: 10, maxStepsPerFrame: 50 });
+
+    expect(sim.getCapabilities?.()).toEqual({
+      canSerialize: true,
+      canHydrate: true,
+      supportsOfflineCatchup: true,
+      saveFileStem: 'content-dev',
+      saveSchemaVersion: 1,
+      contentHash: 'content:dev',
+      contentVersion: 'dev',
+    });
+  });
+
+  it('serializes and restores runtime state deterministically', () => {
+    const sim = createSimRuntime({ stepSizeMs: 10, maxStepsPerFrame: 50 });
+
+    sim.enqueueCommands([
+      {
+        type: RUNTIME_COMMAND_TYPES.COLLECT_RESOURCE,
+        priority: CommandPriority.PLAYER,
+        payload: { resourceId: 'demo', amount: 2 },
+        timestamp: 0,
+        step: sim.getNextStep(),
+      },
+    ]);
+    sim.tick(20);
+
+    const savedState = loadSerializedSimRuntimeState(sim.serialize?.());
+    const restored = createSimRuntime({
+      stepSizeMs: 10,
+      maxStepsPerFrame: 50,
+      initialStep: savedState.nextStep,
+      initialState: savedState.demoState,
+    });
+
+    expect(restored.getNextStep()).toBe(savedState.nextStep);
+
+    const result = restored.tick(10);
+    const fillRect = result.frames[0]?.draws.find(
+      (draw) =>
+        draw.kind === 'rect' &&
+        draw.passId === 'ui' &&
+        draw.sortKey.sortKeyHi === 0 &&
+        draw.sortKey.sortKeyLo === 2,
+    );
+
+    expect(fillRect).toMatchObject({
+      kind: 'rect',
+      passId: 'ui',
+      width: 28,
+    });
+  });
+
+  it('applies offline catch-up payloads without requiring resourceDeltas', () => {
+    const sim = createSimRuntime({ stepSizeMs: 10, maxStepsPerFrame: 50 });
+
+    sim.enqueueCommands([
+      {
+        type: RUNTIME_COMMAND_TYPES.OFFLINE_CATCHUP,
+        priority: CommandPriority.SYSTEM,
+        payload: { elapsedMs: 30 },
+        timestamp: 0,
+        step: sim.getNextStep(),
+      },
+    ]);
+
+    const result = sim.tick(10);
+    const fillRect = result.frames[0]?.draws.find(
+      (draw) =>
+        draw.kind === 'rect' &&
+        draw.passId === 'ui' &&
+        draw.sortKey.sortKeyHi === 0 &&
+        draw.sortKey.sortKeyLo === 2,
+    );
+
+    expect(fillRect).toMatchObject({
+      kind: 'rect',
+      passId: 'ui',
+      width: 43,
+      colorRgba: 0x8a_2a_4f_ff,
+    });
+  });
+
+  it('respects offline catch-up maxElapsedMs and maxSteps limits', () => {
+    const sim = createSimRuntime({ stepSizeMs: 10, maxStepsPerFrame: 50 });
+
+    sim.enqueueCommands([
+      {
+        type: RUNTIME_COMMAND_TYPES.OFFLINE_CATCHUP,
+        priority: CommandPriority.SYSTEM,
+        payload: {
+          elapsedMs: 100,
+          maxElapsedMs: 40,
+          maxSteps: 2,
+        },
+        timestamp: 0,
+        step: sim.getNextStep(),
+      },
+    ]);
+
+    const result = sim.tick(10);
+    const fillRect = result.frames[0]?.draws.find(
+      (draw) =>
+        draw.kind === 'rect' &&
+        draw.passId === 'ui' &&
+        draw.sortKey.sortKeyHi === 0 &&
+        draw.sortKey.sortKeyLo === 2,
+    );
+
+    expect(fillRect).toMatchObject({
+      kind: 'rect',
+      passId: 'ui',
+      width: 28,
+    });
   });
 
   it('triggers resource increase for in-bounds INPUT_EVENT (mouse-down at x=20,y=20)', () => {
