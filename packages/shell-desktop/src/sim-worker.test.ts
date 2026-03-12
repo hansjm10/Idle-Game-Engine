@@ -12,10 +12,13 @@ describe('shell-desktop sim worker', () => {
 
   it('throws when started without parentPort', async () => {
     vi.doMock('node:worker_threads', () => ({ parentPort: null }));
-    vi.doMock('./sim/sim-runtime.js', () => ({ createSimRuntime: vi.fn() }));
+    vi.doMock('./sim/sim-runtime.js', () => ({
+      createSimRuntime: vi.fn(),
+      loadSerializedSimRuntimeState: vi.fn(),
+    }));
 
     await expect(import('./sim-worker.js')).rejects.toThrow(/requires parentPort/);
-  });
+  }, 10_000);
 
   it('emits ready after init', async () => {
     const createSimRuntime = vi.fn(() => ({

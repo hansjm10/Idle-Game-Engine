@@ -1473,6 +1473,8 @@ describe('shell-desktop main process entrypoint', () => {
   });
 
   it('enables simulation tooling menu items when the worker reports support', async () => {
+    vi.useFakeTimers();
+    setMonotonicNowSequence([0]);
     await import('./main.js');
     await flushMicrotasks();
 
@@ -1499,9 +1501,16 @@ describe('shell-desktop main process entrypoint', () => {
     expect(getMenuEntry(['Simulation', 'Load']).enabled).toBe(true);
     expect(getMenuEntry(['Simulation', 'Offline Catch-up: 5 Minutes']).enabled).toBe(true);
     expect(getMenuEntry(['Simulation', 'Offline Catch-up: 1 Hour']).enabled).toBe(true);
+
+    const windowAllClosedCall = app.on.mock.calls.find((call) => call[0] === 'window-all-closed');
+    const windowAllClosedHandler = windowAllClosedCall?.[1] as undefined | (() => void);
+    windowAllClosedHandler?.();
+    await flushMicrotasks();
   });
 
   it('enables save and load independently based on reported capabilities', async () => {
+    vi.useFakeTimers();
+    setMonotonicNowSequence([0]);
     await import('./main.js');
     await flushMicrotasks();
 
@@ -1524,9 +1533,16 @@ describe('shell-desktop main process entrypoint', () => {
 
     expect(getMenuEntry(['Simulation', 'Save']).enabled).toBe(true);
     expect(getMenuEntry(['Simulation', 'Load']).enabled).toBe(false);
+
+    const windowAllClosedCall = app.on.mock.calls.find((call) => call[0] === 'window-all-closed');
+    const windowAllClosedHandler = windowAllClosedCall?.[1] as undefined | (() => void);
+    windowAllClosedHandler?.();
+    await flushMicrotasks();
   });
 
   it('writes saves atomically after requesting worker serialization', async () => {
+    vi.useFakeTimers();
+    setMonotonicNowSequence([0, 16]);
     await import('./main.js');
     await flushMicrotasks();
 
@@ -1609,9 +1625,16 @@ describe('shell-desktop main process entrypoint', () => {
       tempPath,
       path.join('C:', 'mock-user-data', 'sample-pack.save.json'),
     );
+
+    const windowAllClosedCall = app.on.mock.calls.find((call) => call[0] === 'window-all-closed');
+    const windowAllClosedHandler = windowAllClosedCall?.[1] as undefined | (() => void);
+    windowAllClosedHandler?.();
+    await flushMicrotasks();
   });
 
   it('loads a saved envelope and hydrates the worker state', async () => {
+    vi.useFakeTimers();
+    setMonotonicNowSequence([0, 16]);
     const savedEnvelope = {
       schemaVersion: 1,
       metadata: {
@@ -1693,9 +1716,16 @@ describe('shell-desktop main process entrypoint', () => {
       },
     });
     await flushMicrotasks(20);
+
+    const windowAllClosedCall = app.on.mock.calls.find((call) => call[0] === 'window-all-closed');
+    const windowAllClosedHandler = windowAllClosedCall?.[1] as undefined | (() => void);
+    windowAllClosedHandler?.();
+    await flushMicrotasks();
   });
 
   it('enqueues offline catch-up without resourceDeltas when supported', async () => {
+    vi.useFakeTimers();
+    setMonotonicNowSequence([0, 16]);
     await import('./main.js');
     await flushMicrotasks();
 
@@ -1733,6 +1763,11 @@ describe('shell-desktop main process entrypoint', () => {
       },
     });
     expect(command?.payload).not.toHaveProperty('resourceDeltas');
+
+    const windowAllClosedCall = app.on.mock.calls.find((call) => call[0] === 'window-all-closed');
+    const windowAllClosedHandler = windowAllClosedCall?.[1] as undefined | (() => void);
+    windowAllClosedHandler?.();
+    await flushMicrotasks();
   });
 
   it('logs startup failures without crashing the process', async () => {
