@@ -1723,6 +1723,274 @@ describe('shell-desktop main process entrypoint', () => {
     await flushMicrotasks();
   });
 
+  it('sanitizes save paths and cleans up temp files when atomic save writes fail', async () => {
+    vi.useFakeTimers();
+    setMonotonicNowSequence([0, 16]);
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    fsPromises.rename.mockImplementationOnce(async () => {
+      throw new Error('rename failed');
+    });
+
+    await import('./main.js');
+    await flushMicrotasks();
+
+    const worker = Worker.instances[0];
+    expect(worker).toBeDefined();
+
+    worker?.emitMessage({
+      kind: 'ready',
+      stepSizeMs: 16,
+      nextStep: 4,
+      capabilities: {
+        canSerialize: true,
+        canHydrate: false,
+        supportsOfflineCatchup: false,
+        saveFileStem: '  sample pack !!!  ',
+      },
+    });
+    await flushMicrotasks();
+
+    getMenuEntry(['Simulation', 'Save']).click?.();
+    await flushMicrotasks();
+
+    const serializeCall = worker?.postMessage.mock.calls.find(
+      (call) => (call[0] as { kind?: string } | undefined)?.kind === 'serialize',
+    );
+    expect(serializeCall).toBeDefined();
+
+    const requestId = (serializeCall?.[0] as { requestId: string }).requestId;
+    worker?.emitMessage({
+      kind: 'serialized',
+      requestId,
+      state: {
+        schemaVersion: 1,
+        nextStep: 4,
+        demoState: {
+          tickCount: 12,
+          resourceCount: 7,
+          lastCollectedStep: 3,
+        },
+      },
+    });
+    await flushMicrotasks(20);
+
+    const [tempPath, rawSave] =
+      fsPromises.writeFile.mock.calls[0] as unknown as [string, string];
+    expect(tempPath).toMatch(/sample-pack\.save\.json\.\d+\.\d+\.tmp$/);
+    expect(fsPromises.rename).toHaveBeenCalledWith(
+      tempPath,
+      path.join('C:', 'mock-user-data', 'sample-pack.save.json'),
+    );
+    expect(fsPromises.unlink).toHaveBeenCalledWith(tempPath);
+
+    const savedEnvelope = JSON.parse(rawSave);
+    expect(savedEnvelope.metadata.runtime).toEqual({
+      saveFileStem: 'sample-pack',
+      saveSchemaVersion: 1,
+    });
+
+    const errorCall = consoleError.mock.calls.at(-1);
+    const errorValue = errorCall?.[1];
+    const errorMessage = errorValue instanceof Error ? errorValue.message : String(errorValue);
+    expect(errorCall?.[0]).toContain('[shell-desktop] Save state failed');
+    expect(errorMessage).toContain('rename failed');
+
+    const windowAllClosedCall = app.on.mock.calls.find((call) => call[0] === 'window-all-closed');
+    const windowAllClosedHandler = windowAllClosedCall?.[1] as undefined | (() => void);
+    windowAllClosedHandler?.();
+    await flushMicrotasks();
+
+    consoleError.mockRestore();
+  });
+
+  it('rejects invalid and incompatible save envelopes before hydrating', async () => {
+    vi.useFakeTimers();
+    setMonotonicNowSequence([0, 16]);
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const baseEnvelope = {
+      schemaVersion: 1,
+      metadata: {
+        savedAt: '2026-03-12T21:00:00.000Z',
+        appVersion: '0.1.0',
+        runtime: {
+          saveFileStem: 'sample-pack',
+          saveSchemaVersion: 1,
+          contentHash: 'content:dev',
+          contentVersion: 'dev',
+        },
+      },
+      state: {
+        schemaVersion: 1,
+        nextStep: 9,
+        demoState: {
+          tickCount: 9,
+          resourceCount: 5,
+          lastCollectedStep: 8,
+        },
+      },
+    };
+
+    await import('./main.js');
+    await flushMicrotasks();
+
+    const worker = Worker.instances[0];
+    expect(worker).toBeDefined();
+
+    worker?.emitMessage({
+      kind: 'ready',
+      stepSizeMs: 16,
+      nextStep: 2,
+      capabilities: {
+        canSerialize: true,
+        canHydrate: true,
+        supportsOfflineCatchup: false,
+        saveFileStem: 'sample-pack',
+        saveSchemaVersion: 1,
+        contentHash: 'content:dev',
+        contentVersion: 'dev',
+      },
+    });
+    await flushMicrotasks();
+
+    const cases = [
+      {
+        description: 'shell schema mismatch',
+        raw: JSON.stringify({ ...baseEnvelope, schemaVersion: 2 }),
+        error: 'Unsupported shell save schema version',
+      },
+      {
+        description: 'blank savedAt',
+        raw: JSON.stringify({
+          ...baseEnvelope,
+          metadata: { ...baseEnvelope.metadata, savedAt: '' },
+        }),
+        error: 'metadata.savedAt',
+      },
+      {
+        description: 'missing runtime metadata',
+        raw: JSON.stringify({
+          ...baseEnvelope,
+          metadata: { ...baseEnvelope.metadata, runtime: null },
+        }),
+        error: 'metadata.runtime object',
+      },
+      {
+        description: 'blank save file stem',
+        raw: JSON.stringify({
+          ...baseEnvelope,
+          metadata: {
+            ...baseEnvelope.metadata,
+            runtime: { ...baseEnvelope.metadata.runtime, saveFileStem: '' },
+          },
+        }),
+        error: 'saveFileStem',
+      },
+      {
+        description: 'invalid save schema version',
+        raw: JSON.stringify({
+          ...baseEnvelope,
+          metadata: {
+            ...baseEnvelope.metadata,
+            runtime: { ...baseEnvelope.metadata.runtime, saveSchemaVersion: 0 },
+          },
+        }),
+        error: 'saveSchemaVersion',
+      },
+      {
+        description: 'invalid content hash type',
+        raw: JSON.stringify({
+          ...baseEnvelope,
+          metadata: {
+            ...baseEnvelope.metadata,
+            runtime: { ...baseEnvelope.metadata.runtime, contentHash: 42 },
+          },
+        }),
+        error: 'contentHash',
+      },
+      {
+        description: 'invalid content version type',
+        raw: JSON.stringify({
+          ...baseEnvelope,
+          metadata: {
+            ...baseEnvelope.metadata,
+            runtime: { ...baseEnvelope.metadata.runtime, contentVersion: 42 },
+          },
+        }),
+        error: 'contentVersion',
+      },
+      {
+        description: 'missing state payload',
+        raw: JSON.stringify({
+          schemaVersion: 1,
+          metadata: baseEnvelope.metadata,
+        }),
+        error: 'persisted state payload',
+      },
+      {
+        description: 'identity mismatch',
+        raw: JSON.stringify({
+          ...baseEnvelope,
+          metadata: {
+            ...baseEnvelope.metadata,
+            runtime: { ...baseEnvelope.metadata.runtime, saveFileStem: 'other-pack' },
+          },
+        }),
+        error: 'Save identity mismatch',
+      },
+      {
+        description: 'runtime schema mismatch',
+        raw: JSON.stringify({
+          ...baseEnvelope,
+          metadata: {
+            ...baseEnvelope.metadata,
+            runtime: { ...baseEnvelope.metadata.runtime, saveSchemaVersion: 2 },
+          },
+        }),
+        error: 'Save schema mismatch',
+      },
+      {
+        description: 'content hash mismatch',
+        raw: JSON.stringify({
+          ...baseEnvelope,
+          metadata: {
+            ...baseEnvelope.metadata,
+            runtime: { ...baseEnvelope.metadata.runtime, contentHash: 'content:other' },
+          },
+        }),
+        error: 'Save content hash mismatch',
+      },
+    ];
+
+    for (const testCase of cases) {
+      fsPromises.readFile.mockImplementationOnce(
+        async () => testCase.raw as unknown as Buffer,
+      );
+      worker?.postMessage.mockClear();
+      consoleError.mockClear();
+
+      getMenuEntry(['Simulation', 'Load']).click?.();
+      await flushMicrotasks(20);
+
+      const hydrateCalls = worker?.postMessage.mock.calls.filter(
+        (call) => (call[0] as { kind?: string } | undefined)?.kind === 'hydrate',
+      ) ?? [];
+      expect(hydrateCalls, testCase.description).toHaveLength(0);
+
+      const errorCall = consoleError.mock.calls.at(-1);
+      const errorValue = errorCall?.[1];
+      const errorMessage = errorValue instanceof Error ? errorValue.message : String(errorValue);
+      expect(errorCall?.[0], testCase.description).toContain('[shell-desktop] Load state failed');
+      expect(errorMessage, testCase.description).toContain(testCase.error);
+    }
+
+    const windowAllClosedCall = app.on.mock.calls.find((call) => call[0] === 'window-all-closed');
+    const windowAllClosedHandler = windowAllClosedCall?.[1] as undefined | (() => void);
+    windowAllClosedHandler?.();
+    await flushMicrotasks();
+
+    consoleError.mockRestore();
+  });
+
   it('enqueues offline catch-up without resourceDeltas when supported', async () => {
     vi.useFakeTimers();
     setMonotonicNowSequence([0, 16]);

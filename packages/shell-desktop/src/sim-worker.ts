@@ -38,10 +38,12 @@ const isFiniteAtLeastOne = (value: unknown): value is number =>
 
 const getRuntimeCapabilities = (activeRuntime: SimRuntime): SimRuntimeCapabilities => {
   const explicitCapabilities = activeRuntime.getCapabilities?.();
+  const resolvedCapabilities = explicitCapabilities === undefined
+    ? { ...DEFAULT_SIM_RUNTIME_CAPABILITIES }
+    : { ...DEFAULT_SIM_RUNTIME_CAPABILITIES, ...explicitCapabilities };
 
   return {
-    ...DEFAULT_SIM_RUNTIME_CAPABILITIES,
-    ...(explicitCapabilities ?? {}),
+    ...resolvedCapabilities,
     canSerialize:
       explicitCapabilities?.canSerialize ?? typeof activeRuntime.serialize === 'function',
     canHydrate:

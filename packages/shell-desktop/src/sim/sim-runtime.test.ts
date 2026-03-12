@@ -242,6 +242,33 @@ describe('shell-desktop sim runtime', () => {
     });
   });
 
+  it('rejects serialized saves with missing or malformed demoState data', () => {
+    expect(() => loadSerializedSimRuntimeState({
+      schemaVersion: 1,
+      nextStep: 4,
+    })).toThrow(/demoState object/);
+
+    expect(() => loadSerializedSimRuntimeState({
+      schemaVersion: 1,
+      nextStep: 4,
+      demoState: {
+        tickCount: -1,
+        resourceCount: 2,
+        lastCollectedStep: 3,
+      },
+    })).toThrow(/demoState\.tickCount/);
+
+    expect(() => loadSerializedSimRuntimeState({
+      schemaVersion: 1,
+      nextStep: 4,
+      demoState: {
+        tickCount: 3,
+        resourceCount: 2,
+        lastCollectedStep: 'later',
+      },
+    })).toThrow(/demoState\.lastCollectedStep/);
+  });
+
   it('applies offline catch-up payloads without requiring resourceDeltas', () => {
     const sim = createSimRuntime({ stepSizeMs: 10, maxStepsPerFrame: 50 });
 

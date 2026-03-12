@@ -138,6 +138,41 @@ function normalizeDemoState(initialState?: Partial<DemoState>): DemoState {
   };
 }
 
+function parseSerializedDemoState(value: unknown): DemoState {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    throw new TypeError('Invalid sim runtime save: expected demoState object.');
+  }
+
+  const record = value as Record<string, unknown>;
+  const tickCount = record['tickCount'];
+  if (typeof tickCount !== 'number' || !Number.isFinite(tickCount) || tickCount < 0) {
+    throw new TypeError('Invalid sim runtime save: expected demoState.tickCount non-negative number.');
+  }
+
+  const resourceCount = record['resourceCount'];
+  if (typeof resourceCount !== 'number' || !Number.isFinite(resourceCount) || resourceCount < 0) {
+    throw new TypeError(
+      'Invalid sim runtime save: expected demoState.resourceCount non-negative number.',
+    );
+  }
+
+  const lastCollectedStep = record['lastCollectedStep'];
+  if (
+    lastCollectedStep !== null &&
+    (typeof lastCollectedStep !== 'number' || !Number.isFinite(lastCollectedStep) || lastCollectedStep < 0)
+  ) {
+    throw new TypeError(
+      'Invalid sim runtime save: expected demoState.lastCollectedStep non-negative number or null.',
+    );
+  }
+
+  return {
+    tickCount: Math.floor(tickCount),
+    resourceCount,
+    lastCollectedStep: lastCollectedStep === null ? null : Math.floor(lastCollectedStep),
+  };
+}
+
 function sumFiniteObjectValues(value: unknown): number {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) {
     return 0;
@@ -188,9 +223,7 @@ export function loadSerializedSimRuntimeState(value: unknown): SerializedSimRunt
     throw new TypeError('Invalid sim runtime save: expected { nextStep: non-negative number }.');
   }
 
-  const demoState = normalizeDemoState(
-    record['demoState'] as Partial<DemoState> | undefined,
-  );
+  const demoState = parseSerializedDemoState(record['demoState']);
 
   return {
     schemaVersion: SIM_RUNTIME_SAVE_SCHEMA_VERSION,

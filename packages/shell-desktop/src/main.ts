@@ -162,15 +162,61 @@ function asRecord(value: unknown, message: string): Record<string, unknown> {
   return value as Record<string, unknown>;
 }
 
+function trimHyphenEdges(value: string): string {
+  let start = 0;
+  let end = value.length;
+
+  while (start < end && value.charCodeAt(start) === 45) {
+    start += 1;
+  }
+
+  while (end > start && value.charCodeAt(end - 1) === 45) {
+    end -= 1;
+  }
+
+  return value.slice(start, end);
+}
+
+function isAllowedSaveFileStemCharacter(codePoint: number): boolean {
+  return (
+    (codePoint >= 48 && codePoint <= 57) ||
+    (codePoint >= 65 && codePoint <= 90) ||
+    (codePoint >= 97 && codePoint <= 122) ||
+    codePoint === 45 ||
+    codePoint === 46 ||
+    codePoint === 95
+  );
+}
+
+function collapseUnsafeSaveFileStemCharacters(value: string): string {
+  let sanitized = '';
+  let previousWasReplacement = false;
+
+  for (const character of value) {
+    const codePoint = character.charCodeAt(0);
+    if (isAllowedSaveFileStemCharacter(codePoint)) {
+      sanitized += character;
+      previousWasReplacement = false;
+      continue;
+    }
+
+    if (!previousWasReplacement) {
+      sanitized += '-';
+      previousWasReplacement = true;
+    }
+  }
+
+  return sanitized;
+}
+
 function sanitizeSaveFileStem(value: string | undefined): string {
   if (typeof value !== 'string' || value.trim().length === 0) {
     return 'sim-state';
   }
 
-  const sanitized = value
-    .trim()
-    .replace(/[^a-z0-9._-]+/gi, '-')
-    .replace(/^-+|-+$/g, '');
+  const sanitized = trimHyphenEdges(
+    collapseUnsafeSaveFileStemCharacters(value.trim()),
+  );
 
   return sanitized.length > 0 ? sanitized : 'sim-state';
 }
@@ -203,28 +249,12 @@ function buildShellSaveEnvelope(
   };
 }
 
-function parseShellSaveEnvelope(
-  raw: string,
+function parseShellSaveRuntimeMetadata(
+  value: unknown,
   capabilities: SimRuntimeCapabilities,
-): ShellDesktopSaveEnvelope {
-  const parsed = JSON.parse(raw) as unknown;
-  const record = asRecord(parsed, 'Invalid save file: expected a top-level object.');
-  if (record['schemaVersion'] !== SHELL_DESKTOP_SAVE_SCHEMA_VERSION) {
-    throw new TypeError(`Unsupported shell save schema version: ${record['schemaVersion']}`);
-  }
-
-  const metadata = asRecord(record['metadata'], 'Invalid save file: expected metadata object.');
-  const savedAt = metadata['savedAt'];
-  const appVersion = metadata['appVersion'];
-  if (typeof savedAt !== 'string' || savedAt.trim().length === 0) {
-    throw new TypeError('Invalid save file: expected metadata.savedAt string.');
-  }
-  if (typeof appVersion !== 'string' || appVersion.trim().length === 0) {
-    throw new TypeError('Invalid save file: expected metadata.appVersion string.');
-  }
-
+): ShellDesktopSaveEnvelope['metadata']['runtime'] {
   const runtimeMetadata = asRecord(
-    metadata['runtime'],
+    value,
     'Invalid save file: expected metadata.runtime object.',
   );
   const saveFileStem = runtimeMetadata['saveFileStem'];
@@ -243,9 +273,6 @@ function parseShellSaveEnvelope(
   }
   if (contentVersion !== undefined && typeof contentVersion !== 'string') {
     throw new TypeError('Invalid save file: expected metadata.runtime.contentVersion string.');
-  }
-  if (!Reflect.has(record, 'state')) {
-    throw new TypeError('Invalid save file: expected persisted state payload.');
   }
 
   const expectedSaveFileStem = getSaveFileStem(capabilities);
@@ -275,16 +302,44 @@ function parseShellSaveEnvelope(
   }
 
   return {
+    saveFileStem,
+    saveSchemaVersion,
+    ...(contentHash === undefined ? {} : { contentHash }),
+    ...(contentVersion === undefined ? {} : { contentVersion }),
+  };
+}
+
+function parseShellSaveEnvelope(
+  raw: string,
+  capabilities: SimRuntimeCapabilities,
+): ShellDesktopSaveEnvelope {
+  const parsed = JSON.parse(raw) as unknown;
+  const record = asRecord(parsed, 'Invalid save file: expected a top-level object.');
+  if (record['schemaVersion'] !== SHELL_DESKTOP_SAVE_SCHEMA_VERSION) {
+    throw new TypeError(`Unsupported shell save schema version: ${record['schemaVersion']}`);
+  }
+
+  const metadata = asRecord(record['metadata'], 'Invalid save file: expected metadata object.');
+  const savedAt = metadata['savedAt'];
+  const appVersion = metadata['appVersion'];
+  if (typeof savedAt !== 'string' || savedAt.trim().length === 0) {
+    throw new TypeError('Invalid save file: expected metadata.savedAt string.');
+  }
+  if (typeof appVersion !== 'string' || appVersion.trim().length === 0) {
+    throw new TypeError('Invalid save file: expected metadata.appVersion string.');
+  }
+
+  const runtime = parseShellSaveRuntimeMetadata(metadata['runtime'], capabilities);
+  if (!Reflect.has(record, 'state')) {
+    throw new TypeError('Invalid save file: expected persisted state payload.');
+  }
+
+  return {
     schemaVersion: SHELL_DESKTOP_SAVE_SCHEMA_VERSION,
     metadata: {
       savedAt,
       appVersion,
-      runtime: {
-        saveFileStem,
-        saveSchemaVersion,
-        ...(contentHash === undefined ? {} : { contentHash }),
-        ...(contentVersion === undefined ? {} : { contentVersion }),
-      },
+      runtime,
     },
     state: record['state'],
   };
