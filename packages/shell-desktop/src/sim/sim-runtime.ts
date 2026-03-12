@@ -7,11 +7,31 @@ import {
 } from '@idle-engine/core';
 import { RENDERER_CONTRACT_SCHEMA_VERSION } from '@idle-engine/renderer-contract';
 import { SHELL_CONTROL_EVENT_COMMAND_TYPE, type ShellControlEvent } from '../ipc.js';
+import {
+  DEFAULT_SIM_RUNTIME_CAPABILITIES,
+  type SimRuntimeCapabilities,
+} from './worker-protocol.js';
 import type { AssetId, RenderCommandBuffer } from '@idle-engine/renderer-contract';
+
+export const SIM_RUNTIME_SAVE_SCHEMA_VERSION = 1;
+
+type DemoState = {
+  tickCount: number;
+  resourceCount: number;
+  lastCollectedStep: number | null;
+};
+
+export type SerializedSimRuntimeState = Readonly<{
+  schemaVersion: typeof SIM_RUNTIME_SAVE_SCHEMA_VERSION;
+  nextStep: number;
+  demoState: DemoState;
+}>;
 
 export type SimRuntimeOptions = Readonly<{
   stepSizeMs?: number;
   maxStepsPerFrame?: number;
+  initialStep?: number;
+  initialState?: Partial<DemoState>;
 }>;
 
 export type SimTickResult = Readonly<{
@@ -25,10 +45,14 @@ export type SimRuntime = Readonly<{
   getStepSizeMs: () => number;
   getNextStep: () => number;
   hasCommandHandler: (type: string) => boolean;
+  serialize?: () => SerializedSimRuntimeState;
+  getCapabilities?: () => SimRuntimeCapabilities;
 }>;
 
 type CollectResourcePayload =
   RuntimeCommandPayloads[typeof RUNTIME_COMMAND_TYPES.COLLECT_RESOURCE];
+type OfflineCatchupPayload =
+  RuntimeCommandPayloads[typeof RUNTIME_COMMAND_TYPES.OFFLINE_CATCHUP];
 
 type ShellControlEventCommandPayload = Readonly<{
   event: ShellControlEvent;
@@ -44,13 +68,10 @@ const DEMO_UI_PANEL = {
   height: 72,
 } as const;
 
-type DemoState = {
-  tickCount: number;
-  resourceCount: number;
-  lastCollectedStep: number | null;
-};
-
 const SAMPLE_FONT_ASSET_ID = 'sample-pack.ui-font' as AssetId;
+const SIM_RUNTIME_CONTENT_HASH = 'content:dev';
+const SIM_RUNTIME_CONTENT_VERSION = 'dev';
+const SIM_RUNTIME_SAVE_FILE_STEM = 'content-dev';
 
 const clampByte = (value: number): number => Math.min(255, Math.max(0, Math.floor(value)));
 
@@ -96,16 +117,128 @@ const normalizeCommand = (
   };
 };
 
-export function createSimRuntime(options: SimRuntimeOptions = {}): SimRuntime {
-  const state: DemoState = {
-    tickCount: 0,
-    resourceCount: 0,
-    lastCollectedStep: null,
+function normalizeDemoState(initialState?: Partial<DemoState>): DemoState {
+  const tickCount = initialState?.tickCount;
+  const resourceCount = initialState?.resourceCount;
+  const lastCollectedStep = initialState?.lastCollectedStep;
+
+  return {
+    tickCount:
+      typeof tickCount === 'number' && Number.isFinite(tickCount) && tickCount >= 0
+        ? Math.floor(tickCount)
+        : 0,
+    resourceCount:
+      typeof resourceCount === 'number' && Number.isFinite(resourceCount) && resourceCount >= 0
+        ? resourceCount
+        : 0,
+    lastCollectedStep:
+      typeof lastCollectedStep === 'number' && Number.isFinite(lastCollectedStep)
+        ? Math.floor(lastCollectedStep)
+        : null,
   };
+}
+
+function parseSerializedDemoState(value: unknown): DemoState {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    throw new TypeError('Invalid sim runtime save: expected demoState object.');
+  }
+
+  const record = value as Record<string, unknown>;
+  const tickCount = record['tickCount'];
+  if (typeof tickCount !== 'number' || !Number.isFinite(tickCount) || tickCount < 0) {
+    throw new TypeError('Invalid sim runtime save: expected demoState.tickCount non-negative number.');
+  }
+
+  const resourceCount = record['resourceCount'];
+  if (typeof resourceCount !== 'number' || !Number.isFinite(resourceCount) || resourceCount < 0) {
+    throw new TypeError(
+      'Invalid sim runtime save: expected demoState.resourceCount non-negative number.',
+    );
+  }
+
+  const lastCollectedStep = record['lastCollectedStep'];
+  if (
+    lastCollectedStep !== null &&
+    (typeof lastCollectedStep !== 'number' || !Number.isFinite(lastCollectedStep) || lastCollectedStep < 0)
+  ) {
+    throw new TypeError(
+      'Invalid sim runtime save: expected demoState.lastCollectedStep non-negative number or null.',
+    );
+  }
+
+  return {
+    tickCount: Math.floor(tickCount),
+    resourceCount,
+    lastCollectedStep: lastCollectedStep === null ? null : Math.floor(lastCollectedStep),
+  };
+}
+
+function sumFiniteObjectValues(value: unknown): number {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    return 0;
+  }
+
+  return Object.values(value).reduce((total, entry) => {
+    if (typeof entry !== 'number' || !Number.isFinite(entry)) {
+      return total;
+    }
+
+    return total + entry;
+  }, 0);
+}
+
+function resolveOfflineCatchupStepCount(
+  payload: OfflineCatchupPayload,
+  stepSizeMs: number,
+): number {
+  if (stepSizeMs <= 0) {
+    return 0;
+  }
+
+  let elapsedMs = payload.elapsedMs;
+  if (typeof payload.maxElapsedMs === 'number' && Number.isFinite(payload.maxElapsedMs) && payload.maxElapsedMs >= 0) {
+    elapsedMs = Math.min(elapsedMs, payload.maxElapsedMs);
+  }
+
+  let totalSteps = Math.max(0, Math.floor(elapsedMs / stepSizeMs));
+  if (typeof payload.maxSteps === 'number' && Number.isFinite(payload.maxSteps) && payload.maxSteps >= 0) {
+    totalSteps = Math.min(totalSteps, Math.floor(payload.maxSteps));
+  }
+
+  return totalSteps;
+}
+
+export function loadSerializedSimRuntimeState(value: unknown): SerializedSimRuntimeState {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    throw new TypeError('Invalid sim runtime save: expected an object.');
+  }
+
+  const record = value as Record<string, unknown>;
+  if (record['schemaVersion'] !== SIM_RUNTIME_SAVE_SCHEMA_VERSION) {
+    throw new TypeError(`Invalid sim runtime save schema version: ${record['schemaVersion']}`);
+  }
+
+  const nextStep = record['nextStep'];
+  if (typeof nextStep !== 'number' || !Number.isFinite(nextStep) || nextStep < 0) {
+    throw new TypeError('Invalid sim runtime save: expected { nextStep: non-negative number }.');
+  }
+
+  const demoState = parseSerializedDemoState(record['demoState']);
+
+  return {
+    schemaVersion: SIM_RUNTIME_SAVE_SCHEMA_VERSION,
+    nextStep: Math.floor(nextStep),
+    demoState,
+  };
+}
+
+export function createSimRuntime(options: SimRuntimeOptions = {}): SimRuntime {
+  const state = normalizeDemoState(options.initialState);
 
   const runtime = new IdleEngineRuntime({
     stepSizeMs: options.stepSizeMs,
     maxStepsPerFrame: options.maxStepsPerFrame,
+    ...(options.initialStep === undefined ? {} : { initialStep: options.initialStep }),
   });
 
   const frameQueue: RenderCommandBuffer[] = [];
@@ -203,6 +336,19 @@ export function createSimRuntime(options: SimRuntimeOptions = {}): SimRuntime {
 
   dispatcher.register(SHELL_CONTROL_EVENT_COMMAND_TYPE, (_payload: ShellControlEventCommandPayload) => undefined);
 
+  dispatcher.register(RUNTIME_COMMAND_TYPES.OFFLINE_CATCHUP, (payload: OfflineCatchupPayload, context) => {
+    if (typeof payload?.elapsedMs !== 'number' || !Number.isFinite(payload.elapsedMs) || payload.elapsedMs <= 0) {
+      return;
+    }
+
+    const offlineSteps = resolveOfflineCatchupStepCount(payload, runtime.getStepSizeMs());
+    const resourceDelta = offlineSteps + sumFiniteObjectValues(payload.resourceDeltas);
+
+    state.tickCount += offlineSteps;
+    state.resourceCount += resourceDelta;
+    state.lastCollectedStep = context.step;
+  });
+
   dispatcher.register(RUNTIME_COMMAND_TYPES.INPUT_EVENT, (payload: InputEventCommandPayload, context) => {
     // Fail-fast on unknown schema version (sim worker crashes)
     if (payload.schemaVersion !== 1) {
@@ -234,6 +380,25 @@ export function createSimRuntime(options: SimRuntimeOptions = {}): SimRuntime {
   });
 
   const hasCommandHandler = (type: string): boolean => dispatcher.getHandler(type) !== undefined;
+  const getCapabilities = (): SimRuntimeCapabilities => ({
+    ...DEFAULT_SIM_RUNTIME_CAPABILITIES,
+    canSerialize: true,
+    canHydrate: true,
+    supportsOfflineCatchup: hasCommandHandler(RUNTIME_COMMAND_TYPES.OFFLINE_CATCHUP),
+    saveFileStem: SIM_RUNTIME_SAVE_FILE_STEM,
+    saveSchemaVersion: SIM_RUNTIME_SAVE_SCHEMA_VERSION,
+    contentHash: SIM_RUNTIME_CONTENT_HASH,
+    contentVersion: SIM_RUNTIME_CONTENT_VERSION,
+  });
+  const serialize = (): SerializedSimRuntimeState => ({
+    schemaVersion: SIM_RUNTIME_SAVE_SCHEMA_VERSION,
+    nextStep: runtime.getNextExecutableStep(),
+    demoState: {
+      tickCount: state.tickCount,
+      resourceCount: state.resourceCount,
+      lastCollectedStep: state.lastCollectedStep,
+    },
+  });
 
   runtime.addSystem({
     id: 'demo-state',
@@ -294,5 +459,7 @@ export function createSimRuntime(options: SimRuntimeOptions = {}): SimRuntime {
     getStepSizeMs: () => runtime.getStepSizeMs(),
     getNextStep: () => runtime.getNextExecutableStep(),
     hasCommandHandler,
+    serialize,
+    getCapabilities,
   };
 }
