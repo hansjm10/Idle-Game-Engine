@@ -43,6 +43,43 @@ const buildInitializeRequestBody = (): string =>
     },
   });
 
+async function closeHttpServer(server: http.Server): Promise<void> {
+  await new Promise<void>((resolve, reject) => {
+    server.close((error) => {
+      if (error) {
+        reject(error);
+        return;
+      }
+      resolve();
+    });
+  });
+}
+
+async function createBusyServer(port = 0): Promise<{
+  server: http.Server;
+  port: number;
+}> {
+  const server = http.createServer((_req, res) => {
+    res.writeHead(200);
+    res.end('busy');
+  });
+
+  await new Promise<void>((resolve, reject) => {
+    server.once('error', reject);
+    server.listen({ host: '127.0.0.1', port }, () => {
+      server.off('error', reject);
+      resolve();
+    });
+  });
+
+  const address = server.address();
+  if (!address || typeof address === 'string') {
+    throw new Error('Expected blocker server to expose a bound TCP address');
+  }
+
+  return { server, port: address.port };
+}
+
 describe('shell-desktop MCP server', () => {
   const servers: Array<{ close: () => Promise<void> }> = [];
 
@@ -82,39 +119,8 @@ describe('shell-desktop MCP server', () => {
     expect(server.url.pathname).toBe('/mcp/sse');
   });
 
-  it('falls back to the gateway backend port when the default MCP port is busy', async () => {
-    const createBusyServer = async (port: number): Promise<{
-      server: http.Server;
-      listening: boolean;
-    }> => {
-      const server = http.createServer((_req, res) => {
-        res.writeHead(200);
-        res.end('busy');
-      });
-
-      let listening = false;
-      await new Promise<void>((resolve, reject) => {
-        server.once('error', (error: unknown) => {
-          const code = error instanceof Error && 'code' in error
-            ? (error as NodeJS.ErrnoException).code
-            : undefined;
-          if (code === 'EADDRINUSE') {
-            resolve();
-            return;
-          }
-          reject(error);
-        });
-
-        server.listen({ host: '127.0.0.1', port }, () => {
-          listening = true;
-          resolve();
-        });
-      });
-
-      return { server, listening };
-    };
-
-    const blockerDefault = await createBusyServer(8570);
+  it('falls back to a configured fallback port when the default MCP port is busy', async () => {
+    const blockerDefault = await createBusyServer();
 
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => undefined);
@@ -123,6 +129,8 @@ describe('shell-desktop MCP server', () => {
       const server = await maybeStartShellDesktopMcpServer({
         argv: ['node', 'app.js', '--enable-mcp-server'],
         env: { NODE_ENV: 'production' },
+        defaultPort: blockerDefault.port,
+        fallbackPort: 0,
       });
 
       if (!server) {
@@ -131,9 +139,9 @@ describe('shell-desktop MCP server', () => {
 
       servers.push(server);
       const selectedPort = Number.parseInt(server.url.port, 10);
-      expect(selectedPort).toBe(8571);
+      expect(selectedPort).not.toBe(blockerDefault.port);
       expect(warnSpy).toHaveBeenCalledWith(
-        `[shell-desktop] MCP port 8570 is busy; using ${selectedPort} instead.`,
+        `[shell-desktop] MCP port ${blockerDefault.port} is busy; using ${selectedPort} instead.`,
       );
       expect(logSpy).toHaveBeenCalledWith(
         `[shell-desktop] MCP server listening at ${server.url.toString()}`,
@@ -141,96 +149,30 @@ describe('shell-desktop MCP server', () => {
     } finally {
       warnSpy.mockRestore();
       logSpy.mockRestore();
-
-      if (blockerDefault.listening) {
-        await new Promise<void>((resolve, reject) => {
-          blockerDefault.server.close((error) => {
-            if (error) {
-              reject(error);
-              return;
-            }
-            resolve();
-          });
-        });
-      }
-
+      await closeHttpServer(blockerDefault.server);
     }
   });
 
-  it('throws when both the default MCP port and gateway backend port are busy', async () => {
-    const blockerDefault = http.createServer((_req, res) => {
-      res.writeHead(200);
-      res.end('busy');
-    });
-    const blockerFallback = http.createServer((_req, res) => {
-      res.writeHead(200);
-      res.end('busy');
-    });
-
-    await new Promise<void>((resolve, reject) => {
-      blockerDefault.once('error', reject);
-      blockerDefault.listen({ host: '127.0.0.1', port: 8570 }, () => {
-        blockerDefault.off('error', reject);
-        resolve();
-      });
-    });
-
-    await new Promise<void>((resolve, reject) => {
-      blockerFallback.once('error', reject);
-      blockerFallback.listen({ host: '127.0.0.1', port: 8571 }, () => {
-        blockerFallback.off('error', reject);
-        resolve();
-      });
-    });
+  it('throws when both the configured default MCP port and fallback port are busy', async () => {
+    const blockerDefault = await createBusyServer();
+    const blockerFallback = await createBusyServer();
 
     try {
       await expect(maybeStartShellDesktopMcpServer({
         argv: ['node', 'app.js', '--enable-mcp-server'],
         env: { NODE_ENV: 'test' },
+        defaultPort: blockerDefault.port,
+        fallbackPort: blockerFallback.port,
       })).rejects.toMatchObject({ code: 'EADDRINUSE' });
     } finally {
-      await new Promise<void>((resolve, reject) => {
-        blockerDefault.close((error) => {
-          if (error) {
-            reject(error);
-            return;
-          }
-          resolve();
-        });
-      });
-
-      await new Promise<void>((resolve, reject) => {
-        blockerFallback.close((error) => {
-          if (error) {
-            reject(error);
-            return;
-          }
-          resolve();
-        });
-      });
+      await closeHttpServer(blockerDefault.server);
+      await closeHttpServer(blockerFallback.server);
     }
   });
 
   it('throws when an explicit MCP port is already in use', async () => {
-    const blocker = http.createServer((_req, res) => {
-      res.writeHead(200);
-      res.end('busy');
-    });
-
-    await new Promise<void>((resolve, reject) => {
-      blocker.once('error', reject);
-      blocker.listen({ host: '127.0.0.1', port: 0 }, () => {
-        blocker.off('error', reject);
-        resolve();
-      });
-    });
-
-    const address = blocker.address();
-    if (!address || typeof address === 'string') {
-      throw new Error('Expected blocker server to expose a bound TCP address');
-    }
-
-    const busyPort = String(address.port);
+    const blocker = await createBusyServer();
+    const busyPort = String(blocker.port);
 
     try {
       await expect(maybeStartShellDesktopMcpServer({
@@ -241,56 +183,24 @@ describe('shell-desktop MCP server', () => {
         },
       })).rejects.toMatchObject({ code: 'EADDRINUSE' });
     } finally {
-      await new Promise<void>((resolve, reject) => {
-        blocker.close((error) => {
-          if (error) {
-            reject(error);
-            return;
-          }
-          resolve();
-        });
-      });
+      await closeHttpServer(blocker.server);
     }
   });
 
   it('closes server resources when startup fails during listen', async () => {
-    const blocker = http.createServer((_req, res) => {
-      res.writeHead(200);
-      res.end('busy');
-    });
-
-    await new Promise<void>((resolve, reject) => {
-      blocker.once('error', reject);
-      blocker.listen({ host: '127.0.0.1', port: 0 }, () => {
-        blocker.off('error', reject);
-        resolve();
-      });
-    });
-
-    const address = blocker.address();
-    if (!address || typeof address === 'string') {
-      throw new Error('Expected blocker server to expose a bound TCP address');
-    }
+    const blocker = await createBusyServer();
 
     const serverCloseSpy = vi.spyOn(McpServer.prototype, 'close');
     const transportCloseSpy = vi.spyOn(StreamableHTTPServerTransport.prototype, 'close');
 
     try {
-      await expect(startShellDesktopMcpServer({ port: address.port })).rejects.toMatchObject({ code: 'EADDRINUSE' });
+      await expect(startShellDesktopMcpServer({ port: blocker.port })).rejects.toMatchObject({ code: 'EADDRINUSE' });
       expect(serverCloseSpy).toHaveBeenCalled();
       expect(transportCloseSpy).toHaveBeenCalled();
     } finally {
       serverCloseSpy.mockRestore();
       transportCloseSpy.mockRestore();
-      await new Promise<void>((resolve, reject) => {
-        blocker.close((error) => {
-          if (error) {
-            reject(error);
-            return;
-          }
-          resolve();
-        });
-      });
+      await closeHttpServer(blocker.server);
     }
   });
 

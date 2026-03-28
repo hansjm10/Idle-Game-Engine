@@ -57,6 +57,7 @@ function parsePort(value: string): number {
 function getRequestedPort(
   argv: readonly string[],
   env: NodeJS.ProcessEnv,
+  defaultPort = DEFAULT_MCP_PORT,
 ): Readonly<{ port: number; explicit: boolean }> {
   const envPort = env.IDLE_ENGINE_MCP_PORT;
   if (envPort !== undefined) {
@@ -69,7 +70,7 @@ function getRequestedPort(
     }
   }
 
-  return { port: DEFAULT_MCP_PORT, explicit: false };
+  return { port: defaultPort, explicit: false };
 }
 
 function createShellDesktopMcpServer(
@@ -273,6 +274,8 @@ export async function maybeStartShellDesktopMcpServer(
   options: Readonly<{
     argv?: readonly string[];
     env?: NodeJS.ProcessEnv;
+    defaultPort?: number;
+    fallbackPort?: number;
     sim?: SimMcpController;
     window?: WindowMcpController;
     input?: InputMcpController;
@@ -287,7 +290,7 @@ export async function maybeStartShellDesktopMcpServer(
     return undefined;
   }
 
-  const requested = getRequestedPort(argv, env);
+  const requested = getRequestedPort(argv, env, options.defaultPort);
   const isPortBusyError = (error: unknown): boolean =>
     error instanceof Error
       && 'code' in error
@@ -309,7 +312,8 @@ export async function maybeStartShellDesktopMcpServer(
       throw error;
     }
 
-    const fallbackPort = DEFAULT_MCP_FALLBACK_PORT;
+    const fallbackPort = options.fallbackPort
+      ?? (options.defaultPort !== undefined ? options.defaultPort + 1 : DEFAULT_MCP_FALLBACK_PORT);
     let fallbackError: unknown = error;
     try {
       server = await startShellDesktopMcpServer({
@@ -320,7 +324,7 @@ export async function maybeStartShellDesktopMcpServer(
         asset: options.asset,
         diagnostics: options.diagnostics,
       });
-      selectedPort = fallbackPort;
+      selectedPort = Number.parseInt(server.url.port, 10);
       fallbackError = undefined;
     } catch (nextError: unknown) {
       fallbackError = nextError;
