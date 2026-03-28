@@ -1,15 +1,28 @@
-import { contextBridge, ipcRenderer } from 'electron';
-import {
-  IDLE_ENGINE_API_KEY,
-  IPC_CHANNELS,
-  type IdleEngineApi,
-  type IpcInvokeMap,
-  type ShellFramePayload,
-  type ShellInputEventEnvelope,
-  type ShellRendererDiagnosticsPayload,
-  type ShellRendererLogPayload,
-  type ShellSimStatusPayload,
+const { contextBridge, ipcRenderer } = require('electron') as typeof import('electron');
+
+import type {
+  IdleEngineApi,
+  IpcInvokeMap,
+  ShellFramePayload,
+  ShellInputEventEnvelope,
+  ShellRendererDiagnosticsPayload,
+  ShellRendererLogPayload,
+  ShellSimStatusPayload,
 } from './ipc.js';
+
+// Sandboxed preloads cannot import local runtime modules, so these values stay inline
+// and are checked against the shared IPC contract at compile time.
+const IDLE_ENGINE_API_KEY = 'idleEngine' as const satisfies typeof import('./ipc.js').IDLE_ENGINE_API_KEY;
+const IPC_CHANNELS = {
+  ping: 'idle-engine:ping',
+  readAsset: 'idle-engine:read-asset',
+  controlEvent: 'idle-engine:control-event',
+  inputEvent: 'idle-engine:input-event',
+  rendererDiagnostics: 'idle-engine:renderer-diagnostics',
+  rendererLog: 'idle-engine:renderer-log',
+  frame: 'idle-engine:frame',
+  simStatus: 'idle-engine:sim-status',
+} as const satisfies typeof import('./ipc.js').IPC_CHANNELS;
 
 async function invoke<K extends keyof IpcInvokeMap>(
   channel: K,

@@ -250,7 +250,7 @@ describe('shell-desktop main process entrypoint', () => {
     await expect(handler?.({}, [])).rejects.toThrow(TypeError);
   }, 15000);
 
-  it('uses an unsandboxed ESM preload tuple', async () => {
+  it('uses a sandboxed CommonJS preload tuple', async () => {
     await import('./main.js');
     await flushMicrotasks();
 
@@ -258,8 +258,8 @@ describe('shell-desktop main process entrypoint', () => {
       | { webPreferences?: { sandbox?: boolean; preload?: string } }
       | undefined;
 
-    expect(options?.webPreferences?.sandbox).toBe(false);
-    expect(path.basename(options?.webPreferences?.preload ?? '')).toBe('preload.mjs');
+    expect(options?.webPreferences?.sandbox).toBe(true);
+    expect(path.basename(options?.webPreferences?.preload ?? '')).toBe('preload.cjs');
   });
 
   it('starts the MCP server when enabled', async () => {

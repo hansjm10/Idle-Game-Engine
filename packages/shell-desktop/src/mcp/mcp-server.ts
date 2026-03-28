@@ -33,6 +33,7 @@ const MCP_SERVER_INFO = {
 } as const;
 
 const DEFAULT_MCP_PORT = 8570;
+const DEFAULT_MCP_FALLBACK_PORT = DEFAULT_MCP_PORT + 1;
 const MCP_HOST = '127.0.0.1';
 
 const MCP_HTTP_PATH = '/mcp/sse';
@@ -308,25 +309,23 @@ export async function maybeStartShellDesktopMcpServer(
       throw error;
     }
 
+    const fallbackPort = DEFAULT_MCP_FALLBACK_PORT;
     let fallbackError: unknown = error;
-    for (let fallbackPort = requested.port + 1; fallbackPort <= 65535; fallbackPort += 1) {
-      try {
-        server = await startShellDesktopMcpServer({
-          port: fallbackPort,
-          sim: options.sim,
-          window: options.window,
-          input: options.input,
-          asset: options.asset,
-          diagnostics: options.diagnostics,
-        });
-        selectedPort = fallbackPort;
-        fallbackError = undefined;
-        break;
-      } catch (nextError: unknown) {
-        fallbackError = nextError;
-        if (!isPortBusyError(nextError) || fallbackPort === 65535) {
-          throw nextError;
-        }
+    try {
+      server = await startShellDesktopMcpServer({
+        port: fallbackPort,
+        sim: options.sim,
+        window: options.window,
+        input: options.input,
+        asset: options.asset,
+        diagnostics: options.diagnostics,
+      });
+      selectedPort = fallbackPort;
+      fallbackError = undefined;
+    } catch (nextError: unknown) {
+      fallbackError = nextError;
+      if (!isPortBusyError(nextError)) {
+        throw nextError;
       }
     }
 
