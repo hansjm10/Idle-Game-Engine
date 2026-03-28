@@ -8,20 +8,32 @@ const invoke = vi.fn();
 const send = vi.fn();
 const on = vi.fn();
 const removeListener = vi.fn();
-
-vi.mock('electron', () => ({
+const preloadElectronModule = {
   contextBridge: {
     exposeInMainWorld,
   },
   ipcRenderer: { invoke, send, on, removeListener },
+};
+
+vi.mock('electron', () => ({
+  ...preloadElectronModule,
 }));
 
 describe('shell-desktop preload', () => {
   it('exposes a typed idleEngine API and routes calls via ipcRenderer', async () => {
     const assetBytes = new Uint8Array([1, 2, 3]).buffer;
     invoke.mockResolvedValueOnce({ message: 'pong-from-test' }).mockResolvedValueOnce(assetBytes);
+    (globalThis as typeof globalThis & {
+      __idleEngineElectronPreloadTestModule__?: typeof preloadElectronModule;
+    }).__idleEngineElectronPreloadTestModule__ = preloadElectronModule;
 
-    await import('./preload.cjs');
+    try {
+      await import('./preload.cjs');
+    } finally {
+      delete (globalThis as typeof globalThis & {
+        __idleEngineElectronPreloadTestModule__?: typeof preloadElectronModule;
+      }).__idleEngineElectronPreloadTestModule__;
+    }
 
     expect(exposeInMainWorld).toHaveBeenCalledTimes(1);
     const [key, api] = exposeInMainWorld.mock.calls[0] as [string, IdleEngineApi];
