@@ -283,6 +283,37 @@ describe('shell-desktop sim runtime', () => {
     });
   });
 
+  it('renders a frame for restored step-0 saves while paused', () => {
+    const sim = createSimRuntime({ stepSizeMs: 10, maxStepsPerFrame: 50 });
+
+    const savedState = loadSerializedSimRuntimeState(sim.serialize?.());
+    const restored = createSimRuntime({
+      stepSizeMs: 10,
+      maxStepsPerFrame: 50,
+      initialStep: savedState.nextStep,
+      initialState: savedState.demoState,
+    });
+
+    const frame = restored.renderCurrentFrame?.();
+    expect(frame?.frame.step).toBe(0);
+    expect(frame?.frame.simTimeMs).toBe(0);
+
+    const fillRect = frame?.draws.find(
+      (draw) =>
+        draw.kind === 'rect' &&
+        draw.passId === 'ui' &&
+        draw.sortKey.sortKeyHi === 0 &&
+        draw.sortKey.sortKeyLo === 2,
+    );
+
+    expect(fillRect).toMatchObject({
+      kind: 'rect',
+      passId: 'ui',
+      width: 0,
+      colorRgba: 0x2a_4f_8a_ff,
+    });
+  });
+
   it('rejects serialized saves with missing or malformed demoState data', () => {
     expect(() => loadSerializedSimRuntimeState({
       schemaVersion: 1,
@@ -324,6 +355,10 @@ describe('shell-desktop sim runtime', () => {
     ]);
 
     const result = sim.tick(10);
+    expect(result.frames).toHaveLength(3);
+    expect(result.nextStep).toBe(3);
+    expect(sim.getNextStep()).toBe(3);
+
     const fillRect = result.frames[0]?.draws.find(
       (draw) =>
         draw.kind === 'rect' &&
@@ -338,6 +373,10 @@ describe('shell-desktop sim runtime', () => {
       width: 43,
       colorRgba: 0x8a_2a_4f_ff,
     });
+
+    const savedState = loadSerializedSimRuntimeState(sim.serialize?.());
+    expect(savedState.nextStep).toBe(3);
+    expect(savedState.demoState.tickCount).toBe(3);
   });
 
   it('respects offline catch-up maxElapsedMs and maxSteps limits', () => {

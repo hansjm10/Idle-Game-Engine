@@ -209,6 +209,35 @@ function resolveOfflineCatchupStepCount(
   return totalSteps;
 }
 
+function resolveOfflineCatchupTotalMs(
+  payload: OfflineCatchupPayload,
+  stepSizeMs: number,
+): number {
+  if (stepSizeMs <= 0) {
+    return 0;
+  }
+
+  const totalSteps = resolveOfflineCatchupStepCount(payload, stepSizeMs);
+  if (totalSteps <= 0) {
+    return 0;
+  }
+
+  let elapsedMs = payload.elapsedMs;
+  if (
+    typeof payload.maxElapsedMs === 'number' &&
+    Number.isFinite(payload.maxElapsedMs) &&
+    payload.maxElapsedMs >= 0
+  ) {
+    elapsedMs = Math.min(elapsedMs, payload.maxElapsedMs);
+  }
+
+  const fullSteps = Math.max(0, Math.floor(elapsedMs / stepSizeMs));
+  const remainderMs =
+    totalSteps === fullSteps ? elapsedMs - fullSteps * stepSizeMs : 0;
+
+  return totalSteps * stepSizeMs + remainderMs;
+}
+
 export function loadSerializedSimRuntimeState(value: unknown): SerializedSimRuntimeState {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) {
     throw new TypeError('Invalid sim runtime save: expected an object.');
@@ -342,12 +371,18 @@ export function createSimRuntime(options: SimRuntimeOptions = {}): SimRuntime {
       return;
     }
 
-    const offlineSteps = resolveOfflineCatchupStepCount(payload, runtime.getStepSizeMs());
+    const stepSizeMs = runtime.getStepSizeMs();
+    const offlineSteps = resolveOfflineCatchupStepCount(payload, stepSizeMs);
+    const totalOfflineMs = resolveOfflineCatchupTotalMs(payload, stepSizeMs);
     const resourceDelta = offlineSteps + sumFiniteObjectValues(payload.resourceDeltas);
 
-    state.tickCount += offlineSteps;
     state.resourceCount += resourceDelta;
     state.lastCollectedStep = context.step;
+
+    const remainingOfflineMs = totalOfflineMs - stepSizeMs;
+    if (remainingOfflineMs > 0) {
+      runtime.creditTime(remainingOfflineMs);
+    }
   });
 
   dispatcher.register(RUNTIME_COMMAND_TYPES.INPUT_EVENT, (payload: InputEventCommandPayload, context) => {
@@ -456,11 +491,7 @@ export function createSimRuntime(options: SimRuntimeOptions = {}): SimRuntime {
 
   const renderCurrentFrame = (): RenderCommandBuffer | undefined => {
     const nextStep = runtime.getNextExecutableStep();
-    if (nextStep <= 0) {
-      return undefined;
-    }
-
-    return buildFrame(nextStep - 1);
+    return buildFrame(Math.max(0, nextStep - 1));
   };
 
   return {
