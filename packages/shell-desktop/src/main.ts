@@ -651,6 +651,7 @@ type SimWorkerController = Readonly<{
   enqueueCommands: (commands: readonly Command[]) => void;
   serializeState: () => Promise<unknown>;
   hydrateState: (state: unknown) => Promise<void>;
+  isCommandIngressFrozen: () => boolean;
   pause: () => void;
   resume: () => void;
   step: (steps: number) => Promise<SimMcpStatus>;
@@ -670,6 +671,7 @@ let simWorkerController: SimWorkerController | undefined;
 let mcpServer: ShellDesktopMcpServer | undefined;
 let simRuntimeCapabilities: SimRuntimeCapabilities = DEFAULT_SIM_RUNTIME_CAPABILITIES;
 let simToolingBusy = false;
+const SIM_TOOLING_BUSY_ERROR = 'Simulation save/load is in progress.';
 
 function createSimWorkerController(
   mainWindow: BrowserWindow,
@@ -703,6 +705,7 @@ function createSimWorkerController(
     }>
   >();
   let requestSequence = 0;
+  let commandIngressFreezeDepth = 0;
 
   const tickIntervalMs = 16;
   const MAX_TICK_DELTA_MS = 250;
@@ -727,6 +730,21 @@ function createSimWorkerController(
     if (tickTimer) {
       clearInterval(tickTimer);
       tickTimer = undefined;
+    }
+  };
+
+  const isCommandIngressFrozen = (): boolean => commandIngressFreezeDepth > 0;
+
+  const publishFrame = (frame: Extract<SimWorkerOutboundMessage, { kind: 'frame' }>['frame']): void => {
+    if (!frame) {
+      return;
+    }
+
+    try {
+      mainWindow.webContents.send(IPC_CHANNELS.frame, frame);
+    } catch (error: unknown) {
+      // eslint-disable-next-line no-console
+      console.error(error);
     }
   };
 
@@ -887,7 +905,7 @@ function createSimWorkerController(
     });
   };
 
-  const runWhileTickLoopSuspended = async <T>(operation: () => Promise<T>): Promise<T> => {
+  const runWhileCommandIngressFrozen = async <T>(operation: () => Promise<T>): Promise<T> => {
     if (hasFailed || isDisposing) {
       throw new Error('Simulation is not running.');
     }
@@ -898,13 +916,15 @@ function createSimWorkerController(
 
     const wasPaused = isPaused;
     isPaused = true;
+    commandIngressFreezeDepth += 1;
     stopTickLoop();
 
     try {
       return await operation();
     } finally {
+      commandIngressFreezeDepth = Math.max(0, commandIngressFreezeDepth - 1);
       isPaused = wasPaused;
-      if (!wasPaused) {
+      if (!wasPaused && !isCommandIngressFrozen()) {
         startTickLoop();
       }
     }
@@ -970,15 +990,7 @@ function createSimWorkerController(
     if (message.kind === 'frame') {
       nextStep = message.nextStep;
       resolvePendingStepCompletions();
-      if (!message.frame) {
-        return;
-      }
-      try {
-        mainWindow.webContents.send(IPC_CHANNELS.frame, message.frame);
-      } catch (error: unknown) {
-        // eslint-disable-next-line no-console
-        console.error(error);
-      }
+      publishFrame(message.frame);
       return;
     }
 
@@ -991,6 +1003,7 @@ function createSimWorkerController(
       nextStep = message.nextStep;
       runtimeCapabilities = message.capabilities ?? runtimeCapabilities;
       notifyCapabilitiesChanged();
+      publishFrame(message.frame);
       takePendingRequest(message.requestId)?.resolve(undefined);
       return;
     }
@@ -1036,7 +1049,7 @@ function createSimWorkerController(
 
   const sendControlEvent = (event: ShellControlEvent): void => {
     // Drop control events until worker is ready (design workflow rule)
-    if (!isReady) {
+    if (!isReady || isCommandIngressFrozen()) {
       return;
     }
 
@@ -1077,7 +1090,7 @@ function createSimWorkerController(
    */
   const sendInputEvent = (envelope: ShellInputEventEnvelope): void => {
     // Drop input events until worker is ready (design workflow rule)
-    if (!isReady) {
+    if (!isReady || isCommandIngressFrozen()) {
       return;
     }
 
@@ -1096,18 +1109,22 @@ function createSimWorkerController(
   };
 
   const enqueueCommands = (commands: readonly Command[]): void => {
+    if (isCommandIngressFrozen()) {
+      return;
+    }
+
     safePostMessage({ kind: 'enqueueCommands', commands });
   };
 
   const serializeState = async (): Promise<unknown> => {
-    return runWhileTickLoopSuspended(async () => {
+    return runWhileCommandIngressFrozen(async () => {
       const requestId = `serialize-${++requestSequence}`;
       return requestWorker<unknown>({ kind: 'serialize', requestId });
     });
   };
 
   const hydrateState = async (state: unknown): Promise<void> => {
-    await runWhileTickLoopSuspended(async () => {
+    await runWhileCommandIngressFrozen(async () => {
       const requestId = `hydrate-${++requestSequence}`;
       await requestWorker<void>({ kind: 'hydrate', requestId, state });
     });
@@ -1127,6 +1144,10 @@ function createSimWorkerController(
       return;
     }
 
+    if (isCommandIngressFrozen()) {
+      throw new Error(SIM_TOOLING_BUSY_ERROR);
+    }
+
     isPaused = false;
     startTickLoop();
   };
@@ -1142,6 +1163,10 @@ function createSimWorkerController(
 
     if (!isReady) {
       throw new Error('Sim is not ready to step yet.');
+    }
+
+    if (isCommandIngressFrozen()) {
+      throw new Error(SIM_TOOLING_BUSY_ERROR);
     }
 
     isPaused = true;
@@ -1189,6 +1214,7 @@ function createSimWorkerController(
     enqueueCommands,
     serializeState,
     hydrateState,
+    isCommandIngressFrozen,
     pause,
     resume,
     step,
@@ -1260,6 +1286,10 @@ const simMcpController: SimMcpController = {
       throw new Error('Simulation is not running.');
     }
 
+    if (simWorkerController.isCommandIngressFrozen()) {
+      throw new Error(SIM_TOOLING_BUSY_ERROR);
+    }
+
     simWorkerController.resume();
     pushDiagnosticsLog({
       source: 'main',
@@ -1275,6 +1305,10 @@ const simMcpController: SimMcpController = {
       throw new Error('Simulation is not running.');
     }
 
+    if (controller.isCommandIngressFrozen()) {
+      throw new Error(SIM_TOOLING_BUSY_ERROR);
+    }
+
     return controller.step(steps);
   },
   enqueue: (commands) => {
@@ -1286,6 +1320,10 @@ const simMcpController: SimMcpController = {
     const status = controller.getStatus();
     if (status.state === 'crashed' || status.state === 'stopped') {
       throw new Error(`Simulation is ${status.state}; cannot enqueue commands.`);
+    }
+
+    if (controller.isCommandIngressFrozen()) {
+      throw new Error(SIM_TOOLING_BUSY_ERROR);
     }
 
     controller.enqueueCommands(commands);
@@ -1472,6 +1510,10 @@ const inputMcpController: InputMcpController = {
   sendControlEvent: (event) => {
     if (!simWorkerController) {
       throw new Error('Simulation is not running.');
+    }
+
+    if (simWorkerController.isCommandIngressFrozen()) {
+      throw new Error(SIM_TOOLING_BUSY_ERROR);
     }
 
     simWorkerController.sendControlEvent(event);
@@ -1749,6 +1791,7 @@ app.on('window-all-closed', () => {
   simRuntimeCapabilities = DEFAULT_SIM_RUNTIME_CAPABILITIES;
   simToolingBusy = false;
   mainWindow = undefined;
+  installAppMenu();
   if (process.platform !== 'darwin') {
     mcpServer?.close().catch((error: unknown) => {
       // eslint-disable-next-line no-console

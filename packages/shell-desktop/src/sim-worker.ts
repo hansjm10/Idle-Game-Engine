@@ -181,6 +181,7 @@ parentPort.on('message', (message: unknown) => {
           requestId: request.requestId,
           nextStep: runtime.getNextStep(),
           capabilities: getRuntimeCapabilities(runtime),
+          frame: runtime.renderCurrentFrame?.(),
         });
       } catch (error: unknown) {
         emitRequestError(

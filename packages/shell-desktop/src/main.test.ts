@@ -6,6 +6,7 @@ import { CommandPriority, RUNTIME_COMMAND_TYPES } from '@idle-engine/core';
 import type { createControlCommands as CreateControlCommandsFn } from '@idle-engine/controls';
 import { IPC_CHANNELS, SHELL_CONTROL_EVENT_COMMAND_TYPE } from './ipc.js';
 import type { DiagnosticsMcpController } from './mcp/diagnostics-tools.js';
+import type { InputMcpController } from './mcp/input-tools.js';
 import type { ShellDesktopMcpServer } from './mcp/mcp-server.js';
 import { SIM_MCP_MAX_STEP_COUNT, type SimMcpController } from './mcp/sim-tools.js';
 
@@ -60,6 +61,33 @@ function getMenuEntry(path: readonly string[]): MenuEntry {
   }
 
   return currentEntry!;
+}
+
+function getRegisteredMcpControllers(): {
+  sim: SimMcpController;
+  input: InputMcpController;
+} {
+  const registrationCalls = maybeStartShellDesktopMcpServer.mock.calls as unknown as Array<
+    [{
+      sim?: SimMcpController;
+      input?: InputMcpController;
+    }?]
+  >;
+  const registration = registrationCalls[0]?.[0] as
+    | {
+        sim?: SimMcpController;
+        input?: InputMcpController;
+      }
+    | undefined;
+
+  if (!registration?.sim || !registration.input) {
+    throw new Error('Expected MCP controllers to be registered');
+  }
+
+  return {
+    sim: registration.sim,
+    input: registration.input,
+  };
 }
 
 const app = {
@@ -1508,6 +1536,62 @@ describe('shell-desktop main process entrypoint', () => {
     await flushMicrotasks();
   });
 
+  it('disables simulation tooling menu items after the last darwin window closes', async () => {
+    vi.useFakeTimers();
+    setMonotonicNowSequence([0]);
+    const originalPlatform = process.platform;
+    Object.defineProperty(process, 'platform', {
+      value: 'darwin',
+      configurable: true,
+      enumerable: true,
+      writable: false,
+    });
+
+    try {
+      await import('./main.js');
+      await flushMicrotasks();
+
+      const worker = Worker.instances[0];
+      expect(worker).toBeDefined();
+
+      worker?.emitMessage({
+        kind: 'ready',
+        stepSizeMs: 16,
+        nextStep: 0,
+        capabilities: {
+          canSerialize: true,
+          canHydrate: true,
+          supportsOfflineCatchup: true,
+          saveFileStem: 'sample-pack',
+          saveSchemaVersion: 1,
+          contentHash: 'content:dev',
+          contentVersion: 'dev',
+        },
+      });
+      await flushMicrotasks();
+
+      expect(getMenuEntry(['Simulation', 'Save']).enabled).toBe(true);
+      expect(getMenuEntry(['Simulation', 'Load']).enabled).toBe(true);
+
+      const windowAllClosedCall = app.on.mock.calls.find((call) => call[0] === 'window-all-closed');
+      const windowAllClosedHandler = windowAllClosedCall?.[1] as undefined | (() => void);
+      windowAllClosedHandler?.();
+      await flushMicrotasks();
+
+      expect(getMenuEntry(['Simulation', 'Save']).enabled).toBe(false);
+      expect(getMenuEntry(['Simulation', 'Load']).enabled).toBe(false);
+      expect(getMenuEntry(['Simulation', 'Offline Catch-up: 5 Minutes']).enabled).toBe(false);
+      expect(app.quit).not.toHaveBeenCalled();
+    } finally {
+      Object.defineProperty(process, 'platform', {
+        value: originalPlatform,
+        configurable: true,
+        enumerable: true,
+        writable: false,
+      });
+    }
+  });
+
   it('enables save and load independently based on reported capabilities', async () => {
     vi.useFakeTimers();
     setMonotonicNowSequence([0]);
@@ -1533,6 +1617,222 @@ describe('shell-desktop main process entrypoint', () => {
 
     expect(getMenuEntry(['Simulation', 'Save']).enabled).toBe(true);
     expect(getMenuEntry(['Simulation', 'Load']).enabled).toBe(false);
+
+    const windowAllClosedCall = app.on.mock.calls.find((call) => call[0] === 'window-all-closed');
+    const windowAllClosedHandler = windowAllClosedCall?.[1] as undefined | (() => void);
+    windowAllClosedHandler?.();
+    await flushMicrotasks();
+  });
+
+  it('freezes IPC and MCP command ingress while save is in flight', async () => {
+    vi.useFakeTimers();
+    setMonotonicNowSequence([0, 16]);
+    process.env.IDLE_ENGINE_ENABLE_MCP_SERVER = '1';
+
+    await import('./main.js');
+    await flushMicrotasks();
+
+    const { input, sim } = getRegisteredMcpControllers();
+    const worker = Worker.instances[0];
+    expect(worker).toBeDefined();
+
+    worker?.emitMessage({
+      kind: 'ready',
+      stepSizeMs: 16,
+      nextStep: 4,
+      capabilities: {
+        canSerialize: true,
+        canHydrate: true,
+        supportsOfflineCatchup: true,
+        saveFileStem: 'sample-pack',
+        saveSchemaVersion: 1,
+        contentHash: 'content:dev',
+        contentVersion: 'dev',
+      },
+    });
+    await flushMicrotasks();
+
+    const controlEventCall = ipcMain.on.mock.calls.find((call) => call[0] === IPC_CHANNELS.controlEvent);
+    const controlEventHandler = controlEventCall?.[1] as undefined | ((event: unknown, payload: unknown) => void);
+    const inputEventCall = ipcMain.on.mock.calls.find((call) => call[0] === IPC_CHANNELS.inputEvent);
+    const inputEventHandler = inputEventCall?.[1] as undefined | ((event: unknown, payload: unknown) => void);
+    expect(controlEventHandler).toBeTypeOf('function');
+    expect(inputEventHandler).toBeTypeOf('function');
+
+    worker?.postMessage.mockClear();
+    getMenuEntry(['Simulation', 'Save']).click?.();
+    await flushMicrotasks();
+
+    const serializeCall = worker?.postMessage.mock.calls.find(
+      (call) => (call[0] as { kind?: string } | undefined)?.kind === 'serialize',
+    );
+    expect(serializeCall).toBeDefined();
+
+    controlEventHandler?.({}, { intent: 'collect', phase: 'start' });
+    inputEventHandler?.({}, {
+      schemaVersion: 1,
+      event: {
+        kind: 'pointer',
+        intent: 'mouse-down',
+        phase: 'start',
+        x: 100,
+        y: 200,
+        button: 0,
+        buttons: 1,
+        pointerType: 'mouse',
+        modifiers: { alt: false, ctrl: false, meta: false, shift: false },
+      },
+    });
+
+    expect(() => input.sendControlEvent({ intent: 'collect', phase: 'start' }))
+      .toThrow('Simulation save/load is in progress.');
+
+    const status = sim.getStatus();
+    expect(() => sim.enqueue([
+      {
+        type: RUNTIME_COMMAND_TYPES.COLLECT_RESOURCE,
+        payload: { resourceId: 'demo', amount: 1 },
+        priority: CommandPriority.PLAYER,
+        step: status.nextStep,
+        timestamp: status.nextStep * status.stepSizeMs,
+      },
+    ])).toThrow('Simulation save/load is in progress.');
+
+    await expect(sim.step(1)).rejects.toThrow('Simulation save/load is in progress.');
+
+    const enqueueCalls = worker?.postMessage.mock.calls.filter(
+      (call) => (call[0] as { kind?: string } | undefined)?.kind === 'enqueueCommands',
+    );
+    expect(enqueueCalls).toHaveLength(0);
+
+    worker?.emitMessage({
+      kind: 'serialized',
+      requestId: (serializeCall?.[0] as { requestId: string }).requestId,
+      state: {
+        schemaVersion: 1,
+        nextStep: 4,
+        demoState: {
+          tickCount: 4,
+          resourceCount: 2,
+          lastCollectedStep: 3,
+        },
+      },
+    });
+    await flushMicrotasks(20);
+
+    const windowAllClosedCall = app.on.mock.calls.find((call) => call[0] === 'window-all-closed');
+    const windowAllClosedHandler = windowAllClosedCall?.[1] as undefined | (() => void);
+    windowAllClosedHandler?.();
+    await flushMicrotasks();
+  });
+
+  it('publishes a hydrated frame immediately when load completes while paused', async () => {
+    vi.useFakeTimers();
+    setMonotonicNowSequence([0, 16]);
+    process.env.IDLE_ENGINE_ENABLE_MCP_SERVER = '1';
+    const savedEnvelope = {
+      schemaVersion: 1,
+      metadata: {
+        savedAt: '2026-03-12T21:00:00.000Z',
+        appVersion: '0.1.0',
+        runtime: {
+          saveFileStem: 'sample-pack',
+          saveSchemaVersion: 1,
+          contentHash: 'content:dev',
+          contentVersion: 'dev',
+        },
+      },
+      state: {
+        schemaVersion: 1,
+        nextStep: 9,
+        demoState: {
+          tickCount: 9,
+          resourceCount: 5,
+          lastCollectedStep: 8,
+        },
+      },
+    };
+    const hydratedFrame = {
+      frame: {
+        schemaVersion: 1,
+        step: 9,
+        simTimeMs: 144,
+        contentHash: 'content:dev',
+      },
+      scene: {
+        camera: { x: 0, y: 0, zoom: 1 },
+      },
+      passes: [],
+      draws: [],
+    };
+    fsPromises.readFile.mockImplementationOnce(
+      async () => JSON.stringify(savedEnvelope) as unknown as Buffer,
+    );
+
+    await import('./main.js');
+    await flushMicrotasks();
+
+    const { sim } = getRegisteredMcpControllers();
+    const mainWindow = BrowserWindow.windows[0];
+    const worker = Worker.instances[0];
+    expect(mainWindow).toBeDefined();
+    expect(worker).toBeDefined();
+
+    worker?.emitMessage({
+      kind: 'ready',
+      stepSizeMs: 16,
+      nextStep: 2,
+      capabilities: {
+        canSerialize: true,
+        canHydrate: true,
+        supportsOfflineCatchup: false,
+        saveFileStem: 'sample-pack',
+        saveSchemaVersion: 1,
+        contentHash: 'content:dev',
+        contentVersion: 'dev',
+      },
+    });
+    await flushMicrotasks();
+
+    sim.pause();
+    worker?.postMessage.mockClear();
+    mainWindow?.webContents.send.mockClear();
+
+    getMenuEntry(['Simulation', 'Load']).click?.();
+    await flushMicrotasks();
+
+    const hydrateCall = worker?.postMessage.mock.calls.find(
+      (call) => (call[0] as { kind?: string } | undefined)?.kind === 'hydrate',
+    );
+    expect(hydrateCall).toBeDefined();
+
+    worker?.emitMessage({
+      kind: 'hydrated',
+      requestId: (hydrateCall?.[0] as { requestId: string }).requestId,
+      nextStep: 9,
+      capabilities: {
+        canSerialize: true,
+        canHydrate: true,
+        supportsOfflineCatchup: false,
+        saveFileStem: 'sample-pack',
+        saveSchemaVersion: 1,
+        contentHash: 'content:dev',
+        contentVersion: 'dev',
+      },
+      frame: hydratedFrame,
+    });
+    await flushMicrotasks(20);
+
+    expect(mainWindow?.webContents.send).toHaveBeenCalledWith(
+      IPC_CHANNELS.frame,
+      hydratedFrame,
+    );
+
+    await vi.advanceTimersByTimeAsync(64);
+    const tickCalls = worker?.postMessage.mock.calls.filter(
+      (call) => (call[0] as { kind?: string } | undefined)?.kind === 'tick',
+    );
+    expect(tickCalls).toHaveLength(0);
 
     const windowAllClosedCall = app.on.mock.calls.find((call) => call[0] === 'window-all-closed');
     const windowAllClosedHandler = windowAllClosedCall?.[1] as undefined | (() => void);

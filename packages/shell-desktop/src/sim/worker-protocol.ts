@@ -94,6 +94,7 @@ export type SimWorkerHydratedMessage = Readonly<{
   requestId: string;
   nextStep: number;
   capabilities?: SimRuntimeCapabilities;
+  frame?: RenderCommandBuffer;
 }>;
 
 export type SimWorkerRequestErrorMessage = Readonly<{

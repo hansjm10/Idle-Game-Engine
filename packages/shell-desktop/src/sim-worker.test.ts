@@ -67,6 +67,19 @@ describe('shell-desktop sim worker', () => {
   });
 
   it('handles serialize and hydrate requests without crashing the worker', async () => {
+    const hydratedFrame = {
+      frame: {
+        schemaVersion: 1,
+        step: 12,
+        simTimeMs: 240,
+        contentHash: 'content:dev',
+      },
+      scene: {
+        camera: { x: 0, y: 0, zoom: 1 },
+      },
+      passes: [],
+      draws: [],
+    };
     const runtime = {
       tick: vi.fn(),
       enqueueCommands: vi.fn(),
@@ -102,6 +115,7 @@ describe('shell-desktop sim worker', () => {
         saveSchemaVersion: 1,
       })),
       serialize: vi.fn(),
+      renderCurrentFrame: vi.fn(() => hydratedFrame),
     };
     const createSimRuntime = vi
       .fn()
@@ -181,6 +195,7 @@ describe('shell-desktop sim worker', () => {
         saveFileStem: 'sample-pack',
         saveSchemaVersion: 1,
       },
+      frame: hydratedFrame,
     });
   });
 

@@ -42,6 +42,7 @@ export type SimTickResult = Readonly<{
 export type SimRuntime = Readonly<{
   tick: (deltaMs: number) => SimTickResult;
   enqueueCommands: (commands: readonly Command[]) => void;
+  renderCurrentFrame?: () => RenderCommandBuffer;
   getStepSizeMs: () => number;
   getNextStep: () => number;
   hasCommandHandler: (type: string) => boolean;
@@ -456,6 +457,7 @@ export function createSimRuntime(options: SimRuntimeOptions = {}): SimRuntime {
   return {
     tick,
     enqueueCommands,
+    renderCurrentFrame: () => buildFrame(runtime.getNextExecutableStep()),
     getStepSizeMs: () => runtime.getStepSizeMs(),
     getNextStep: () => runtime.getNextExecutableStep(),
     hasCommandHandler,
