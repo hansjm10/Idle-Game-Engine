@@ -27,6 +27,11 @@ type ShellDesktopMcpServerOptions = Readonly<{
   diagnostics?: DiagnosticsMcpController;
 }>;
 
+type RequestedShellDesktopMcpPort = Readonly<{
+  port: number;
+  explicit: boolean;
+}>;
+
 const MCP_SERVER_INFO = {
   name: 'idle-engine-shell-desktop',
   version: '0.1.0',
@@ -58,7 +63,7 @@ function getRequestedPort(
   argv: readonly string[],
   env: NodeJS.ProcessEnv,
   defaultPort = DEFAULT_MCP_PORT,
-): Readonly<{ port: number; explicit: boolean }> {
+): RequestedShellDesktopMcpPort {
   const envPort = env.IDLE_ENGINE_MCP_PORT;
   if (envPort !== undefined) {
     return { port: parsePort(envPort), explicit: true };
@@ -71,6 +76,41 @@ function getRequestedPort(
   }
 
   return { port: defaultPort, explicit: false };
+}
+
+function createMcpServerStartOptions(
+  options: Omit<ShellDesktopMcpServerOptions, 'port'>,
+  port: number,
+): ShellDesktopMcpServerOptions {
+  return {
+    port,
+    sim: options.sim,
+    window: options.window,
+    input: options.input,
+    asset: options.asset,
+    diagnostics: options.diagnostics,
+  };
+}
+
+function isPortBusyError(error: unknown): error is NodeJS.ErrnoException {
+  return error instanceof Error && 'code' in error && error.code === 'EADDRINUSE';
+}
+
+function shouldRethrowRequestedPortError(
+  requested: RequestedShellDesktopMcpPort,
+  error: unknown,
+): boolean {
+  return requested.explicit || requested.port >= 65535 || !isPortBusyError(error);
+}
+
+function getFallbackPort(
+  options: Readonly<{
+    defaultPort?: number;
+    fallbackPort?: number;
+  }>,
+): number {
+  return options.fallbackPort
+    ?? (options.defaultPort !== undefined ? options.defaultPort + 1 : DEFAULT_MCP_FALLBACK_PORT);
 }
 
 function createShellDesktopMcpServer(
@@ -291,51 +331,19 @@ export async function maybeStartShellDesktopMcpServer(
   }
 
   const requested = getRequestedPort(argv, env, options.defaultPort);
-  const isPortBusyError = (error: unknown): boolean =>
-    error instanceof Error
-      && 'code' in error
-      && (error as NodeJS.ErrnoException).code === 'EADDRINUSE';
 
   let selectedPort = requested.port;
   let server: ShellDesktopMcpServer | undefined;
   try {
-    server = await startShellDesktopMcpServer({
-      port: requested.port,
-      sim: options.sim,
-      window: options.window,
-      input: options.input,
-      asset: options.asset,
-      diagnostics: options.diagnostics,
-    });
+    server = await startShellDesktopMcpServer(createMcpServerStartOptions(options, requested.port));
   } catch (error: unknown) {
-    if (requested.explicit || !isPortBusyError(error) || requested.port >= 65535) {
+    if (shouldRethrowRequestedPortError(requested, error)) {
       throw error;
     }
 
-    const fallbackPort = options.fallbackPort
-      ?? (options.defaultPort !== undefined ? options.defaultPort + 1 : DEFAULT_MCP_FALLBACK_PORT);
-    let fallbackError: unknown = error;
-    try {
-      server = await startShellDesktopMcpServer({
-        port: fallbackPort,
-        sim: options.sim,
-        window: options.window,
-        input: options.input,
-        asset: options.asset,
-        diagnostics: options.diagnostics,
-      });
-      selectedPort = Number.parseInt(server.url.port, 10);
-      fallbackError = undefined;
-    } catch (nextError: unknown) {
-      fallbackError = nextError;
-      if (!isPortBusyError(nextError)) {
-        throw nextError;
-      }
-    }
-
-    if (!server) {
-      throw fallbackError;
-    }
+    const fallbackPort = getFallbackPort(options);
+    server = await startShellDesktopMcpServer(createMcpServerStartOptions(options, fallbackPort));
+    selectedPort = Number.parseInt(server.url.port, 10);
 
     if (env.NODE_ENV !== 'test') {
       // eslint-disable-next-line no-console
