@@ -1841,6 +1841,126 @@ describe('shell-desktop main process entrypoint', () => {
     await flushMicrotasks();
   });
 
+  it('rejects pending sim.step waiters when load completes and retargets later steps', async () => {
+    vi.useFakeTimers();
+    setMonotonicNowSequence([0, 16]);
+    process.env.IDLE_ENGINE_ENABLE_MCP_SERVER = '1';
+    const savedEnvelope = {
+      schemaVersion: 1,
+      metadata: {
+        savedAt: '2026-03-12T21:00:00.000Z',
+        appVersion: '0.1.0',
+        runtime: {
+          saveFileStem: 'sample-pack',
+          saveSchemaVersion: 1,
+          contentHash: 'content:dev',
+          contentVersion: 'dev',
+        },
+      },
+      state: {
+        schemaVersion: 1,
+        nextStep: 9,
+        demoState: {
+          tickCount: 9,
+          resourceCount: 5,
+          lastCollectedStep: 8,
+        },
+      },
+    };
+    fsPromises.readFile.mockImplementationOnce(
+      async () => JSON.stringify(savedEnvelope) as unknown as Buffer,
+    );
+
+    await import('./main.js');
+    await flushMicrotasks();
+
+    const { sim } = getRegisteredMcpControllers();
+    const worker = Worker.instances[0];
+    expect(worker).toBeDefined();
+
+    worker?.emitMessage({
+      kind: 'ready',
+      stepSizeMs: 16,
+      nextStep: 2,
+      capabilities: {
+        canSerialize: true,
+        canHydrate: true,
+        supportsOfflineCatchup: false,
+        saveFileStem: 'sample-pack',
+        saveSchemaVersion: 1,
+        contentHash: 'content:dev',
+        contentVersion: 'dev',
+      },
+    });
+    await flushMicrotasks();
+
+    worker?.postMessage.mockClear();
+
+    const interruptedStepPromise = sim.step(3);
+
+    let interruptedStepSettled = false;
+    void interruptedStepPromise.then(() => {
+      interruptedStepSettled = true;
+    }, () => {
+      interruptedStepSettled = true;
+    });
+    await flushMicrotasks();
+    expect(interruptedStepSettled).toBe(false);
+
+    getMenuEntry(['Simulation', 'Load']).click?.();
+    await flushMicrotasks();
+
+    const hydrateCall = worker?.postMessage.mock.calls.find(
+      (call) => (call[0] as { kind?: string } | undefined)?.kind === 'hydrate',
+    );
+    expect(hydrateCall).toBeDefined();
+
+    worker?.emitMessage({
+      kind: 'hydrated',
+      requestId: (hydrateCall?.[0] as { requestId: string }).requestId,
+      nextStep: 9,
+      capabilities: {
+        canSerialize: true,
+        canHydrate: true,
+        supportsOfflineCatchup: false,
+        saveFileStem: 'sample-pack',
+        saveSchemaVersion: 1,
+        contentHash: 'content:dev',
+        contentVersion: 'dev',
+      },
+    });
+
+    await expect(interruptedStepPromise).rejects.toThrow('Simulation step was interrupted by state load.');
+
+    worker?.postMessage.mockClear();
+
+    const resumedStepPromise = sim.step(2);
+    let resumedStepSettled = false;
+    void resumedStepPromise.then(() => {
+      resumedStepSettled = true;
+    }, () => {
+      resumedStepSettled = true;
+    });
+    await flushMicrotasks();
+    expect(resumedStepSettled).toBe(false);
+
+    worker?.emitMessage({ kind: 'frame', droppedFrames: 0, nextStep: 10 });
+    await flushMicrotasks();
+    expect(resumedStepSettled).toBe(false);
+
+    worker?.emitMessage({ kind: 'frame', droppedFrames: 0, nextStep: 11 });
+    await expect(resumedStepPromise).resolves.toEqual({
+      state: 'paused',
+      stepSizeMs: 16,
+      nextStep: 11,
+    });
+
+    const windowAllClosedCall = app.on.mock.calls.find((call) => call[0] === 'window-all-closed');
+    const windowAllClosedHandler = windowAllClosedCall?.[1] as undefined | (() => void);
+    windowAllClosedHandler?.();
+    await flushMicrotasks();
+  });
+
   it('writes saves atomically after requesting worker serialization', async () => {
     vi.useFakeTimers();
     setMonotonicNowSequence([0, 16]);

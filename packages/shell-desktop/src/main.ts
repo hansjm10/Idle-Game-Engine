@@ -673,6 +673,7 @@ let mcpServer: ShellDesktopMcpServer | undefined;
 let simRuntimeCapabilities: SimRuntimeCapabilities = DEFAULT_SIM_RUNTIME_CAPABILITIES;
 let simToolingBusy = false;
 const SIM_TOOLING_BUSY_ERROR = 'Simulation save/load is in progress.';
+const SIM_STEP_INVALIDATED_BY_LOAD_ERROR = 'Simulation step was interrupted by state load.';
 
 function createSimWorkerController(
   mainWindow: BrowserWindow,
@@ -1001,6 +1002,7 @@ function createSimWorkerController(
     }
 
     if (message.kind === 'hydrated') {
+      rejectPendingStepCompletions(new Error(SIM_STEP_INVALIDATED_BY_LOAD_ERROR));
       nextStep = message.nextStep;
       runtimeCapabilities = message.capabilities ?? runtimeCapabilities;
       notifyCapabilitiesChanged();
