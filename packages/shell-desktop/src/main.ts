@@ -166,11 +166,11 @@ function trimHyphenEdges(value: string): string {
   let start = 0;
   let end = value.length;
 
-  while (start < end && value.charCodeAt(start) === 45) {
+  while (start < end && value.codePointAt(start) === 45) {
     start += 1;
   }
 
-  while (end > start && value.charCodeAt(end - 1) === 45) {
+  while (end > start && value.codePointAt(end - 1) === 45) {
     end -= 1;
   }
 
@@ -193,8 +193,8 @@ function collapseUnsafeSaveFileStemCharacters(value: string): string {
   let previousWasReplacement = false;
 
   for (const character of value) {
-    const codePoint = character.charCodeAt(0);
-    if (isAllowedSaveFileStemCharacter(codePoint)) {
+    const codePoint = character.codePointAt(0);
+    if (codePoint !== undefined && isAllowedSaveFileStemCharacter(codePoint)) {
       sanitized += character;
       previousWasReplacement = false;
       continue;
