@@ -11,6 +11,9 @@ import {
   maybeStartShellDesktopMcpServer,
   startShellDesktopMcpServer,
 } from './mcp-server.js';
+import type { AssetMcpController } from './asset-tools.js';
+import type { InputMcpController } from './input-tools.js';
+import type { SimMcpController } from './sim-tools.js';
 import type { WindowMcpController } from './window-tools.js';
 
 async function readResponseBody(response: IncomingMessage): Promise<string> {
@@ -153,6 +156,26 @@ describe('shell-desktop MCP server', () => {
     }
   });
 
+  it('falls back from the built-in default MCP port to the built-in fallback port', async () => {
+    const blockerDefault = await createBusyServer(8570);
+
+    try {
+      const server = await maybeStartShellDesktopMcpServer({
+        argv: ['node', 'app.js', '--enable-mcp-server'],
+        env: { NODE_ENV: 'test' },
+      });
+
+      if (!server) {
+        throw new Error('Expected maybeStart to return a running server');
+      }
+
+      servers.push(server);
+      expect(server.url.port).toBe('8571');
+    } finally {
+      await closeHttpServer(blockerDefault.server);
+    }
+  });
+
   it('throws when both the configured default MCP port and fallback port are busy', async () => {
     const blockerDefault = await createBusyServer();
     const blockerFallback = await createBusyServer();
@@ -212,6 +235,25 @@ describe('shell-desktop MCP server', () => {
         IDLE_ENGINE_MCP_PORT: '70000',
       },
     })).rejects.toThrow('Invalid MCP port: 70000');
+  });
+
+  it('rethrows non-EADDRINUSE errors from fallback startup attempts', async () => {
+    const blockerDefault = await createBusyServer();
+    const addressSpy = vi
+      .spyOn(http.Server.prototype, 'address')
+      .mockReturnValue('named-pipe' as ReturnType<http.Server['address']>);
+
+    try {
+      await expect(maybeStartShellDesktopMcpServer({
+        argv: ['node', 'app.js', '--enable-mcp-server'],
+        env: { NODE_ENV: 'test' },
+        defaultPort: blockerDefault.port,
+        fallbackPort: 0,
+      })).rejects.toThrow('Failed to resolve MCP server address.');
+    } finally {
+      addressSpy.mockRestore();
+      await closeHttpServer(blockerDefault.server);
+    }
   });
 
   it('exposes the health tool over streamable HTTP', async () => {
@@ -283,6 +325,46 @@ describe('shell-desktop MCP server', () => {
     await client.close();
   });
 
+  it('exposes sim, input, and asset tools when their controllers are provided', async () => {
+    const simController: SimMcpController = {
+      getStatus: () => ({ state: 'paused', stepSizeMs: 100, nextStep: 12 }),
+      start: () => ({ state: 'running', stepSizeMs: 100, nextStep: 12 }),
+      stop: () => ({ state: 'stopped', stepSizeMs: 100, nextStep: 12, reason: 'requested' }),
+      pause: () => ({ state: 'paused', stepSizeMs: 100, nextStep: 12 }),
+      resume: () => ({ state: 'running', stepSizeMs: 100, nextStep: 12 }),
+      step: async () => ({ state: 'paused', stepSizeMs: 100, nextStep: 13 }),
+      enqueue: () => ({ enqueued: 0 }),
+    };
+    const inputController: InputMcpController = {
+      sendControlEvent: () => undefined,
+    };
+    const assetController: AssetMcpController = {
+      compiledAssetsRootPath: process.cwd(),
+    };
+
+    const server = await startShellDesktopMcpServer({
+      port: 0,
+      sim: simController,
+      input: inputController,
+      asset: assetController,
+    });
+    servers.push(server);
+
+    const client = new Client({ name: 'shell-desktop-test-client', version: '1.0.0' });
+    const transport = new StreamableHTTPClientTransport(server.url);
+    await client.connect(transport);
+
+    const tools = await client.listTools();
+    const toolNames = tools.tools.map((tool) => tool.name);
+    expect(toolNames).toContain('sim.status');
+    expect(toolNames).toContain('sim.step');
+    expect(toolNames).toContain('input.controlEvent');
+    expect(toolNames).toContain('asset.list');
+    expect(toolNames).toContain('asset.read');
+
+    await client.close();
+  });
+
   it('accepts initialization requests that only advertise application/json', async () => {
     const server = await startShellDesktopMcpServer({ port: 0 });
     servers.push(server);
@@ -311,6 +393,39 @@ describe('shell-desktop MCP server', () => {
     const body = await readResponseBody(response);
     expect(response.statusCode).toBe(200);
     expect(response.headers['content-type']).toContain('application/json');
+
+    const payload = JSON.parse(body) as {
+      result?: { protocolVersion?: string };
+    };
+    expect(payload.result?.protocolVersion).toBe('2025-06-18');
+  });
+
+  it('accepts initialization requests without an Accept header', async () => {
+    const server = await startShellDesktopMcpServer({ port: 0 });
+    servers.push(server);
+
+    const port = Number.parseInt(server.url.port, 10);
+    const response = await new Promise<IncomingMessage>((resolve, reject) => {
+      const request = http.request(
+        {
+          hostname: '127.0.0.1',
+          port,
+          method: 'POST',
+          path: server.url.pathname,
+          headers: {
+            'content-type': 'application/json',
+          },
+        },
+        resolve,
+      );
+
+      request.on('error', reject);
+      request.write(buildInitializeRequestBody());
+      request.end();
+    });
+
+    const body = await readResponseBody(response);
+    expect(response.statusCode).toBe(200);
 
     const payload = JSON.parse(body) as {
       result?: { protocolVersion?: string };
@@ -356,6 +471,77 @@ describe('shell-desktop MCP server', () => {
       expect(body).toContain('Invalid request URL');
     } finally {
       process.off('uncaughtException', onUncaughtException);
+    }
+  });
+
+  it('responds with 404 for unknown paths', async () => {
+    const server = await startShellDesktopMcpServer({ port: 0 });
+    servers.push(server);
+
+    const port = Number.parseInt(server.url.port, 10);
+    const response = await new Promise<IncomingMessage>((resolve, reject) => {
+      const request = http.request(
+        {
+          hostname: '127.0.0.1',
+          port,
+          method: 'GET',
+          path: '/not-mcp',
+        },
+        resolve,
+      );
+
+      request.on('error', reject);
+      request.end();
+    });
+
+    const body = await readResponseBody(response);
+    expect(response.statusCode).toBe(404);
+    expect(body).toContain('Not found');
+  });
+
+  it('responds with 400 when the request URL is missing', async () => {
+    const createServerOriginal = http.createServer;
+    let requestHandler: http.RequestListener | undefined;
+    const createServerSpy = vi
+      .spyOn(http, 'createServer')
+      .mockImplementation((...args: Parameters<typeof http.createServer>) => {
+        const maybeHandler = typeof args[0] === 'function' ? args[0] : args[1];
+        if (maybeHandler) {
+          requestHandler = maybeHandler;
+        }
+
+        return createServerOriginal(...args);
+      });
+
+    try {
+      const server = await startShellDesktopMcpServer({ port: 0 });
+      servers.push(server);
+
+      if (!requestHandler) {
+        throw new Error('Expected MCP server to register an HTTP request handler');
+      }
+
+      const writeHead = vi.fn();
+      const end = vi.fn();
+      requestHandler(
+        {
+          method: 'GET',
+          url: undefined,
+          headers: {},
+          rawHeaders: [],
+        } as unknown as http.IncomingMessage,
+        {
+          writableEnded: false,
+          headersSent: false,
+          writeHead,
+          end,
+        } as unknown as http.ServerResponse,
+      );
+
+      expect(writeHead).toHaveBeenCalledWith(400);
+      expect(end).toHaveBeenCalledWith('Missing request URL.');
+    } finally {
+      createServerSpy.mockRestore();
     }
   });
 
@@ -411,6 +597,48 @@ describe('shell-desktop MCP server', () => {
 
     serverCloseSpy.mockRestore();
     transportCloseSpy.mockRestore();
+  });
+
+  it('rejects close when the HTTP server was already stopped externally', async () => {
+    const createServerOriginal = http.createServer;
+    let capturedHttpServer: http.Server | undefined;
+    const createServerSpy = vi
+      .spyOn(http, 'createServer')
+      .mockImplementation((...args: Parameters<typeof http.createServer>) => {
+        const httpServer = createServerOriginal(...args);
+        capturedHttpServer = httpServer;
+        return httpServer;
+      });
+
+    try {
+      const server = await startShellDesktopMcpServer({ port: 0 });
+
+      if (!capturedHttpServer) {
+        throw new Error('Expected MCP server to create an HTTP server');
+      }
+
+      await closeHttpServer(capturedHttpServer);
+      await expect(server.close()).rejects.toMatchObject({ code: 'ERR_SERVER_NOT_RUNNING' });
+    } finally {
+      createServerSpy.mockRestore();
+    }
+  });
+
+  it('closes the HTTP server when address resolution fails after listen', async () => {
+    const addressSpy = vi
+      .spyOn(http.Server.prototype, 'address')
+      .mockReturnValue('named-pipe' as ReturnType<http.Server['address']>);
+    const closeSpy = vi.spyOn(http.Server.prototype, 'close');
+
+    try {
+      await expect(startShellDesktopMcpServer({ port: 0 })).rejects.toThrow(
+        'Failed to resolve MCP server address.',
+      );
+      expect(closeSpy).toHaveBeenCalled();
+    } finally {
+      addressSpy.mockRestore();
+      closeSpy.mockRestore();
+    }
   });
 
   it('passes window tool arguments through streamable HTTP transport', async () => {

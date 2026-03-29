@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import Module from 'node:module';
 
 import { IDLE_ENGINE_API_KEY, IPC_CHANNELS } from './ipc.js';
 import type { IdleEngineApi } from './ipc.js';
@@ -15,24 +16,36 @@ const preloadElectronModule = {
   ipcRenderer: { invoke, send, on, removeListener },
 };
 
-vi.mock('electron', () => ({
-  ...preloadElectronModule,
-}));
+function installElectronModule(electronModule: unknown): () => void {
+  const moduleLoader = Module as typeof Module & {
+    _load: (request: string, ...args: unknown[]) => unknown;
+  };
+  const originalLoad = moduleLoader._load;
+
+  moduleLoader._load = ((request: string, ...args: unknown[]) => {
+    if (request === 'electron') {
+      return electronModule;
+    }
+
+    return originalLoad(request, ...args);
+  }) as typeof moduleLoader._load;
+
+  return () => {
+    moduleLoader._load = originalLoad;
+  };
+}
 
 describe('shell-desktop preload', () => {
   it('exposes a typed idleEngine API and routes calls via ipcRenderer', async () => {
     const assetBytes = new Uint8Array([1, 2, 3]).buffer;
     invoke.mockResolvedValueOnce({ message: 'pong-from-test' }).mockResolvedValueOnce(assetBytes);
-    (globalThis as typeof globalThis & {
-      __idleEngineElectronPreloadTestModule__?: typeof preloadElectronModule;
-    }).__idleEngineElectronPreloadTestModule__ = preloadElectronModule;
+    vi.resetModules();
+    const restoreElectronModule = installElectronModule(preloadElectronModule);
 
     try {
       await import('./preload.cjs');
     } finally {
-      delete (globalThis as typeof globalThis & {
-        __idleEngineElectronPreloadTestModule__?: typeof preloadElectronModule;
-      }).__idleEngineElectronPreloadTestModule__;
+      restoreElectronModule();
     }
 
     expect(exposeInMainWorld).toHaveBeenCalledTimes(1);

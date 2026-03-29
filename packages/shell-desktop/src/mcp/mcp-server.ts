@@ -350,9 +350,5 @@ export async function maybeStartShellDesktopMcpServer(
     console.log(`[shell-desktop] MCP server listening at ${server.url.toString()}`);
   }
 
-  if (!server) {
-    throw new Error('Failed to start MCP server.');
-  }
-
   return server;
 }
