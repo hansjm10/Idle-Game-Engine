@@ -14,6 +14,7 @@ import {
 import type { AssetId, RenderCommandBuffer } from '@idle-engine/renderer-contract';
 
 export const SIM_RUNTIME_SAVE_SCHEMA_VERSION = 1;
+const SIM_RUNTIME_COMMAND_QUEUE_SAVE_SCHEMA_VERSION = 1;
 
 type DemoState = {
   tickCount: number;
@@ -25,13 +26,21 @@ export type SerializedSimRuntimeState = Readonly<{
   schemaVersion: typeof SIM_RUNTIME_SAVE_SCHEMA_VERSION;
   nextStep: number;
   demoState: DemoState;
+  accumulatorBacklogMs: number;
+  pendingCommands: SerializedSimRuntimeCommandQueue;
 }>;
+
+type SerializedSimRuntimeCommandQueue = ReturnType<
+  ReturnType<IdleEngineRuntime['getCommandQueue']>['exportForSave']
+>;
 
 export type SimRuntimeOptions = Readonly<{
   stepSizeMs?: number;
   maxStepsPerFrame?: number;
   initialStep?: number;
   initialState?: Partial<DemoState>;
+  initialAccumulatorBacklogMs?: number;
+  initialPendingCommands?: SerializedSimRuntimeCommandQueue;
 }>;
 
 export type SimTickResult = Readonly<{
@@ -75,6 +84,11 @@ const SIM_RUNTIME_CONTENT_VERSION = 'dev';
 const SIM_RUNTIME_SAVE_FILE_STEM = 'content-dev';
 
 const clampByte = (value: number): number => Math.min(255, Math.max(0, Math.floor(value)));
+
+const createEmptySerializedCommandQueue = (): SerializedSimRuntimeCommandQueue => ({
+  schemaVersion: SIM_RUNTIME_COMMAND_QUEUE_SAVE_SCHEMA_VERSION,
+  entries: [],
+});
 
 const rgba = (red: number, green: number, blue: number, alpha = 255): number =>
   (((clampByte(red) << 24) | (clampByte(green) << 16) | (clampByte(blue) << 8) | clampByte(alpha)) >>>
@@ -174,6 +188,47 @@ function parseSerializedDemoState(value: unknown): DemoState {
   };
 }
 
+function normalizeAccumulatorBacklogMs(value: unknown): number {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : 0;
+}
+
+function parseSerializedAccumulatorBacklogMs(value: unknown): number {
+  if (value === undefined) {
+    return 0;
+  }
+
+  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) {
+    throw new TypeError(
+      'Invalid sim runtime save: expected accumulatorBacklogMs non-negative number.',
+    );
+  }
+
+  return value;
+}
+
+function parseSerializedPendingCommands(value: unknown): SerializedSimRuntimeCommandQueue {
+  if (value === undefined) {
+    return createEmptySerializedCommandQueue();
+  }
+
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    throw new TypeError('Invalid sim runtime save: expected pendingCommands object.');
+  }
+
+  const record = value as Record<string, unknown>;
+  if (record['schemaVersion'] !== SIM_RUNTIME_COMMAND_QUEUE_SAVE_SCHEMA_VERSION) {
+    throw new TypeError(
+      `Invalid sim runtime save: expected pendingCommands.schemaVersion ${SIM_RUNTIME_COMMAND_QUEUE_SAVE_SCHEMA_VERSION}.`,
+    );
+  }
+
+  if (!Array.isArray(record['entries'])) {
+    throw new TypeError('Invalid sim runtime save: expected pendingCommands.entries array.');
+  }
+
+  return value as SerializedSimRuntimeCommandQueue;
+}
+
 function sumFiniteObjectValues(value: unknown): number {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) {
     return 0;
@@ -254,11 +309,15 @@ export function loadSerializedSimRuntimeState(value: unknown): SerializedSimRunt
   }
 
   const demoState = parseSerializedDemoState(record['demoState']);
+  const accumulatorBacklogMs = parseSerializedAccumulatorBacklogMs(record['accumulatorBacklogMs']);
+  const pendingCommands = parseSerializedPendingCommands(record['pendingCommands']);
 
   return {
     schemaVersion: SIM_RUNTIME_SAVE_SCHEMA_VERSION,
     nextStep: Math.floor(nextStep),
     demoState,
+    accumulatorBacklogMs,
+    pendingCommands,
   };
 }
 
@@ -272,6 +331,7 @@ export function createSimRuntime(options: SimRuntimeOptions = {}): SimRuntime {
   });
 
   const frameQueue: RenderCommandBuffer[] = [];
+  let accumulatorBacklogMs = normalizeAccumulatorBacklogMs(options.initialAccumulatorBacklogMs);
 
   const buildFrame = (step: number): RenderCommandBuffer => {
     const stepSizeMs = runtime.getStepSizeMs();
@@ -382,6 +442,7 @@ export function createSimRuntime(options: SimRuntimeOptions = {}): SimRuntime {
     const remainingOfflineMs = totalOfflineMs - stepSizeMs;
     if (remainingOfflineMs > 0) {
       runtime.creditTime(remainingOfflineMs);
+      accumulatorBacklogMs += remainingOfflineMs;
     }
   });
 
@@ -416,6 +477,15 @@ export function createSimRuntime(options: SimRuntimeOptions = {}): SimRuntime {
   });
 
   const hasCommandHandler = (type: string): boolean => dispatcher.getHandler(type) !== undefined;
+
+  if (accumulatorBacklogMs > 0) {
+    runtime.creditTime(accumulatorBacklogMs);
+  }
+
+  runtime.getCommandQueue().restoreFromSave(options.initialPendingCommands, {
+    isCommandTypeSupported: hasCommandHandler,
+  });
+
   const getCapabilities = (): SimRuntimeCapabilities => ({
     ...DEFAULT_SIM_RUNTIME_CAPABILITIES,
     canSerialize: true,
@@ -434,6 +504,8 @@ export function createSimRuntime(options: SimRuntimeOptions = {}): SimRuntime {
       resourceCount: state.resourceCount,
       lastCollectedStep: state.lastCollectedStep,
     },
+    accumulatorBacklogMs,
+    pendingCommands: runtime.getCommandQueue().exportForSave(),
   });
 
   runtime.addSystem({
@@ -452,6 +524,8 @@ export function createSimRuntime(options: SimRuntimeOptions = {}): SimRuntime {
 
   const tick = (deltaMs: number): SimTickResult => {
     frameQueue.length = 0;
+    const nextStepBeforeTick = runtime.getNextExecutableStep();
+    accumulatorBacklogMs += deltaMs > 0 ? deltaMs : 0;
     runtime.tick(deltaMs);
 
     // Check for fatal command execution failures and rethrow them.
@@ -469,9 +543,15 @@ export function createSimRuntime(options: SimRuntimeOptions = {}): SimRuntime {
       }
     }
 
+    const nextStep = runtime.getNextExecutableStep();
+    const processedSteps = Math.max(0, nextStep - nextStepBeforeTick);
+    if (processedSteps > 0) {
+      accumulatorBacklogMs = Math.max(0, accumulatorBacklogMs - processedSteps * runtime.getStepSizeMs());
+    }
+
     return {
       frames: Array.from(frameQueue),
-      nextStep: runtime.getNextExecutableStep(),
+      nextStep,
     };
   };
 

@@ -10,21 +10,22 @@ Run `pnpm coverage:md` from the repository root to regenerate this page after mo
 ## Overall Coverage
 | Metric | Covered | Total | % |
 | --- | --- | --- | --- |
-| Statements | 44258 | 48822 | 90.65% |
-| Branches | 9254 | 10847 | 85.31% |
-| Functions | 2306 | 2468 | 93.44% |
-| Lines | 44258 | 48822 | 90.65% |
+| Statements | 44536 | 49045 | 90.81% |
+| Branches | 9388 | 10974 | 85.55% |
+| Functions | 2323 | 2481 | 93.63% |
+| Lines | 44536 | 49045 | 90.81% |
 
 ## Coverage by Package
 | Package | Statements | Branches | Functions | Lines |
 | --- | --- | --- | --- | --- |
 | @idle-engine/content-compiler | 1696 / 1913 (88.66%) | 289 / 369 (78.32%) | 102 / 106 (96.23%) | 1696 / 1913 (88.66%) |
 | @idle-engine/content-sample | 17 / 21 (80.95%) | 2 / 3 (66.67%) | 0 / 0 (0.00%) | 17 / 21 (80.95%) |
-| @idle-engine/content-schema | 8846 / 9915 (89.22%) | 1277 / 1495 (85.42%) | 313 / 343 (91.25%) | 8846 / 9915 (89.22%) |
+| @idle-engine/content-schema | 8846 / 9915 (89.22%) | 1276 / 1494 (85.41%) | 313 / 343 (91.25%) | 8846 / 9915 (89.22%) |
 | @idle-engine/content-validation-cli | 2045 / 2200 (92.95%) | 480 / 545 (88.07%) | 94 / 103 (91.26%) | 2045 / 2200 (92.95%) |
 | @idle-engine/controls | 228 / 230 (99.13%) | 67 / 69 (97.10%) | 14 / 14 (100.00%) | 228 / 230 (99.13%) |
 | @idle-engine/core | 24754 / 27333 (90.56%) | 5462 / 6475 (84.36%) | 1436 / 1535 (93.55%) | 24754 / 27333 (90.56%) |
 | @idle-engine/renderer-contract | 516 / 523 (98.66%) | 134 / 138 (97.10%) | 27 / 27 (100.00%) | 516 / 523 (98.66%) |
 | @idle-engine/renderer-debug | 870 / 876 (99.32%) | 255 / 266 (95.86%) | 49 / 49 (100.00%) | 870 / 876 (99.32%) |
 | @idle-engine/renderer-webgpu | 1943 / 1965 (98.88%) | 525 / 535 (98.13%) | 97 / 98 (98.98%) | 1943 / 1965 (98.88%) |
-| @idle-engine/shell-desktop | 3343 / 3846 (86.92%) | 763 / 952 (80.15%) | 174 / 193 (90.16%) | 3343 / 3846 (86.92%) |
+| @idle-engine/shell-desktop | 3605 / 4053 (88.95%) | 896 / 1078 (83.12%) | 191 / 206 (92.72%) | 3605 / 4053 (88.95%) |
+| idle-engine-monorepo | 16 / 16 (100.00%) | 2 / 2 (100.00%) | 0 / 0 (0.00%) | 16 / 16 (100.00%) |

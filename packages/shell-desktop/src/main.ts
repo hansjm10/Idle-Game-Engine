@@ -1136,6 +1136,10 @@ function createSimWorkerController(
       return;
     }
 
+    if (isCommandIngressFrozen()) {
+      throw new Error(SIM_TOOLING_BUSY_ERROR);
+    }
+
     isPaused = true;
     stopTickLoop();
   };

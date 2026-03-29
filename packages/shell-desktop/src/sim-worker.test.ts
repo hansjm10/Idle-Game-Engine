@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { RUNTIME_COMMAND_TYPES } from '@idle-engine/core';
 import type { SimWorkerInboundMessage, SimWorkerOutboundMessage } from './sim/worker-protocol.js';
 
 type MessageHandler = ((message: unknown) => void) | undefined;
@@ -100,6 +101,11 @@ describe('shell-desktop sim worker', () => {
           resourceCount: 3,
           lastCollectedStep: 4,
         },
+        accumulatorBacklogMs: 0,
+        pendingCommands: {
+          schemaVersion: 1,
+          entries: [],
+        },
       })),
     };
     const restoredRuntime = {
@@ -157,6 +163,11 @@ describe('shell-desktop sim worker', () => {
           resourceCount: 3,
           lastCollectedStep: 4,
         },
+        accumulatorBacklogMs: 0,
+        pendingCommands: {
+          schemaVersion: 1,
+          entries: [],
+        },
       },
     });
 
@@ -170,6 +181,19 @@ describe('shell-desktop sim worker', () => {
         resourceCount: 9,
         lastCollectedStep: 11,
       },
+      accumulatorBacklogMs: 7,
+      pendingCommands: {
+        schemaVersion: 1,
+        entries: [
+          {
+            type: RUNTIME_COMMAND_TYPES.COLLECT_RESOURCE,
+            priority: 1,
+            timestamp: 240,
+            step: 12,
+            payload: { resourceId: 'demo', amount: 2 },
+          },
+        ],
+      },
     };
     messageHandler?.({ kind: 'hydrate', requestId: 'hydrate-1', state: savedState });
 
@@ -182,6 +206,19 @@ describe('shell-desktop sim worker', () => {
         tickCount: 21,
         resourceCount: 9,
         lastCollectedStep: 11,
+      },
+      initialAccumulatorBacklogMs: 7,
+      initialPendingCommands: {
+        schemaVersion: 1,
+        entries: [
+          {
+            type: RUNTIME_COMMAND_TYPES.COLLECT_RESOURCE,
+            priority: 1,
+            timestamp: 240,
+            step: 12,
+            payload: { resourceId: 'demo', amount: 2 },
+          },
+        ],
       },
     });
     expect(parentPort.postMessage).toHaveBeenCalledWith({

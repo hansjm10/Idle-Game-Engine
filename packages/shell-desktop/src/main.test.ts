@@ -1699,6 +1699,7 @@ describe('shell-desktop main process entrypoint', () => {
     ])).toThrow('Simulation save/load is in progress.');
 
     await expect(sim.step(1)).rejects.toThrow('Simulation save/load is in progress.');
+    expect(() => sim.pause()).toThrow('Simulation save/load is in progress.');
 
     const enqueueCalls = worker?.postMessage.mock.calls.filter(
       (call) => (call[0] as { kind?: string } | undefined)?.kind === 'enqueueCommands',

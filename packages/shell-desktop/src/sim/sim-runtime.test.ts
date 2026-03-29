@@ -222,6 +222,8 @@ describe('shell-desktop sim runtime', () => {
       maxStepsPerFrame: 50,
       initialStep: savedState.nextStep,
       initialState: savedState.demoState,
+      initialAccumulatorBacklogMs: savedState.accumulatorBacklogMs,
+      initialPendingCommands: savedState.pendingCommands,
     });
 
     expect(restored.getNextStep()).toBe(savedState.nextStep);
@@ -262,6 +264,8 @@ describe('shell-desktop sim runtime', () => {
       maxStepsPerFrame: 50,
       initialStep: savedState.nextStep,
       initialState: savedState.demoState,
+      initialAccumulatorBacklogMs: savedState.accumulatorBacklogMs,
+      initialPendingCommands: savedState.pendingCommands,
     });
 
     const frame = restored.renderCurrentFrame?.();
@@ -292,6 +296,8 @@ describe('shell-desktop sim runtime', () => {
       maxStepsPerFrame: 50,
       initialStep: savedState.nextStep,
       initialState: savedState.demoState,
+      initialAccumulatorBacklogMs: savedState.accumulatorBacklogMs,
+      initialPendingCommands: savedState.pendingCommands,
     });
 
     const frame = restored.renderCurrentFrame?.();
@@ -311,6 +317,31 @@ describe('shell-desktop sim runtime', () => {
       passId: 'ui',
       width: 0,
       colorRgba: 0x2a_4f_8a_ff,
+    });
+  });
+
+  it('defaults missing scheduler state when loading legacy serialized saves', () => {
+    expect(loadSerializedSimRuntimeState({
+      schemaVersion: 1,
+      nextStep: 4,
+      demoState: {
+        tickCount: 3,
+        resourceCount: 2,
+        lastCollectedStep: 2,
+      },
+    })).toEqual({
+      schemaVersion: 1,
+      nextStep: 4,
+      demoState: {
+        tickCount: 3,
+        resourceCount: 2,
+        lastCollectedStep: 2,
+      },
+      accumulatorBacklogMs: 0,
+      pendingCommands: {
+        schemaVersion: 1,
+        entries: [],
+      },
     });
   });
 
@@ -339,6 +370,67 @@ describe('shell-desktop sim runtime', () => {
         lastCollectedStep: 'later',
       },
     })).toThrow(/demoState\.lastCollectedStep/);
+  });
+
+  it('rejects malformed scheduler backlog state in serialized saves', () => {
+    expect(() => loadSerializedSimRuntimeState({
+      schemaVersion: 1,
+      nextStep: 4,
+      demoState: {
+        tickCount: 3,
+        resourceCount: 2,
+        lastCollectedStep: 2,
+      },
+      accumulatorBacklogMs: -1,
+    })).toThrow(/accumulatorBacklogMs/);
+
+    expect(() => loadSerializedSimRuntimeState({
+      schemaVersion: 1,
+      nextStep: 4,
+      demoState: {
+        tickCount: 3,
+        resourceCount: 2,
+        lastCollectedStep: 2,
+      },
+      pendingCommands: {
+        schemaVersion: 99,
+        entries: [],
+      },
+    })).toThrow(/pendingCommands\.schemaVersion/);
+  });
+
+  it('restores pending commands and fractional accumulator backlog from serialized saves', () => {
+    const source = createSimRuntime({ stepSizeMs: 10, maxStepsPerFrame: 50 });
+
+    source.tick(5);
+    source.enqueueCommands([
+      {
+        type: RUNTIME_COMMAND_TYPES.COLLECT_RESOURCE,
+        priority: CommandPriority.PLAYER,
+        payload: { resourceId: 'demo', amount: 2 },
+        timestamp: 0,
+        step: source.getNextStep(),
+      },
+    ]);
+
+    const savedState = loadSerializedSimRuntimeState(source.serialize?.());
+    expect(savedState.accumulatorBacklogMs).toBe(5);
+    expect(savedState.pendingCommands.entries).toHaveLength(1);
+
+    const expectedNextTick = source.tick(5);
+    const expectedStateAfterTick = loadSerializedSimRuntimeState(source.serialize?.());
+
+    const restored = createSimRuntime({
+      stepSizeMs: 10,
+      maxStepsPerFrame: 50,
+      initialStep: savedState.nextStep,
+      initialState: savedState.demoState,
+      initialAccumulatorBacklogMs: savedState.accumulatorBacklogMs,
+      initialPendingCommands: savedState.pendingCommands,
+    });
+
+    expect(restored.tick(5)).toEqual(expectedNextTick);
+    expect(loadSerializedSimRuntimeState(restored.serialize?.())).toEqual(expectedStateAfterTick);
   });
 
   it('applies offline catch-up payloads without requiring resourceDeltas', () => {

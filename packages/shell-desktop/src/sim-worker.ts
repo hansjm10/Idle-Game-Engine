@@ -174,6 +174,8 @@ parentPort.on('message', (message: unknown) => {
           maxStepsPerFrame: runtimeConfig.maxStepsPerFrame,
           initialStep: savedState.nextStep,
           initialState: savedState.demoState,
+          initialAccumulatorBacklogMs: savedState.accumulatorBacklogMs,
+          initialPendingCommands: savedState.pendingCommands,
         });
 
         emit({
