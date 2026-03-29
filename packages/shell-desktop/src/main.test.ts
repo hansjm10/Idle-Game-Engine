@@ -2023,6 +2023,151 @@ describe('shell-desktop main process entrypoint', () => {
     await flushMicrotasks();
   });
 
+  it('freezes command ingress before load reads the save file', async () => {
+    vi.useFakeTimers();
+    setMonotonicNowSequence([0, 16]);
+    process.env.IDLE_ENGINE_ENABLE_MCP_SERVER = '1';
+
+    const savedEnvelope = {
+      schemaVersion: 1,
+      metadata: {
+        savedAt: '2026-03-12T21:00:00.000Z',
+        appVersion: '0.1.0',
+        runtime: {
+          saveFileStem: 'sample-pack',
+          saveSchemaVersion: 1,
+          contentHash: 'content:dev',
+          contentVersion: 'dev',
+        },
+      },
+      state: {
+        schemaVersion: 1,
+        nextStep: 9,
+        demoState: {
+          tickCount: 9,
+          resourceCount: 5,
+          lastCollectedStep: 8,
+        },
+      },
+    };
+
+    let resolveReadFile: ((value: Buffer) => void) | undefined;
+    fsPromises.readFile.mockImplementationOnce(
+      () => new Promise((resolve) => {
+        resolveReadFile = (value) => resolve(value);
+      }),
+    );
+
+    await import('./main.js');
+    await flushMicrotasks();
+
+    const { sim, input } = getRegisteredMcpControllers();
+    const worker = Worker.instances[0];
+    expect(worker).toBeDefined();
+
+    worker?.emitMessage({
+      kind: 'ready',
+      stepSizeMs: 16,
+      nextStep: 2,
+      capabilities: {
+        canSerialize: true,
+        canHydrate: true,
+        supportsOfflineCatchup: false,
+        saveFileStem: 'sample-pack',
+        saveSchemaVersion: 1,
+        contentHash: 'content:dev',
+        contentVersion: 'dev',
+      },
+    });
+    await flushMicrotasks();
+
+    const controlEventCall = ipcMain.on.mock.calls.find((call) => call[0] === IPC_CHANNELS.controlEvent);
+    const controlEventHandler = controlEventCall?.[1] as undefined | ((event: unknown, payload: unknown) => void);
+    const inputEventCall = ipcMain.on.mock.calls.find((call) => call[0] === IPC_CHANNELS.inputEvent);
+    const inputEventHandler = inputEventCall?.[1] as undefined | ((event: unknown, payload: unknown) => void);
+    expect(controlEventHandler).toBeTypeOf('function');
+    expect(inputEventHandler).toBeTypeOf('function');
+
+    worker?.postMessage.mockClear();
+
+    getMenuEntry(['Simulation', 'Load']).click?.();
+    await flushMicrotasks();
+
+    expect(fsPromises.readFile).toHaveBeenCalledWith(
+      path.join('C:', 'mock-user-data', 'sample-pack.save.json'),
+      'utf8',
+    );
+
+    const hydrateCallsBeforeReadCompletes = worker?.postMessage.mock.calls.filter(
+      (call) => (call[0] as { kind?: string } | undefined)?.kind === 'hydrate',
+    );
+    expect(hydrateCallsBeforeReadCompletes).toHaveLength(0);
+
+    expect(() => input.sendControlEvent({ intent: 'collect', phase: 'start' }))
+      .toThrow('Simulation save/load is in progress.');
+
+    const status = sim.getStatus();
+    expect(() => sim.enqueue([
+      {
+        type: RUNTIME_COMMAND_TYPES.COLLECT_RESOURCE,
+        payload: { resourceId: 'demo', amount: 1 },
+        priority: CommandPriority.PLAYER,
+        step: status.nextStep,
+        timestamp: status.nextStep * status.stepSizeMs,
+      },
+    ])).toThrow('Simulation save/load is in progress.');
+
+    controlEventHandler?.({}, { intent: 'collect', phase: 'start' });
+    inputEventHandler?.({}, {
+      schemaVersion: 1,
+      event: {
+        kind: 'pointer',
+        intent: 'mouse-down',
+        phase: 'start',
+        x: 100,
+        y: 200,
+        button: 0,
+        buttons: 1,
+        pointerType: 'mouse',
+        modifiers: { alt: false, ctrl: false, meta: false, shift: false },
+      },
+    });
+
+    const enqueueCallsWhileReadPending = worker?.postMessage.mock.calls.filter(
+      (call) => (call[0] as { kind?: string } | undefined)?.kind === 'enqueueCommands',
+    );
+    expect(enqueueCallsWhileReadPending).toHaveLength(0);
+
+    resolveReadFile?.(Buffer.from(JSON.stringify(savedEnvelope)));
+    await flushMicrotasks();
+
+    const hydrateCall = worker?.postMessage.mock.calls.find(
+      (call) => (call[0] as { kind?: string } | undefined)?.kind === 'hydrate',
+    );
+    expect(hydrateCall).toBeDefined();
+
+    worker?.emitMessage({
+      kind: 'hydrated',
+      requestId: (hydrateCall?.[0] as { requestId: string }).requestId,
+      nextStep: 9,
+      capabilities: {
+        canSerialize: true,
+        canHydrate: true,
+        supportsOfflineCatchup: false,
+        saveFileStem: 'sample-pack',
+        saveSchemaVersion: 1,
+        contentHash: 'content:dev',
+        contentVersion: 'dev',
+      },
+    });
+    await flushMicrotasks(20);
+
+    const windowAllClosedCall = app.on.mock.calls.find((call) => call[0] === 'window-all-closed');
+    const windowAllClosedHandler = windowAllClosedCall?.[1] as undefined | (() => void);
+    windowAllClosedHandler?.();
+    await flushMicrotasks();
+  });
+
   it('sanitizes save paths and cleans up temp files when atomic save writes fail', async () => {
     vi.useFakeTimers();
     setMonotonicNowSequence([0, 16]);
@@ -2105,7 +2250,7 @@ describe('shell-desktop main process entrypoint', () => {
 
   it('rejects invalid and incompatible save envelopes before hydrating', async () => {
     vi.useFakeTimers();
-    setMonotonicNowSequence([0, 16]);
+    setMonotonicNowSequence(Array.from({ length: 32 }, (_value, index) => index * 16));
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
     const baseEnvelope = {
       schemaVersion: 1,

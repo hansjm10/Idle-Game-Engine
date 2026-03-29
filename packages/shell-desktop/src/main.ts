@@ -651,6 +651,7 @@ type SimWorkerController = Readonly<{
   enqueueCommands: (commands: readonly Command[]) => void;
   serializeState: () => Promise<unknown>;
   hydrateState: (state: unknown) => Promise<void>;
+  runWhileCommandIngressFrozen: <T>(operation: () => Promise<T> | T) => Promise<T>;
   isCommandIngressFrozen: () => boolean;
   pause: () => void;
   resume: () => void;
@@ -905,7 +906,7 @@ function createSimWorkerController(
     });
   };
 
-  const runWhileCommandIngressFrozen = async <T>(operation: () => Promise<T>): Promise<T> => {
+  const runWhileCommandIngressFrozen = async <T>(operation: () => Promise<T> | T): Promise<T> => {
     if (hasFailed || isDisposing) {
       throw new Error('Simulation is not running.');
     }
@@ -1214,6 +1215,7 @@ function createSimWorkerController(
     enqueueCommands,
     serializeState,
     hydrateState,
+    runWhileCommandIngressFrozen,
     isCommandIngressFrozen,
     pause,
     resume,
@@ -1381,9 +1383,12 @@ async function loadSimulationState(): Promise<void> {
   }
 
   const savePath = buildShellSavePath(capabilities);
-  const rawSave = await fsPromises.readFile(savePath, 'utf8');
-  const envelope = parseShellSaveEnvelope(rawSave, capabilities);
-  await controller.hydrateState(envelope.state);
+  const envelope = await controller.runWhileCommandIngressFrozen(async () => {
+    const rawSave = await fsPromises.readFile(savePath, 'utf8');
+    const parsedEnvelope = parseShellSaveEnvelope(rawSave, capabilities);
+    await controller.hydrateState(parsedEnvelope.state);
+    return parsedEnvelope;
+  });
 
   pushDiagnosticsLog({
     source: 'main',

@@ -242,6 +242,47 @@ describe('shell-desktop sim runtime', () => {
     });
   });
 
+  it('renders the last completed frame after restoring serialized state', () => {
+    const sim = createSimRuntime({ stepSizeMs: 10, maxStepsPerFrame: 50 });
+
+    sim.enqueueCommands([
+      {
+        type: RUNTIME_COMMAND_TYPES.COLLECT_RESOURCE,
+        priority: CommandPriority.PLAYER,
+        payload: { resourceId: 'demo', amount: 2 },
+        timestamp: 0,
+        step: sim.getNextStep(),
+      },
+    ]);
+    sim.tick(20);
+
+    const savedState = loadSerializedSimRuntimeState(sim.serialize?.());
+    const restored = createSimRuntime({
+      stepSizeMs: 10,
+      maxStepsPerFrame: 50,
+      initialStep: savedState.nextStep,
+      initialState: savedState.demoState,
+    });
+
+    const frame = restored.renderCurrentFrame?.();
+    expect(frame?.frame.step).toBe(savedState.nextStep - 1);
+    expect(frame?.frame.simTimeMs).toBe((savedState.nextStep - 1) * 10);
+
+    const fillRect = frame?.draws.find(
+      (draw) =>
+        draw.kind === 'rect' &&
+        draw.passId === 'ui' &&
+        draw.sortKey.sortKeyHi === 0 &&
+        draw.sortKey.sortKeyLo === 2,
+    );
+
+    expect(fillRect).toMatchObject({
+      kind: 'rect',
+      passId: 'ui',
+      width: 28,
+    });
+  });
+
   it('rejects serialized saves with missing or malformed demoState data', () => {
     expect(() => loadSerializedSimRuntimeState({
       schemaVersion: 1,
