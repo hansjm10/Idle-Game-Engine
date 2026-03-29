@@ -453,6 +453,99 @@ describe('shell-desktop main process entrypoint', () => {
     windowAllClosedHandler?.();
   });
 
+  it('rejects an in-flight sim.step before load hydration can be overtaken by a stale frame', async () => {
+    vi.useFakeTimers();
+    setMonotonicNowSequence([0, 16, 32]);
+    process.env.IDLE_ENGINE_ENABLE_MCP_SERVER = '1';
+
+    await import('./main.js');
+    await flushMicrotasks();
+
+    const { sim } = getRegisteredMcpControllers();
+    const worker = Worker.instances[0];
+    expect(worker).toBeDefined();
+
+    worker?.emitMessage({
+      kind: 'ready',
+      stepSizeMs: 16,
+      nextStep: 0,
+      capabilities: {
+        canSerialize: true,
+        canHydrate: true,
+        supportsOfflineCatchup: true,
+        saveFileStem: 'content-dev',
+        saveSchemaVersion: 1,
+        contentHash: 'content:dev',
+        contentVersion: 'dev',
+      },
+    });
+    await flushMicrotasks();
+
+    const stepPromise = sim.step(1);
+
+    fsPromises.readFile.mockImplementationOnce(
+      async () =>
+        JSON.stringify({
+          schemaVersion: 1,
+          metadata: {
+            savedAt: '2026-03-12T21:00:00.000Z',
+            appVersion: '0.1.0',
+            runtime: {
+              saveFileStem: 'content-dev',
+              saveSchemaVersion: 1,
+              contentHash: 'content:dev',
+              contentVersion: 'dev',
+            },
+          },
+          state: {
+            schemaVersion: 1,
+            nextStep: 9,
+            demoState: {
+              tickCount: 9,
+              resourceCount: 5,
+              lastCollectedStep: 8,
+            },
+            accumulatorBacklogMs: 0,
+            pendingCommands: {
+              schemaVersion: 1,
+              entries: [],
+            },
+          },
+        }) as unknown as Buffer,
+    );
+
+    getMenuEntry(['Simulation', 'Load']).click?.();
+    await flushMicrotasks(20);
+
+    const hydrateCall = worker?.postMessage.mock.calls.find(
+      (call) => (call[0] as { kind?: string } | undefined)?.kind === 'hydrate',
+    );
+    expect(hydrateCall).toBeDefined();
+
+    worker?.emitMessage({ kind: 'frame', droppedFrames: 0, nextStep: 1 });
+    await expect(stepPromise).rejects.toThrow('Simulation step was interrupted by state load.');
+
+    worker?.emitMessage({
+      kind: 'hydrated',
+      requestId: (hydrateCall?.[0] as { requestId?: string }).requestId ?? '',
+      nextStep: 9,
+      capabilities: {
+        canSerialize: true,
+        canHydrate: true,
+        supportsOfflineCatchup: true,
+        saveFileStem: 'content-dev',
+        saveSchemaVersion: 1,
+        contentHash: 'content:dev',
+        contentVersion: 'dev',
+      },
+    });
+    await flushMicrotasks(20);
+
+    const windowAllClosedCall = app.on.mock.calls.find((call) => call[0] === 'window-all-closed');
+    const windowAllClosedHandler = windowAllClosedCall?.[1] as undefined | (() => void);
+    windowAllClosedHandler?.();
+  });
+
   it('rejects sim.step values above the MCP step bound', async () => {
     vi.useFakeTimers();
     setMonotonicNowSequence([0]);

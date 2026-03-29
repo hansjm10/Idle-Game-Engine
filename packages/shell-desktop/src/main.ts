@@ -1128,6 +1128,7 @@ function createSimWorkerController(
 
   const hydrateState = async (state: unknown): Promise<void> => {
     await runWhileCommandIngressFrozen(async () => {
+      rejectPendingStepCompletions(new Error(SIM_STEP_INVALIDATED_BY_LOAD_ERROR));
       const requestId = `hydrate-${++requestSequence}`;
       await requestWorker<void>({ kind: 'hydrate', requestId, state });
     });

@@ -471,6 +471,32 @@ describe('shell-desktop sim runtime', () => {
     expect(savedState.demoState.tickCount).toBe(3);
   });
 
+  it('drains offline catch-up backlog within a single tick call', () => {
+    const sim = createSimRuntime({ stepSizeMs: 10, maxStepsPerFrame: 2 });
+
+    sim.enqueueCommands([
+      {
+        type: RUNTIME_COMMAND_TYPES.OFFLINE_CATCHUP,
+        priority: CommandPriority.SYSTEM,
+        payload: { elapsedMs: 60 },
+        timestamp: 0,
+        step: sim.getNextStep(),
+      },
+    ]);
+
+    const result = sim.tick(10);
+
+    expect(result.frames).toHaveLength(6);
+    expect(result.frame?.frame.step).toBe(5);
+    expect(result.droppedFrames).toBe(5);
+    expect(result.nextStep).toBe(6);
+    expect(sim.getNextStep()).toBe(6);
+
+    const savedState = loadSerializedSimRuntimeState(sim.serialize?.());
+    expect(savedState.nextStep).toBe(6);
+    expect(savedState.demoState.tickCount).toBe(6);
+  });
+
   it('respects offline catch-up maxElapsedMs and maxSteps limits', () => {
     const sim = createSimRuntime({ stepSizeMs: 10, maxStepsPerFrame: 50 });
 

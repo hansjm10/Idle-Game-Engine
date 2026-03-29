@@ -45,6 +45,8 @@ export type SimRuntimeOptions = Readonly<{
 
 export type SimTickResult = Readonly<{
   frames: readonly RenderCommandBuffer[];
+  frame?: RenderCommandBuffer;
+  droppedFrames: number;
   nextStep: number;
 }>;
 
@@ -82,6 +84,7 @@ const SAMPLE_FONT_ASSET_ID = 'sample-pack.ui-font' as AssetId;
 const SIM_RUNTIME_CONTENT_HASH = 'content:dev';
 const SIM_RUNTIME_CONTENT_VERSION = 'dev';
 const SIM_RUNTIME_SAVE_FILE_STEM = 'content-dev';
+const MAX_RETAINED_TICK_FRAMES = 128;
 
 const clampByte = (value: number): number => Math.min(255, Math.max(0, Math.floor(value)));
 
@@ -332,6 +335,19 @@ export function createSimRuntime(options: SimRuntimeOptions = {}): SimRuntime {
 
   const frameQueue: RenderCommandBuffer[] = [];
   let accumulatorBacklogMs = normalizeAccumulatorBacklogMs(options.initialAccumulatorBacklogMs);
+  let droppedFrames = 0;
+  let lastFrame: RenderCommandBuffer | undefined;
+  let offlineCatchupDrainBudgetMs = 0;
+
+  const captureFrame = (frame: RenderCommandBuffer): void => {
+    lastFrame = frame;
+    if (frameQueue.length < MAX_RETAINED_TICK_FRAMES) {
+      frameQueue.push(frame);
+      return;
+    }
+
+    droppedFrames += 1;
+  };
 
   const buildFrame = (step: number): RenderCommandBuffer => {
     const stepSizeMs = runtime.getStepSizeMs();
@@ -434,10 +450,15 @@ export function createSimRuntime(options: SimRuntimeOptions = {}): SimRuntime {
     const stepSizeMs = runtime.getStepSizeMs();
     const offlineSteps = resolveOfflineCatchupStepCount(payload, stepSizeMs);
     const totalOfflineMs = resolveOfflineCatchupTotalMs(payload, stepSizeMs);
+    if (totalOfflineMs <= 0) {
+      return;
+    }
     const resourceDelta = offlineSteps + sumFiniteObjectValues(payload.resourceDeltas);
 
     state.resourceCount += resourceDelta;
     state.lastCollectedStep = context.step;
+
+    offlineCatchupDrainBudgetMs += totalOfflineMs;
 
     const remainingOfflineMs = totalOfflineMs - stepSizeMs;
     if (remainingOfflineMs > 0) {
@@ -518,18 +539,11 @@ export function createSimRuntime(options: SimRuntimeOptions = {}): SimRuntime {
   runtime.addSystem({
     id: 'frame-producer',
     tick: (context) => {
-      frameQueue.push(buildFrame(context.step));
+      captureFrame(buildFrame(context.step));
     },
   });
 
-  const tick = (deltaMs: number): SimTickResult => {
-    frameQueue.length = 0;
-    const nextStepBeforeTick = runtime.getNextExecutableStep();
-    accumulatorBacklogMs += deltaMs > 0 ? deltaMs : 0;
-    runtime.tick(deltaMs);
-
-    // Check for fatal command execution failures and rethrow them.
-    // This ensures schemaVersion mismatches in INPUT_EVENT handlers crash the worker.
+  const rethrowFatalCommandFailures = (): void => {
     const failures = runtime.drainCommandFailures();
     for (const failure of failures) {
       if (
@@ -542,16 +556,43 @@ export function createSimRuntime(options: SimRuntimeOptions = {}): SimRuntime {
         throw new Error(originalError);
       }
     }
+  };
 
-    const nextStep = runtime.getNextExecutableStep();
-    const processedSteps = Math.max(0, nextStep - nextStepBeforeTick);
+  const processTickBudget = (deltaMs: number): number => {
+    const nextStepBeforeTick = runtime.getNextExecutableStep();
+    runtime.tick(deltaMs);
+    rethrowFatalCommandFailures();
+
+    const processedSteps = Math.max(0, runtime.getNextExecutableStep() - nextStepBeforeTick);
     if (processedSteps > 0) {
-      accumulatorBacklogMs = Math.max(0, accumulatorBacklogMs - processedSteps * runtime.getStepSizeMs());
+      const processedMs = processedSteps * runtime.getStepSizeMs();
+      accumulatorBacklogMs = Math.max(0, accumulatorBacklogMs - processedMs);
+      offlineCatchupDrainBudgetMs = Math.max(0, offlineCatchupDrainBudgetMs - processedMs);
+    }
+
+    return processedSteps;
+  };
+
+  const tick = (deltaMs: number): SimTickResult => {
+    frameQueue.length = 0;
+    droppedFrames = 0;
+    lastFrame = undefined;
+    accumulatorBacklogMs += deltaMs > 0 ? deltaMs : 0;
+
+    processTickBudget(deltaMs);
+
+    while (offlineCatchupDrainBudgetMs >= runtime.getStepSizeMs()) {
+      const processedSteps = processTickBudget(0);
+      if (processedSteps <= 0) {
+        break;
+      }
     }
 
     return {
       frames: Array.from(frameQueue),
-      nextStep,
+      frame: lastFrame,
+      droppedFrames: droppedFrames + Math.max(0, frameQueue.length - 1),
+      nextStep: runtime.getNextExecutableStep(),
     };
   };
 

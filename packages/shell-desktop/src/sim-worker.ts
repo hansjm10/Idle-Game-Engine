@@ -107,8 +107,8 @@ parentPort.on('message', (message: unknown) => {
       }
       const activeRuntime = ensureRuntime();
       const result = activeRuntime.tick(tick.deltaMs);
-      const droppedFrames = Math.max(0, result.frames.length - 1);
-      const frame = result.frames.at(-1);
+      const droppedFrames = result.droppedFrames ?? Math.max(0, result.frames.length - 1);
+      const frame = result.frame ?? result.frames.at(-1);
       if (frame) {
         emit({ kind: 'frame', frame, droppedFrames, nextStep: result.nextStep });
       } else {
