@@ -76,6 +76,8 @@ const SIM_RUNTIME_SAVE_FILE_STEM = 'sample-pack';
 const MAX_RETAINED_TICK_FRAMES = 128;
 // Some packaged runtime builds ignore zero-delta ticks before checking credited backlog.
 const CREDITED_BACKLOG_DRAIN_DELTA_MS = Number.MIN_VALUE;
+// Each extra pass is still clamped by the core runtime's maxStepsPerFrame.
+const MAX_OFFLINE_CATCHUP_DRAIN_PASSES_PER_TICK = 1;
 
 const SAMPLE_UI_PANEL = {
   x: 16,
@@ -653,7 +655,12 @@ export function createSimRuntime(options: SimRuntimeOptions = {}): SimRuntime {
 
     processTickBudget(deltaMs);
 
-    while (offlineCatchupDrainBudgetMs >= runtime.getStepSizeMs()) {
+    let remainingOfflineCatchupDrainPasses = MAX_OFFLINE_CATCHUP_DRAIN_PASSES_PER_TICK;
+    while (
+      remainingOfflineCatchupDrainPasses > 0 &&
+      offlineCatchupDrainBudgetMs >= runtime.getStepSizeMs()
+    ) {
+      remainingOfflineCatchupDrainPasses -= 1;
       const processedSteps = processTickBudget(0, { drainCreditedBacklog: true });
       if (processedSteps <= 0) {
         break;

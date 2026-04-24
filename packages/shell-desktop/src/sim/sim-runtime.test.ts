@@ -431,7 +431,7 @@ describe('shell-desktop sim runtime', () => {
     expect(savedState.accumulatorBacklogMs).toBe(0);
   });
 
-  it('drains offline catch-up backlog within a single tick call', () => {
+  it('drains offline catch-up backlog in bounded chunks', () => {
     const sim = createSimRuntime({ stepSizeMs: 10, maxStepsPerFrame: 2 });
 
     sim.enqueueCommands([
@@ -446,14 +446,44 @@ describe('shell-desktop sim runtime', () => {
 
     const result = sim.tick(10);
 
-    expect(result.frames).toHaveLength(6);
-    expect(result.frame?.frame.step).toBe(5);
-    expect(result.droppedFrames).toBe(5);
-    expect(result.nextStep).toBe(6);
-    expect(sim.getNextStep()).toBe(6);
+    expect(result.frames).toHaveLength(4);
+    expect(result.frame?.frame.step).toBe(3);
+    expect(result.droppedFrames).toBe(3);
+    expect(result.nextStep).toBe(4);
+    expect(sim.getNextStep()).toBe(4);
 
     const savedState = loadSerializedSimRuntimeState(sim.serialize?.());
-    expect(savedState.nextStep).toBe(6);
+    expect(savedState.nextStep).toBe(4);
+    expect(savedState.accumulatorBacklogMs).toBe(20);
+
+    const continued = sim.tick(0);
+    expect(continued.frames).toHaveLength(2);
+    expect(continued.frame?.frame.step).toBe(5);
+    expect(continued.nextStep).toBe(6);
+  });
+
+  it('does not drain a one-hour offline catch-up payload in one tick', () => {
+    const sim = createSimRuntime({ stepSizeMs: 16, maxStepsPerFrame: 50 });
+
+    sim.enqueueCommands([
+      {
+        type: RUNTIME_COMMAND_TYPES.OFFLINE_CATCHUP,
+        priority: CommandPriority.SYSTEM,
+        payload: { elapsedMs: 60 * 60 * 1000 },
+        timestamp: 0,
+        step: sim.getNextStep(),
+      },
+    ]);
+
+    const result = sim.tick(16);
+
+    expect(result.frames).toHaveLength(100);
+    expect(result.frame?.frame.step).toBe(99);
+    expect(result.nextStep).toBe(100);
+
+    const savedState = loadSerializedSimRuntimeState(sim.serialize?.());
+    expect(savedState.nextStep).toBe(100);
+    expect(savedState.accumulatorBacklogMs).toBeGreaterThan(0);
   });
 
   it('respects offline catch-up maxElapsedMs and maxSteps limits', () => {
