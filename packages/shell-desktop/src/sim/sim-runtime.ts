@@ -366,6 +366,7 @@ export function createSimRuntime(options: SimRuntimeOptions = {}): SimRuntime {
     game.tick(deltaMs);
 
     const failures = runtime.drainCommandFailures();
+    runtime.drainCommandOutcomes();
     for (const failure of failures) {
       if (
         failure.error.code === 'COMMAND_EXECUTION_FAILED' &&

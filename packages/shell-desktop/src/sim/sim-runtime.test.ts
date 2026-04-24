@@ -1,7 +1,7 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { sampleContentArtifactHash } from '@idle-engine/content-sample';
-import { CommandPriority, RUNTIME_COMMAND_TYPES } from '@idle-engine/core';
+import { CommandPriority, IdleEngineRuntime, RUNTIME_COMMAND_TYPES } from '@idle-engine/core';
 import { createSimRuntime } from './sim-runtime.js';
 import { SHELL_CONTROL_EVENT_COMMAND_TYPE } from '../ipc.js';
 import type {
@@ -84,6 +84,23 @@ describe('shell-desktop sim runtime', () => {
     expect(hasText(result.frames[0], 'Energy: 10 / 100 +0/s')).toBe(true);
     expect(hasText(result.frames[0], /^Reactor: owned 0/)).toBe(true);
     expect(energyFillWidth(result.frames[0])).toBe(40);
+  });
+
+  it('drains command outcomes after each tick', () => {
+    const drainCommandOutcomes = vi.spyOn(
+      IdleEngineRuntime.prototype,
+      'drainCommandOutcomes',
+    );
+
+    try {
+      const sim = createSimRuntime({ stepSizeMs: 10, maxStepsPerFrame: 50 });
+
+      sim.tick(10);
+
+      expect(drainCommandOutcomes).toHaveBeenCalledTimes(1);
+    } finally {
+      drainCommandOutcomes.mockRestore();
+    }
   });
 
   it('executes real collect resource commands and reflects them in the next frame', () => {
