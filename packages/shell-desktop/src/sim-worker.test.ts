@@ -96,16 +96,14 @@ describe('shell-desktop sim worker', () => {
       serialize: vi.fn(() => ({
         schemaVersion: 1,
         nextStep: 5,
-        demoState: {
-          tickCount: 8,
-          resourceCount: 3,
-          lastCollectedStep: 4,
+        gameState: {
+          runtime: { step: 5 },
+          commandQueue: {
+            schemaVersion: 1,
+            entries: [],
+          },
         },
         accumulatorBacklogMs: 0,
-        pendingCommands: {
-          schemaVersion: 1,
-          entries: [],
-        },
       })),
     };
     const restoredRuntime = {
@@ -158,16 +156,14 @@ describe('shell-desktop sim worker', () => {
       state: {
         schemaVersion: 1,
         nextStep: 5,
-        demoState: {
-          tickCount: 8,
-          resourceCount: 3,
-          lastCollectedStep: 4,
+        gameState: {
+          runtime: { step: 5 },
+          commandQueue: {
+            schemaVersion: 1,
+            entries: [],
+          },
         },
         accumulatorBacklogMs: 0,
-        pendingCommands: {
-          schemaVersion: 1,
-          entries: [],
-        },
       },
     });
 
@@ -176,24 +172,22 @@ describe('shell-desktop sim worker', () => {
     const savedState = {
       schemaVersion: 1,
       nextStep: 12,
-      demoState: {
-        tickCount: 21,
-        resourceCount: 9,
-        lastCollectedStep: 11,
+      gameState: {
+        runtime: { step: 12 },
+        commandQueue: {
+          schemaVersion: 1,
+          entries: [
+            {
+              type: RUNTIME_COMMAND_TYPES.COLLECT_RESOURCE,
+              priority: 1,
+              timestamp: 240,
+              step: 12,
+              payload: { resourceId: 'sample-pack.energy', amount: 2 },
+            },
+          ],
+        },
       },
       accumulatorBacklogMs: 7,
-      pendingCommands: {
-        schemaVersion: 1,
-        entries: [
-          {
-            type: RUNTIME_COMMAND_TYPES.COLLECT_RESOURCE,
-            priority: 1,
-            timestamp: 240,
-            step: 12,
-            payload: { resourceId: 'demo', amount: 2 },
-          },
-        ],
-      },
     };
     messageHandler?.({ kind: 'hydrate', requestId: 'hydrate-1', state: savedState });
 
@@ -201,25 +195,7 @@ describe('shell-desktop sim worker', () => {
     expect(createSimRuntime).toHaveBeenLastCalledWith({
       stepSizeMs: 20,
       maxStepsPerFrame: 30,
-      initialStep: 12,
-      initialState: {
-        tickCount: 21,
-        resourceCount: 9,
-        lastCollectedStep: 11,
-      },
-      initialAccumulatorBacklogMs: 7,
-      initialPendingCommands: {
-        schemaVersion: 1,
-        entries: [
-          {
-            type: RUNTIME_COMMAND_TYPES.COLLECT_RESOURCE,
-            priority: 1,
-            timestamp: 240,
-            step: 12,
-            payload: { resourceId: 'demo', amount: 2 },
-          },
-        ],
-      },
+      initialSerializedState: savedState,
     });
     expect(parentPort.postMessage).toHaveBeenCalledWith({
       kind: 'hydrated',

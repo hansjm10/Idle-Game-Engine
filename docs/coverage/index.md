@@ -10,10 +10,10 @@ Run `pnpm coverage:md` from the repository root to regenerate this page after mo
 ## Overall Coverage
 | Metric | Covered | Total | % |
 | --- | --- | --- | --- |
-| Statements | 44575 | 49084 | 90.81% |
-| Branches | 9403 | 10991 | 85.55% |
-| Functions | 2326 | 2484 | 93.64% |
-| Lines | 44575 | 49084 | 90.81% |
+| Statements | 44618 | 49116 | 90.84% |
+| Branches | 9397 | 10986 | 85.54% |
+| Functions | 2329 | 2487 | 93.65% |
+| Lines | 44618 | 49116 | 90.84% |
 
 ## Coverage by Package
 | Package | Statements | Branches | Functions | Lines |
@@ -23,9 +23,8 @@ Run `pnpm coverage:md` from the repository root to regenerate this page after mo
 | @idle-engine/content-schema | 8846 / 9915 (89.22%) | 1277 / 1495 (85.42%) | 313 / 343 (91.25%) | 8846 / 9915 (89.22%) |
 | @idle-engine/content-validation-cli | 2045 / 2200 (92.95%) | 480 / 545 (88.07%) | 94 / 103 (91.26%) | 2045 / 2200 (92.95%) |
 | @idle-engine/controls | 228 / 230 (99.13%) | 67 / 69 (97.10%) | 14 / 14 (100.00%) | 228 / 230 (99.13%) |
-| @idle-engine/core | 24756 / 27335 (90.57%) | 5464 / 6477 (84.36%) | 1436 / 1535 (93.55%) | 24756 / 27335 (90.57%) |
+| @idle-engine/core | 24756 / 27335 (90.57%) | 5467 / 6480 (84.37%) | 1436 / 1535 (93.55%) | 24756 / 27335 (90.57%) |
 | @idle-engine/renderer-contract | 516 / 523 (98.66%) | 134 / 138 (97.10%) | 27 / 27 (100.00%) | 516 / 523 (98.66%) |
 | @idle-engine/renderer-debug | 870 / 876 (99.32%) | 255 / 266 (95.86%) | 49 / 49 (100.00%) | 870 / 876 (99.32%) |
-| @idle-engine/renderer-webgpu | 1943 / 1965 (98.88%) | 524 / 534 (98.13%) | 97 / 98 (98.98%) | 1943 / 1965 (98.88%) |
-| @idle-engine/shell-desktop | 3642 / 4090 (89.05%) | 908 / 1092 (83.15%) | 194 / 209 (92.82%) | 3642 / 4090 (89.05%) |
-| idle-engine-monorepo | 16 / 16 (100.00%) | 2 / 2 (100.00%) | 0 / 0 (0.00%) | 16 / 16 (100.00%) |
+| @idle-engine/renderer-webgpu | 1943 / 1965 (98.88%) | 525 / 535 (98.13%) | 97 / 98 (98.98%) | 1943 / 1965 (98.88%) |
+| @idle-engine/shell-desktop | 3701 / 4138 (89.44%) | 900 / 1085 (82.95%) | 197 / 212 (92.92%) | 3701 / 4138 (89.44%) |

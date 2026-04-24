@@ -172,10 +172,7 @@ parentPort.on('message', (message: unknown) => {
         runtime = createSimRuntime({
           stepSizeMs: runtimeConfig.stepSizeMs,
           maxStepsPerFrame: runtimeConfig.maxStepsPerFrame,
-          initialStep: savedState.nextStep,
-          initialState: savedState.demoState,
-          initialAccumulatorBacklogMs: savedState.accumulatorBacklogMs,
-          initialPendingCommands: savedState.pendingCommands,
+          initialSerializedState: savedState,
         });
 
         emit({
