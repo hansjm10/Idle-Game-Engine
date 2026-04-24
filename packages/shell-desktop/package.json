@@ -21,6 +21,7 @@
   "dependencies": {
     "@idle-engine/controls": "workspace:*",
     "@idle-engine/core": "workspace:*",
+    "@idle-engine/content-sample": "workspace:*",
     "@idle-engine/renderer-contract": "workspace:*",
     "@idle-engine/renderer-webgpu": "workspace:*",
     "@modelcontextprotocol/sdk": "^1.25.3",
