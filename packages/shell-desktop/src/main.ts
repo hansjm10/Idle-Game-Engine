@@ -651,7 +651,10 @@ type SimWorkerController = Readonly<{
   enqueueCommands: (commands: readonly Command[]) => void;
   serializeState: () => Promise<unknown>;
   hydrateState: (state: unknown) => Promise<void>;
-  runWhileCommandIngressFrozen: <T>(operation: () => Promise<T> | T) => Promise<T>;
+  runWhileCommandIngressFrozen: <T>(
+    operation: () => Promise<T> | T,
+    options?: CommandIngressFreezeOptions,
+  ) => Promise<T>;
   isCommandIngressFrozen: () => boolean;
   pause: () => void;
   resume: () => void;
@@ -663,6 +666,10 @@ type SimWorkerController = Readonly<{
 
 type SimWorkerControllerOptions = Readonly<{
   onCapabilitiesChanged?: (capabilities: SimRuntimeCapabilities) => void;
+}>;
+
+type CommandIngressFreezeOptions = Readonly<{
+  stepInterruptionError?: Error;
 }>;
 
 const buildStoppedSimStatus = (): SimMcpStatus => ({ state: 'stopped', stepSizeMs: 16, nextStep: 0 });
@@ -907,7 +914,10 @@ function createSimWorkerController(
     });
   };
 
-  const runWhileCommandIngressFrozen = async <T>(operation: () => Promise<T> | T): Promise<T> => {
+  const runWhileCommandIngressFrozen = async <T>(
+    operation: () => Promise<T> | T,
+    options: CommandIngressFreezeOptions = {},
+  ): Promise<T> => {
     if (hasFailed || isDisposing) {
       throw new Error('Simulation is not running.');
     }
@@ -920,6 +930,9 @@ function createSimWorkerController(
     isPaused = true;
     commandIngressFreezeDepth += 1;
     stopTickLoop();
+    if (options.stepInterruptionError) {
+      rejectPendingStepCompletions(options.stepInterruptionError);
+    }
 
     try {
       return await operation();
@@ -1128,9 +1141,10 @@ function createSimWorkerController(
 
   const hydrateState = async (state: unknown): Promise<void> => {
     await runWhileCommandIngressFrozen(async () => {
-      rejectPendingStepCompletions(new Error(SIM_STEP_INVALIDATED_BY_LOAD_ERROR));
       const requestId = `hydrate-${++requestSequence}`;
       await requestWorker<void>({ kind: 'hydrate', requestId, state });
+    }, {
+      stepInterruptionError: new Error(SIM_STEP_INVALIDATED_BY_LOAD_ERROR),
     });
   };
 
@@ -1395,6 +1409,8 @@ async function loadSimulationState(): Promise<void> {
     const parsedEnvelope = parseShellSaveEnvelope(rawSave, capabilities);
     await controller.hydrateState(parsedEnvelope.state);
     return parsedEnvelope;
+  }, {
+    stepInterruptionError: new Error(SIM_STEP_INVALIDATED_BY_LOAD_ERROR),
   });
 
   pushDiagnosticsLog({

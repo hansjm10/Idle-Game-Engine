@@ -11,6 +11,7 @@ import type {
   Command,
   InputEventCommandPayload,
   PointerInputEvent,
+  RuntimeCommandPayloads,
 } from '@idle-engine/core';
 import type { RenderCommandBuffer, RenderDraw } from '@idle-engine/renderer-contract';
 
@@ -403,6 +404,31 @@ describe('shell-desktop sim runtime', () => {
 
     const savedState = loadSerializedSimRuntimeState(sim.serialize?.());
     expect(savedState.nextStep).toBe(3);
+  });
+
+  it('does not persist offline catch-up backlog for invalid resourceDeltas shapes', () => {
+    const sim = createSimRuntime({ stepSizeMs: 10, maxStepsPerFrame: 50 });
+
+    sim.enqueueCommands([
+      {
+        type: RUNTIME_COMMAND_TYPES.OFFLINE_CATCHUP,
+        priority: CommandPriority.SYSTEM,
+        payload: {
+          elapsedMs: 30,
+          resourceDeltas: [],
+        } as unknown as RuntimeCommandPayloads[typeof RUNTIME_COMMAND_TYPES.OFFLINE_CATCHUP],
+        timestamp: 0,
+        step: sim.getNextStep(),
+      },
+    ]);
+
+    const result = sim.tick(10);
+    expect(result.frames).toHaveLength(1);
+    expect(result.nextStep).toBe(1);
+
+    const savedState = loadSerializedSimRuntimeState(sim.serialize?.());
+    expect(savedState.nextStep).toBe(1);
+    expect(savedState.accumulatorBacklogMs).toBe(0);
   });
 
   it('drains offline catch-up backlog within a single tick call', () => {

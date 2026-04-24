@@ -449,6 +449,25 @@ function resolveOfflineCatchupTotalMs(
   return totalSteps * stepSizeMs + remainderMs;
 }
 
+function isBudgetableOfflineCatchupPayload(payload: unknown): payload is OfflineCatchupPayload {
+  if (typeof payload !== 'object' || payload === null) {
+    return false;
+  }
+
+  const resourceDeltas = (payload as { readonly resourceDeltas?: unknown }).resourceDeltas;
+  if (
+    resourceDeltas !== undefined &&
+    (typeof resourceDeltas !== 'object' ||
+      resourceDeltas === null ||
+      Array.isArray(resourceDeltas))
+  ) {
+    return false;
+  }
+
+  const elapsedMs = (payload as { readonly elapsedMs?: unknown }).elapsedMs;
+  return typeof elapsedMs === 'number' && Number.isFinite(elapsedMs) && elapsedMs > 0;
+}
+
 export function loadSerializedSimRuntimeState(value: unknown): SerializedSimRuntimeState {
   const record = assertRecord(value, 'Invalid sim runtime save: expected an object.');
   if (record['schemaVersion'] !== SIM_RUNTIME_SAVE_SCHEMA_VERSION) {
@@ -512,19 +531,20 @@ export function createSimRuntime(options: SimRuntimeOptions = {}): SimRuntime {
   const offlineCatchupHandler = dispatcher.getHandler(RUNTIME_COMMAND_TYPES.OFFLINE_CATCHUP);
   if (offlineCatchupHandler) {
     dispatcher.register(RUNTIME_COMMAND_TYPES.OFFLINE_CATCHUP, (payload: OfflineCatchupPayload, context) => {
-      if (
-        typeof payload?.elapsedMs === 'number' &&
-        Number.isFinite(payload.elapsedMs) &&
-        payload.elapsedMs > 0
-      ) {
-        const totalOfflineMs = resolveOfflineCatchupTotalMs(
-          payload,
-          runtime.getStepSizeMs(),
-        );
-        offlineCatchupDrainBudgetMs += totalOfflineMs;
-        accumulatorBacklogMs += Math.max(0, totalOfflineMs - runtime.getStepSizeMs());
+      let totalOfflineMs = 0;
+      const stepSizeMs = isBudgetableOfflineCatchupPayload(payload)
+        ? runtime.getStepSizeMs()
+        : 0;
+      if (Number.isFinite(stepSizeMs) && stepSizeMs > 0) {
+        totalOfflineMs = resolveOfflineCatchupTotalMs(payload, stepSizeMs);
       }
-      return offlineCatchupHandler(payload, context);
+
+      const result = offlineCatchupHandler(payload, context);
+      if (totalOfflineMs > 0) {
+        offlineCatchupDrainBudgetMs += totalOfflineMs;
+        accumulatorBacklogMs += Math.max(0, totalOfflineMs - stepSizeMs);
+      }
+      return result;
     });
   }
 
