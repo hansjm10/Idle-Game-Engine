@@ -7,6 +7,10 @@
       "@idle-engine/core": ["packages/core/src/index.ts"],
       "@idle-engine/core/harness": ["packages/core/src/harness.ts"],
       "@idle-engine/controls": ["packages/controls/src/index.ts"],
+      "@idle-engine/content-compiler/runtime": [
+        "packages/content-compiler/src/runtime.ts"
+      ],
+      "@idle-engine/content-sample": ["packages/content-sample/src/index.ts"],
       "@idle-engine/content-schema": [
         "packages/content-schema/src/index.ts",
         "packages/content-schema/src/index.d.ts"
