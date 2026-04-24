@@ -542,11 +542,13 @@ export class IdleEngineRuntime {
    * steps to avoid spiral of death scenarios.
    */
   tick(deltaMs: number): number {
-    if (deltaMs <= 0) {
+    if (!isFiniteNumber(deltaMs) || deltaMs < 0) {
       return 0;
     }
 
-    this.accumulator += deltaMs;
+    if (deltaMs > 0) {
+      this.accumulator += deltaMs;
+    }
     let processedSteps = 0;
     let remainingStepBudget = this.maxStepsPerFrame;
 
