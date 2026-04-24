@@ -379,6 +379,9 @@ importers:
 
   packages/shell-desktop:
     dependencies:
+      '@idle-engine/content-sample':
+        specifier: workspace:*
+        version: link:../content-sample
       '@idle-engine/controls':
         specifier: workspace:*
         version: link:../controls

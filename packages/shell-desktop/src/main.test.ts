@@ -436,7 +436,7 @@ describe('shell-desktop main process entrypoint', () => {
     expect(() => sim.enqueue([
       {
         type: RUNTIME_COMMAND_TYPES.COLLECT_RESOURCE,
-        payload: { resourceId: 'demo', amount: 1 },
+        payload: { resourceId: 'sample-pack.energy', amount: 1 },
         priority: CommandPriority.PLAYER,
         step: 0,
         timestamp: 0,

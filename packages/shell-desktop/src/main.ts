@@ -130,16 +130,16 @@ const DEMO_CONTROL_SCHEME: ControlScheme = {
   version: '1',
   actions: [
     {
-      id: 'collect-demo',
+      id: 'collect-sample-energy',
       commandType: RUNTIME_COMMAND_TYPES.COLLECT_RESOURCE,
-      payload: { resourceId: 'demo', amount: 1 },
+      payload: { resourceId: 'sample-pack.energy', amount: 1 },
     },
   ],
   bindings: [
     {
       id: 'collect-space',
       intent: 'collect',
-      actionId: 'collect-demo',
+      actionId: 'collect-sample-energy',
       phases: ['start'],
     },
   ],
