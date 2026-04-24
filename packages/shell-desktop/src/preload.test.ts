@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { createRequire } from 'node:module';
+import Module from 'node:module';
 
 import { IDLE_ENGINE_API_KEY, IPC_CHANNELS } from './ipc.js';
 import type { IdleEngineApi } from './ipc.js';
@@ -9,22 +9,44 @@ const invoke = vi.fn();
 const send = vi.fn();
 const on = vi.fn();
 const removeListener = vi.fn();
-
-const require = createRequire(import.meta.url);
-const electronModulePath = require.resolve('electron');
-require.cache[electronModulePath] = {
-  exports: {
-    contextBridge: { exposeInMainWorld },
-    ipcRenderer: { invoke, send, on, removeListener },
+const preloadElectronModule = {
+  contextBridge: {
+    exposeInMainWorld,
   },
-} as unknown as NodeJS.Module;
+  ipcRenderer: { invoke, send, on, removeListener },
+};
+
+function installElectronModule(electronModule: unknown): () => void {
+  const moduleLoader = Module as typeof Module & {
+    _load: (request: string, ...args: unknown[]) => unknown;
+  };
+  const originalLoad = moduleLoader._load;
+
+  moduleLoader._load = ((request: string, ...args: unknown[]) => {
+    if (request === 'electron') {
+      return electronModule;
+    }
+
+    return originalLoad(request, ...args);
+  }) as typeof moduleLoader._load;
+
+  return () => {
+    moduleLoader._load = originalLoad;
+  };
+}
 
 describe('shell-desktop preload', () => {
   it('exposes a typed idleEngine API and routes calls via ipcRenderer', async () => {
     const assetBytes = new Uint8Array([1, 2, 3]).buffer;
     invoke.mockResolvedValueOnce({ message: 'pong-from-test' }).mockResolvedValueOnce(assetBytes);
+    vi.resetModules();
+    const restoreElectronModule = installElectronModule(preloadElectronModule);
 
-    await import('./preload.cjs');
+    try {
+      await import('./preload.cjs');
+    } finally {
+      restoreElectronModule();
+    }
 
     expect(exposeInMainWorld).toHaveBeenCalledTimes(1);
     const [key, api] = exposeInMainWorld.mock.calls[0] as [string, IdleEngineApi];

@@ -11,6 +11,9 @@ import {
   maybeStartShellDesktopMcpServer,
   startShellDesktopMcpServer,
 } from './mcp-server.js';
+import type { AssetMcpController } from './asset-tools.js';
+import type { InputMcpController } from './input-tools.js';
+import type { SimMcpController } from './sim-tools.js';
 import type { WindowMcpController } from './window-tools.js';
 
 async function readResponseBody(response: IncomingMessage): Promise<string> {
@@ -42,6 +45,74 @@ const buildInitializeRequestBody = (): string =>
       },
     },
   });
+
+async function closeHttpServer(server: http.Server): Promise<void> {
+  await new Promise<void>((resolve, reject) => {
+    server.close((error) => {
+      if (error) {
+        reject(error);
+        return;
+      }
+      resolve();
+    });
+  });
+}
+
+function createBusyHttpServer(): http.Server {
+  return http.createServer((_req, res) => {
+    res.writeHead(200);
+    res.end('busy');
+  });
+}
+
+function isPortBusyError(error: unknown): error is NodeJS.ErrnoException {
+  return error instanceof Error && 'code' in error && error.code === 'EADDRINUSE';
+}
+
+async function listenBusyServer(server: http.Server, port: number): Promise<number> {
+  await new Promise<void>((resolve, reject) => {
+    server.once('error', reject);
+    server.listen({ host: '127.0.0.1', port }, () => {
+      server.off('error', reject);
+      resolve();
+    });
+  });
+
+  const address = server.address();
+  if (!address || typeof address === 'string') {
+    throw new Error('Expected blocker server to expose a bound TCP address');
+  }
+
+  return address.port;
+}
+
+async function createBusyServer(port = 0): Promise<{
+  server: http.Server;
+  port: number;
+}> {
+  const server = createBusyHttpServer();
+  const boundPort = await listenBusyServer(server, port);
+
+  return { server, port: boundPort };
+}
+
+async function tryCreateBusyServer(port: number): Promise<{
+  server: http.Server;
+  port: number;
+} | undefined> {
+  const server = createBusyHttpServer();
+
+  try {
+    const boundPort = await listenBusyServer(server, port);
+    return { server, port: boundPort };
+  } catch (error: unknown) {
+    if (isPortBusyError(error)) {
+      return undefined;
+    }
+
+    throw error;
+  }
+}
 
 describe('shell-desktop MCP server', () => {
   const servers: Array<{ close: () => Promise<void> }> = [];
@@ -82,30 +153,8 @@ describe('shell-desktop MCP server', () => {
     expect(server.url.pathname).toBe('/mcp/sse');
   });
 
-  it('falls back to the next port when default MCP port is busy', async () => {
-    const blocker = http.createServer((_req, res) => {
-      res.writeHead(200);
-      res.end('busy');
-    });
-
-    let blockerListening = false;
-    await new Promise<void>((resolve, reject) => {
-      blocker.once('error', (error: unknown) => {
-        const code = error instanceof Error && 'code' in error
-          ? (error as NodeJS.ErrnoException).code
-          : undefined;
-        if (code === 'EADDRINUSE') {
-          resolve();
-          return;
-        }
-        reject(error);
-      });
-
-      blocker.listen({ host: '127.0.0.1', port: 8570 }, () => {
-        blockerListening = true;
-        resolve();
-      });
-    });
+  it('falls back to a configured fallback port when the default MCP port is busy', async () => {
+    const blockerDefault = await createBusyServer();
 
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => undefined);
@@ -114,6 +163,8 @@ describe('shell-desktop MCP server', () => {
       const server = await maybeStartShellDesktopMcpServer({
         argv: ['node', 'app.js', '--enable-mcp-server'],
         env: { NODE_ENV: 'production' },
+        defaultPort: blockerDefault.port,
+        fallbackPort: 0,
       });
 
       if (!server) {
@@ -121,9 +172,10 @@ describe('shell-desktop MCP server', () => {
       }
 
       servers.push(server);
-      expect(Number.parseInt(server.url.port, 10)).toBe(8571);
+      const selectedPort = Number.parseInt(server.url.port, 10);
+      expect(selectedPort).not.toBe(blockerDefault.port);
       expect(warnSpy).toHaveBeenCalledWith(
-        '[shell-desktop] MCP port 8570 is busy; using 8571 instead.',
+        `[shell-desktop] MCP port ${blockerDefault.port} is busy; using ${selectedPort} instead.`,
       );
       expect(logSpy).toHaveBeenCalledWith(
         `[shell-desktop] MCP server listening at ${server.url.toString()}`,
@@ -131,41 +183,52 @@ describe('shell-desktop MCP server', () => {
     } finally {
       warnSpy.mockRestore();
       logSpy.mockRestore();
+      await closeHttpServer(blockerDefault.server);
+    }
+  });
 
-      if (blockerListening) {
-        await new Promise<void>((resolve, reject) => {
-          blocker.close((error) => {
-            if (error) {
-              reject(error);
-              return;
-            }
-            resolve();
-          });
-        });
+  it('falls back from the built-in default MCP port to the built-in fallback port', async () => {
+    const blockerDefault = await tryCreateBusyServer(8570);
+
+    try {
+      const server = await maybeStartShellDesktopMcpServer({
+        argv: ['node', 'app.js', '--enable-mcp-server'],
+        env: { NODE_ENV: 'test' },
+      });
+
+      if (!server) {
+        throw new Error('Expected maybeStart to return a running server');
+      }
+
+      servers.push(server);
+      expect(server.url.port).toBe('8571');
+    } finally {
+      if (blockerDefault) {
+        await closeHttpServer(blockerDefault.server);
       }
     }
   });
 
-  it('throws when an explicit MCP port is already in use', async () => {
-    const blocker = http.createServer((_req, res) => {
-      res.writeHead(200);
-      res.end('busy');
-    });
+  it('throws when both the configured default MCP port and fallback port are busy', async () => {
+    const blockerDefault = await createBusyServer();
+    const blockerFallback = await createBusyServer();
 
-    await new Promise<void>((resolve, reject) => {
-      blocker.once('error', reject);
-      blocker.listen({ host: '127.0.0.1', port: 0 }, () => {
-        blocker.off('error', reject);
-        resolve();
-      });
-    });
-
-    const address = blocker.address();
-    if (!address || typeof address === 'string') {
-      throw new Error('Expected blocker server to expose a bound TCP address');
+    try {
+      await expect(maybeStartShellDesktopMcpServer({
+        argv: ['node', 'app.js', '--enable-mcp-server'],
+        env: { NODE_ENV: 'test' },
+        defaultPort: blockerDefault.port,
+        fallbackPort: blockerFallback.port,
+      })).rejects.toMatchObject({ code: 'EADDRINUSE' });
+    } finally {
+      await closeHttpServer(blockerDefault.server);
+      await closeHttpServer(blockerFallback.server);
     }
+  });
 
-    const busyPort = String(address.port);
+  it('throws when an explicit MCP port is already in use', async () => {
+    const blocker = await createBusyServer();
+    const busyPort = String(blocker.port);
 
     try {
       await expect(maybeStartShellDesktopMcpServer({
@@ -176,56 +239,24 @@ describe('shell-desktop MCP server', () => {
         },
       })).rejects.toMatchObject({ code: 'EADDRINUSE' });
     } finally {
-      await new Promise<void>((resolve, reject) => {
-        blocker.close((error) => {
-          if (error) {
-            reject(error);
-            return;
-          }
-          resolve();
-        });
-      });
+      await closeHttpServer(blocker.server);
     }
   });
 
   it('closes server resources when startup fails during listen', async () => {
-    const blocker = http.createServer((_req, res) => {
-      res.writeHead(200);
-      res.end('busy');
-    });
-
-    await new Promise<void>((resolve, reject) => {
-      blocker.once('error', reject);
-      blocker.listen({ host: '127.0.0.1', port: 0 }, () => {
-        blocker.off('error', reject);
-        resolve();
-      });
-    });
-
-    const address = blocker.address();
-    if (!address || typeof address === 'string') {
-      throw new Error('Expected blocker server to expose a bound TCP address');
-    }
+    const blocker = await createBusyServer();
 
     const serverCloseSpy = vi.spyOn(McpServer.prototype, 'close');
     const transportCloseSpy = vi.spyOn(StreamableHTTPServerTransport.prototype, 'close');
 
     try {
-      await expect(startShellDesktopMcpServer({ port: address.port })).rejects.toMatchObject({ code: 'EADDRINUSE' });
+      await expect(startShellDesktopMcpServer({ port: blocker.port })).rejects.toMatchObject({ code: 'EADDRINUSE' });
       expect(serverCloseSpy).toHaveBeenCalled();
       expect(transportCloseSpy).toHaveBeenCalled();
     } finally {
       serverCloseSpy.mockRestore();
       transportCloseSpy.mockRestore();
-      await new Promise<void>((resolve, reject) => {
-        blocker.close((error) => {
-          if (error) {
-            reject(error);
-            return;
-          }
-          resolve();
-        });
-      });
+      await closeHttpServer(blocker.server);
     }
   });
 
@@ -237,6 +268,25 @@ describe('shell-desktop MCP server', () => {
         IDLE_ENGINE_MCP_PORT: '70000',
       },
     })).rejects.toThrow('Invalid MCP port: 70000');
+  });
+
+  it('rethrows non-EADDRINUSE errors from fallback startup attempts', async () => {
+    const blockerDefault = await createBusyServer();
+    const addressSpy = vi
+      .spyOn(http.Server.prototype, 'address')
+      .mockReturnValue('named-pipe' as ReturnType<http.Server['address']>);
+
+    try {
+      await expect(maybeStartShellDesktopMcpServer({
+        argv: ['node', 'app.js', '--enable-mcp-server'],
+        env: { NODE_ENV: 'test' },
+        defaultPort: blockerDefault.port,
+        fallbackPort: 0,
+      })).rejects.toThrow('Failed to resolve MCP server address.');
+    } finally {
+      addressSpy.mockRestore();
+      await closeHttpServer(blockerDefault.server);
+    }
   });
 
   it('exposes the health tool over streamable HTTP', async () => {
@@ -308,6 +358,46 @@ describe('shell-desktop MCP server', () => {
     await client.close();
   });
 
+  it('exposes sim, input, and asset tools when their controllers are provided', async () => {
+    const simController: SimMcpController = {
+      getStatus: () => ({ state: 'paused', stepSizeMs: 100, nextStep: 12 }),
+      start: () => ({ state: 'running', stepSizeMs: 100, nextStep: 12 }),
+      stop: () => ({ state: 'stopped', stepSizeMs: 100, nextStep: 12, reason: 'requested' }),
+      pause: () => ({ state: 'paused', stepSizeMs: 100, nextStep: 12 }),
+      resume: () => ({ state: 'running', stepSizeMs: 100, nextStep: 12 }),
+      step: async () => ({ state: 'paused', stepSizeMs: 100, nextStep: 13 }),
+      enqueue: () => ({ enqueued: 0 }),
+    };
+    const inputController: InputMcpController = {
+      sendControlEvent: () => undefined,
+    };
+    const assetController: AssetMcpController = {
+      compiledAssetsRootPath: process.cwd(),
+    };
+
+    const server = await startShellDesktopMcpServer({
+      port: 0,
+      sim: simController,
+      input: inputController,
+      asset: assetController,
+    });
+    servers.push(server);
+
+    const client = new Client({ name: 'shell-desktop-test-client', version: '1.0.0' });
+    const transport = new StreamableHTTPClientTransport(server.url);
+    await client.connect(transport);
+
+    const tools = await client.listTools();
+    const toolNames = tools.tools.map((tool) => tool.name);
+    expect(toolNames).toContain('sim.status');
+    expect(toolNames).toContain('sim.step');
+    expect(toolNames).toContain('input.controlEvent');
+    expect(toolNames).toContain('asset.list');
+    expect(toolNames).toContain('asset.read');
+
+    await client.close();
+  });
+
   it('accepts initialization requests that only advertise application/json', async () => {
     const server = await startShellDesktopMcpServer({ port: 0 });
     servers.push(server);
@@ -336,6 +426,39 @@ describe('shell-desktop MCP server', () => {
     const body = await readResponseBody(response);
     expect(response.statusCode).toBe(200);
     expect(response.headers['content-type']).toContain('application/json');
+
+    const payload = JSON.parse(body) as {
+      result?: { protocolVersion?: string };
+    };
+    expect(payload.result?.protocolVersion).toBe('2025-06-18');
+  });
+
+  it('accepts initialization requests without an Accept header', async () => {
+    const server = await startShellDesktopMcpServer({ port: 0 });
+    servers.push(server);
+
+    const port = Number.parseInt(server.url.port, 10);
+    const response = await new Promise<IncomingMessage>((resolve, reject) => {
+      const request = http.request(
+        {
+          hostname: '127.0.0.1',
+          port,
+          method: 'POST',
+          path: server.url.pathname,
+          headers: {
+            'content-type': 'application/json',
+          },
+        },
+        resolve,
+      );
+
+      request.on('error', reject);
+      request.write(buildInitializeRequestBody());
+      request.end();
+    });
+
+    const body = await readResponseBody(response);
+    expect(response.statusCode).toBe(200);
 
     const payload = JSON.parse(body) as {
       result?: { protocolVersion?: string };
@@ -381,6 +504,77 @@ describe('shell-desktop MCP server', () => {
       expect(body).toContain('Invalid request URL');
     } finally {
       process.off('uncaughtException', onUncaughtException);
+    }
+  });
+
+  it('responds with 404 for unknown paths', async () => {
+    const server = await startShellDesktopMcpServer({ port: 0 });
+    servers.push(server);
+
+    const port = Number.parseInt(server.url.port, 10);
+    const response = await new Promise<IncomingMessage>((resolve, reject) => {
+      const request = http.request(
+        {
+          hostname: '127.0.0.1',
+          port,
+          method: 'GET',
+          path: '/not-mcp',
+        },
+        resolve,
+      );
+
+      request.on('error', reject);
+      request.end();
+    });
+
+    const body = await readResponseBody(response);
+    expect(response.statusCode).toBe(404);
+    expect(body).toContain('Not found');
+  });
+
+  it('responds with 400 when the request URL is missing', async () => {
+    const createServerOriginal = http.createServer;
+    let requestHandler: http.RequestListener | undefined;
+    const createServerSpy = vi
+      .spyOn(http, 'createServer')
+      .mockImplementation((...args: Parameters<typeof http.createServer>) => {
+        const maybeHandler = typeof args[0] === 'function' ? args[0] : args[1];
+        if (maybeHandler) {
+          requestHandler = maybeHandler;
+        }
+
+        return createServerOriginal(...args);
+      });
+
+    try {
+      const server = await startShellDesktopMcpServer({ port: 0 });
+      servers.push(server);
+
+      if (!requestHandler) {
+        throw new Error('Expected MCP server to register an HTTP request handler');
+      }
+
+      const writeHead = vi.fn();
+      const end = vi.fn();
+      requestHandler(
+        {
+          method: 'GET',
+          url: undefined,
+          headers: {},
+          rawHeaders: [],
+        } as unknown as http.IncomingMessage,
+        {
+          writableEnded: false,
+          headersSent: false,
+          writeHead,
+          end,
+        } as unknown as http.ServerResponse,
+      );
+
+      expect(writeHead).toHaveBeenCalledWith(400);
+      expect(end).toHaveBeenCalledWith('Missing request URL.');
+    } finally {
+      createServerSpy.mockRestore();
     }
   });
 
@@ -436,6 +630,48 @@ describe('shell-desktop MCP server', () => {
 
     serverCloseSpy.mockRestore();
     transportCloseSpy.mockRestore();
+  });
+
+  it('rejects close when the HTTP server was already stopped externally', async () => {
+    const createServerOriginal = http.createServer;
+    let capturedHttpServer: http.Server | undefined;
+    const createServerSpy = vi
+      .spyOn(http, 'createServer')
+      .mockImplementation((...args: Parameters<typeof http.createServer>) => {
+        const httpServer = createServerOriginal(...args);
+        capturedHttpServer = httpServer;
+        return httpServer;
+      });
+
+    try {
+      const server = await startShellDesktopMcpServer({ port: 0 });
+
+      if (!capturedHttpServer) {
+        throw new Error('Expected MCP server to create an HTTP server');
+      }
+
+      await closeHttpServer(capturedHttpServer);
+      await expect(server.close()).rejects.toMatchObject({ code: 'ERR_SERVER_NOT_RUNNING' });
+    } finally {
+      createServerSpy.mockRestore();
+    }
+  });
+
+  it('closes the HTTP server when address resolution fails after listen', async () => {
+    const addressSpy = vi
+      .spyOn(http.Server.prototype, 'address')
+      .mockReturnValue('named-pipe' as ReturnType<http.Server['address']>);
+    const closeSpy = vi.spyOn(http.Server.prototype, 'close');
+
+    try {
+      await expect(startShellDesktopMcpServer({ port: 0 })).rejects.toThrow(
+        'Failed to resolve MCP server address.',
+      );
+      expect(closeSpy).toHaveBeenCalled();
+    } finally {
+      addressSpy.mockRestore();
+      closeSpy.mockRestore();
+    }
   });
 
   it('passes window tool arguments through streamable HTTP transport', async () => {

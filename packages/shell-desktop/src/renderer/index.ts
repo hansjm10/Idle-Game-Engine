@@ -48,8 +48,10 @@ type GeneratedFontMetadata = Readonly<{
   };
 }>;
 
+type PngAssetImage = ImageBitmap | HTMLImageElement;
+
 function getIdleEngineApi(): IdleEngineApi {
-  return (globalThis as unknown as Window & { idleEngine: IdleEngineApi }).idleEngine;
+  return globalThis.idleEngine;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -158,7 +160,7 @@ async function readAssetJson(api: IdleEngineApi, url: URL): Promise<unknown> {
 async function loadPngAsset(
   api: IdleEngineApi,
   url: URL,
-): Promise<GPUImageCopyExternalImageSource> {
+): Promise<PngAssetImage> {
   const bytes = await readAssetBytes(api, url);
   const ownedBytes = new Uint8Array(bytes.byteLength);
   ownedBytes.set(bytes);

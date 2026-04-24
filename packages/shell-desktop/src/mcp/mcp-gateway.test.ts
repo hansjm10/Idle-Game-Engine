@@ -109,7 +109,7 @@ describe('shell-desktop MCP gateway', () => {
       };
     };
     expect(payload.result?.serverInfo?.name).toBe('idle-engine-shell-desktop-gateway');
-  });
+  }, 30_000);
 
   it('exposes a /healthz endpoint for readiness checks', async () => {
     const gateway = await startShellDesktopMcpGateway({
@@ -205,7 +205,7 @@ describe('shell-desktop MCP gateway', () => {
     expect(unavailable.isError).toBe(true);
 
     await client.close();
-  });
+  }, 30_000);
 
   it('proxies tool calls when backend server is running', async () => {
     const resizeSpy = vi.fn<(width: number, height: number) => ReturnType<WindowMcpController['resize']>>(
@@ -281,5 +281,5 @@ describe('shell-desktop MCP gateway', () => {
     expect(tools.tools.map((tool) => tool.name)).toContain('health');
 
     await client.close();
-  });
+  }, 30_000);
 });

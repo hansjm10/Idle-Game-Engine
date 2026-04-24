@@ -1,3 +1,44 @@
+type ElectronPreloadModule = Pick<typeof import('electron'), 'contextBridge' | 'ipcRenderer'>;
+
+function isElectronPreloadModule(value: unknown): value is ElectronPreloadModule {
+  return typeof value === 'object'
+    && value !== null
+    && 'contextBridge' in value
+    && 'ipcRenderer' in value;
+}
+
+function getDefaultExport(value: unknown): unknown {
+  if (typeof value !== 'object' || value === null || !('default' in value)) {
+    return undefined;
+  }
+
+  return (value as { default?: unknown }).default;
+}
+
+function resolveElectronPreloadModule(): ElectronPreloadModule {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const electronModule = require('electron') as unknown;
+  if (isElectronPreloadModule(electronModule)) {
+    return electronModule;
+  }
+
+  const defaultElectronModule = getDefaultExport(electronModule);
+  if (isElectronPreloadModule(defaultElectronModule)) {
+    return defaultElectronModule;
+  }
+
+  const testElectronModule = (globalThis as typeof globalThis & {
+    __idleEngineElectronPreloadTestModule__?: ElectronPreloadModule;
+  }).__idleEngineElectronPreloadTestModule__;
+  if (isElectronPreloadModule(testElectronModule)) {
+    return testElectronModule;
+  }
+
+  throw new TypeError('Electron preload APIs are unavailable in this environment.');
+}
+
+const { contextBridge, ipcRenderer } = resolveElectronPreloadModule();
+
 import type {
   IdleEngineApi,
   IpcInvokeMap,
@@ -8,12 +49,9 @@ import type {
   ShellSimStatusPayload,
 } from './ipc.js';
 
-const electron = require('electron') as typeof import('electron');
-
-const { contextBridge, ipcRenderer } = electron;
-
-const IDLE_ENGINE_API_KEY = 'idleEngine' as const;
-
+// Sandboxed preloads cannot import local runtime modules, so these values stay inline
+// and are checked against the shared IPC contract at compile time.
+const IDLE_ENGINE_API_KEY = 'idleEngine' as const satisfies typeof import('./ipc.js').IDLE_ENGINE_API_KEY;
 const IPC_CHANNELS = {
   ping: 'idle-engine:ping',
   readAsset: 'idle-engine:read-asset',
@@ -23,7 +61,7 @@ const IPC_CHANNELS = {
   rendererLog: 'idle-engine:renderer-log',
   frame: 'idle-engine:frame',
   simStatus: 'idle-engine:sim-status',
-} as const;
+} as const satisfies typeof import('./ipc.js').IPC_CHANNELS;
 
 async function invoke<K extends keyof IpcInvokeMap>(
   channel: K,
