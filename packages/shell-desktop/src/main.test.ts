@@ -6,6 +6,7 @@ import { CommandPriority, RUNTIME_COMMAND_TYPES } from '@idle-engine/core';
 import type { createControlCommands as CreateControlCommandsFn } from '@idle-engine/controls';
 import { IPC_CHANNELS, SHELL_CONTROL_EVENT_COMMAND_TYPE } from './ipc.js';
 import type { DiagnosticsMcpController } from './mcp/diagnostics-tools.js';
+import type { InputMcpController } from './mcp/input-tools.js';
 import type { ShellDesktopMcpServer } from './mcp/mcp-server.js';
 import { SIM_MCP_MAX_STEP_COUNT, type SimMcpController } from './mcp/sim-tools.js';
 
@@ -29,10 +30,72 @@ async function flushMicrotasks(maxTurns = 10): Promise<void> {
   }
 }
 
+type MenuEntry = {
+  label?: string;
+  submenu?: MenuEntry[];
+  enabled?: boolean;
+  click?: () => unknown;
+  role?: string;
+  type?: string;
+};
+
+function getLatestMenuTemplate(): MenuEntry[] {
+  const latestMenuCall = Menu.setApplicationMenu.mock.calls.at(-1);
+  if (!latestMenuCall) {
+    throw new Error('Expected application menu to be installed');
+  }
+
+  return latestMenuCall[0] as MenuEntry[];
+}
+
+function getMenuEntry(path: readonly string[]): MenuEntry {
+  let currentEntries = getLatestMenuTemplate();
+  let currentEntry: MenuEntry | undefined;
+
+  for (const label of path) {
+    currentEntry = currentEntries.find((entry) => entry.label === label);
+    if (!currentEntry) {
+      throw new Error(`Menu entry not found: ${path.join(' > ')}`);
+    }
+    currentEntries = currentEntry.submenu ?? [];
+  }
+
+  return currentEntry!;
+}
+
+function getRegisteredMcpControllers(): {
+  sim: SimMcpController;
+  input: InputMcpController;
+} {
+  const registrationCalls = maybeStartShellDesktopMcpServer.mock.calls as unknown as Array<
+    [{
+      sim?: SimMcpController;
+      input?: InputMcpController;
+    }?]
+  >;
+  const registration = registrationCalls[0]?.[0] as
+    | {
+        sim?: SimMcpController;
+        input?: InputMcpController;
+      }
+    | undefined;
+
+  if (!registration?.sim || !registration.input) {
+    throw new Error('Expected MCP controllers to be registered');
+  }
+
+  return {
+    sim: registration.sim,
+    input: registration.input,
+  };
+}
+
 const app = {
   isPackaged: false,
   name: 'idle-engine',
   commandLine: { appendSwitch: vi.fn() },
+  getPath: vi.fn(() => path.join('C:', 'mock-user-data')),
+  getVersion: vi.fn(() => '0.1.0'),
   whenReady: vi.fn(() => Promise.resolve()),
   on: vi.fn(),
   quit: vi.fn(),
@@ -89,8 +152,18 @@ vi.mock('electron', () => ({
   Menu,
 }));
 
-const fsPromises = {
+const fsPromises: {
+  readFile: ReturnType<typeof vi.fn>;
+  mkdir: ReturnType<typeof vi.fn>;
+  writeFile: ReturnType<typeof vi.fn>;
+  rename: ReturnType<typeof vi.fn>;
+  unlink: ReturnType<typeof vi.fn>;
+} = {
   readFile: vi.fn(async () => Buffer.from([1, 2, 3])),
+  mkdir: vi.fn(async () => undefined),
+  writeFile: vi.fn(async () => undefined),
+  rename: vi.fn(async () => undefined),
+  unlink: vi.fn(async () => undefined),
 };
 
 vi.mock('node:fs', () => ({
@@ -207,6 +280,14 @@ describe('shell-desktop main process entrypoint', () => {
     } else {
       process.env.IDLE_ENGINE_ENABLE_MCP_SERVER = originalEnableMcpServer;
     }
+
+    app.getPath.mockReturnValue(path.join('C:', 'mock-user-data'));
+    app.getVersion.mockReturnValue('0.1.0');
+    fsPromises.readFile.mockImplementation(async () => Buffer.from([1, 2, 3]));
+    fsPromises.mkdir.mockImplementation(async () => undefined);
+    fsPromises.writeFile.mockImplementation(async () => undefined);
+    fsPromises.rename.mockImplementation(async () => undefined);
+    fsPromises.unlink.mockImplementation(async () => undefined);
   });
 
   afterEach(() => {
@@ -272,6 +353,13 @@ describe('shell-desktop main process entrypoint', () => {
   });
 
   it('logs and swallows MCP close failures during window-all-closed shutdown', async () => {
+    const originalPlatform = process.platform;
+    Object.defineProperty(process, 'platform', {
+      value: 'linux',
+      configurable: true,
+      enumerable: true,
+      writable: false,
+    });
     process.env.IDLE_ENGINE_ENABLE_MCP_SERVER = '1';
     const close = vi.fn(async () => {
       throw new Error('mcp close failed');
@@ -282,19 +370,27 @@ describe('shell-desktop main process entrypoint', () => {
     } satisfies ShellDesktopMcpServer);
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
 
-    await import('./main.js');
-    await flushMicrotasks();
+    try {
+      await import('./main.js');
+      await flushMicrotasks();
 
-    const windowAllClosedCall = app.on.mock.calls.find((call) => call[0] === 'window-all-closed');
-    const windowAllClosedHandler = windowAllClosedCall?.[1] as undefined | (() => void);
-    windowAllClosedHandler?.();
-    await flushMicrotasks();
+      const windowAllClosedCall = app.on.mock.calls.find((call) => call[0] === 'window-all-closed');
+      const windowAllClosedHandler = windowAllClosedCall?.[1] as undefined | (() => void);
+      windowAllClosedHandler?.();
+      await flushMicrotasks();
 
-    expect(close).toHaveBeenCalledTimes(1);
-    expect(app.quit).toHaveBeenCalledTimes(1);
-    expect(consoleError).toHaveBeenCalledWith(expect.objectContaining({ message: 'mcp close failed' }));
-
-    consoleError.mockRestore();
+      expect(close).toHaveBeenCalledTimes(1);
+      expect(app.quit).toHaveBeenCalledTimes(1);
+      expect(consoleError).toHaveBeenCalledWith(expect.objectContaining({ message: 'mcp close failed' }));
+    } finally {
+      consoleError.mockRestore();
+      Object.defineProperty(process, 'platform', {
+        value: originalPlatform,
+        configurable: true,
+        enumerable: true,
+        writable: false,
+      });
+    }
   });
 
   it('closes MCP server during before-quit and logs close failures', async () => {
@@ -438,6 +534,99 @@ describe('shell-desktop main process entrypoint', () => {
     windowAllClosedHandler?.();
   });
 
+  it('rejects an in-flight sim.step before load hydration can be overtaken by a stale frame', async () => {
+    vi.useFakeTimers();
+    setMonotonicNowSequence([0, 16, 32]);
+    process.env.IDLE_ENGINE_ENABLE_MCP_SERVER = '1';
+
+    await import('./main.js');
+    await flushMicrotasks();
+
+    const { sim } = getRegisteredMcpControllers();
+    const worker = Worker.instances[0];
+    expect(worker).toBeDefined();
+
+    worker?.emitMessage({
+      kind: 'ready',
+      stepSizeMs: 16,
+      nextStep: 0,
+      capabilities: {
+        canSerialize: true,
+        canHydrate: true,
+        supportsOfflineCatchup: true,
+        saveFileStem: 'content-dev',
+        saveSchemaVersion: 1,
+        contentHash: 'content:dev',
+        contentVersion: 'dev',
+      },
+    });
+    await flushMicrotasks();
+
+    const stepPromise = sim.step(1);
+
+    fsPromises.readFile.mockImplementationOnce(
+      async () =>
+        JSON.stringify({
+          schemaVersion: 1,
+          metadata: {
+            savedAt: '2026-03-12T21:00:00.000Z',
+            appVersion: '0.1.0',
+            runtime: {
+              saveFileStem: 'content-dev',
+              saveSchemaVersion: 1,
+              contentHash: 'content:dev',
+              contentVersion: 'dev',
+            },
+          },
+          state: {
+            schemaVersion: 1,
+            nextStep: 9,
+            demoState: {
+              tickCount: 9,
+              resourceCount: 5,
+              lastCollectedStep: 8,
+            },
+            accumulatorBacklogMs: 0,
+            pendingCommands: {
+              schemaVersion: 1,
+              entries: [],
+            },
+          },
+        }) as unknown as Buffer,
+    );
+
+    getMenuEntry(['Simulation', 'Load']).click?.();
+    await flushMicrotasks(20);
+
+    const hydrateCall = worker?.postMessage.mock.calls.find(
+      (call) => (call[0] as { kind?: string } | undefined)?.kind === 'hydrate',
+    );
+    expect(hydrateCall).toBeDefined();
+
+    worker?.emitMessage({ kind: 'frame', droppedFrames: 0, nextStep: 1 });
+    await expect(stepPromise).rejects.toThrow('Simulation step was interrupted by state load.');
+
+    worker?.emitMessage({
+      kind: 'hydrated',
+      requestId: (hydrateCall?.[0] as { requestId?: string }).requestId ?? '',
+      nextStep: 9,
+      capabilities: {
+        canSerialize: true,
+        canHydrate: true,
+        supportsOfflineCatchup: true,
+        saveFileStem: 'content-dev',
+        saveSchemaVersion: 1,
+        contentHash: 'content:dev',
+        contentVersion: 'dev',
+      },
+    });
+    await flushMicrotasks(20);
+
+    const windowAllClosedCall = app.on.mock.calls.find((call) => call[0] === 'window-all-closed');
+    const windowAllClosedHandler = windowAllClosedCall?.[1] as undefined | (() => void);
+    windowAllClosedHandler?.();
+  });
+
   it('rejects sim.step values above the MCP step bound', async () => {
     vi.useFakeTimers();
     setMonotonicNowSequence([0]);
@@ -502,7 +691,7 @@ describe('shell-desktop main process entrypoint', () => {
     expect(() => sim.enqueue([
       {
         type: RUNTIME_COMMAND_TYPES.COLLECT_RESOURCE,
-        payload: { resourceId: 'demo', amount: 1 },
+        payload: { resourceId: 'sample-pack.energy', amount: 1 },
         priority: CommandPriority.PLAYER,
         step: 0,
         timestamp: 0,
@@ -1483,6 +1672,1221 @@ describe('shell-desktop main process entrypoint', () => {
         writable: false,
       });
     }
+  });
+
+  it('enables simulation tooling menu items when the worker reports support', async () => {
+    vi.useFakeTimers();
+    setMonotonicNowSequence([0]);
+    await import('./main.js');
+    await flushMicrotasks();
+
+    const worker = Worker.instances[0];
+    expect(worker).toBeDefined();
+
+    worker?.emitMessage({
+      kind: 'ready',
+      stepSizeMs: 16,
+      nextStep: 0,
+      capabilities: {
+        canSerialize: true,
+        canHydrate: true,
+        supportsOfflineCatchup: true,
+        saveFileStem: 'sample-pack',
+        saveSchemaVersion: 1,
+        contentHash: 'content:dev',
+        contentVersion: 'dev',
+      },
+    });
+    await flushMicrotasks();
+
+    expect(getMenuEntry(['Simulation', 'Save']).enabled).toBe(true);
+    expect(getMenuEntry(['Simulation', 'Load']).enabled).toBe(true);
+    expect(getMenuEntry(['Simulation', 'Offline Catch-up: 5 Minutes']).enabled).toBe(true);
+    expect(getMenuEntry(['Simulation', 'Offline Catch-up: 1 Hour']).enabled).toBe(true);
+
+    const windowAllClosedCall = app.on.mock.calls.find((call) => call[0] === 'window-all-closed');
+    const windowAllClosedHandler = windowAllClosedCall?.[1] as undefined | (() => void);
+    windowAllClosedHandler?.();
+    await flushMicrotasks();
+  });
+
+  it('disables simulation tooling menu items after the last darwin window closes', async () => {
+    vi.useFakeTimers();
+    setMonotonicNowSequence([0]);
+    const originalPlatform = process.platform;
+    Object.defineProperty(process, 'platform', {
+      value: 'darwin',
+      configurable: true,
+      enumerable: true,
+      writable: false,
+    });
+
+    try {
+      await import('./main.js');
+      await flushMicrotasks();
+
+      const worker = Worker.instances[0];
+      expect(worker).toBeDefined();
+
+      worker?.emitMessage({
+        kind: 'ready',
+        stepSizeMs: 16,
+        nextStep: 0,
+        capabilities: {
+          canSerialize: true,
+          canHydrate: true,
+          supportsOfflineCatchup: true,
+          saveFileStem: 'sample-pack',
+          saveSchemaVersion: 1,
+          contentHash: 'content:dev',
+          contentVersion: 'dev',
+        },
+      });
+      await flushMicrotasks();
+
+      expect(getMenuEntry(['Simulation', 'Save']).enabled).toBe(true);
+      expect(getMenuEntry(['Simulation', 'Load']).enabled).toBe(true);
+
+      const windowAllClosedCall = app.on.mock.calls.find((call) => call[0] === 'window-all-closed');
+      const windowAllClosedHandler = windowAllClosedCall?.[1] as undefined | (() => void);
+      windowAllClosedHandler?.();
+      await flushMicrotasks();
+
+      expect(getMenuEntry(['Simulation', 'Save']).enabled).toBe(false);
+      expect(getMenuEntry(['Simulation', 'Load']).enabled).toBe(false);
+      expect(getMenuEntry(['Simulation', 'Offline Catch-up: 5 Minutes']).enabled).toBe(false);
+      expect(app.quit).not.toHaveBeenCalled();
+    } finally {
+      Object.defineProperty(process, 'platform', {
+        value: originalPlatform,
+        configurable: true,
+        enumerable: true,
+        writable: false,
+      });
+    }
+  });
+
+  it('enables save and load independently based on reported capabilities', async () => {
+    vi.useFakeTimers();
+    setMonotonicNowSequence([0]);
+    await import('./main.js');
+    await flushMicrotasks();
+
+    const worker = Worker.instances[0];
+    expect(worker).toBeDefined();
+
+    worker?.emitMessage({
+      kind: 'ready',
+      stepSizeMs: 16,
+      nextStep: 0,
+      capabilities: {
+        canSerialize: true,
+        canHydrate: false,
+        supportsOfflineCatchup: false,
+        saveFileStem: 'sample-pack',
+        saveSchemaVersion: 1,
+      },
+    });
+    await flushMicrotasks();
+
+    expect(getMenuEntry(['Simulation', 'Save']).enabled).toBe(true);
+    expect(getMenuEntry(['Simulation', 'Load']).enabled).toBe(false);
+
+    const windowAllClosedCall = app.on.mock.calls.find((call) => call[0] === 'window-all-closed');
+    const windowAllClosedHandler = windowAllClosedCall?.[1] as undefined | (() => void);
+    windowAllClosedHandler?.();
+    await flushMicrotasks();
+  });
+
+  it('freezes IPC and MCP command ingress while save is in flight', async () => {
+    vi.useFakeTimers();
+    setMonotonicNowSequence([0, 16]);
+    process.env.IDLE_ENGINE_ENABLE_MCP_SERVER = '1';
+
+    await import('./main.js');
+    await flushMicrotasks();
+
+    const { input, sim } = getRegisteredMcpControllers();
+    const worker = Worker.instances[0];
+    expect(worker).toBeDefined();
+
+    worker?.emitMessage({
+      kind: 'ready',
+      stepSizeMs: 16,
+      nextStep: 4,
+      capabilities: {
+        canSerialize: true,
+        canHydrate: true,
+        supportsOfflineCatchup: true,
+        saveFileStem: 'sample-pack',
+        saveSchemaVersion: 1,
+        contentHash: 'content:dev',
+        contentVersion: 'dev',
+      },
+    });
+    await flushMicrotasks();
+
+    const controlEventCall = ipcMain.on.mock.calls.find((call) => call[0] === IPC_CHANNELS.controlEvent);
+    const controlEventHandler = controlEventCall?.[1] as undefined | ((event: unknown, payload: unknown) => void);
+    const inputEventCall = ipcMain.on.mock.calls.find((call) => call[0] === IPC_CHANNELS.inputEvent);
+    const inputEventHandler = inputEventCall?.[1] as undefined | ((event: unknown, payload: unknown) => void);
+    expect(controlEventHandler).toBeTypeOf('function');
+    expect(inputEventHandler).toBeTypeOf('function');
+
+    worker?.postMessage.mockClear();
+    getMenuEntry(['Simulation', 'Save']).click?.();
+    await flushMicrotasks();
+
+    const serializeCall = worker?.postMessage.mock.calls.find(
+      (call) => (call[0] as { kind?: string } | undefined)?.kind === 'serialize',
+    );
+    expect(serializeCall).toBeDefined();
+
+    controlEventHandler?.({}, { intent: 'collect', phase: 'start' });
+    inputEventHandler?.({}, {
+      schemaVersion: 1,
+      event: {
+        kind: 'pointer',
+        intent: 'mouse-down',
+        phase: 'start',
+        x: 100,
+        y: 200,
+        button: 0,
+        buttons: 1,
+        pointerType: 'mouse',
+        modifiers: { alt: false, ctrl: false, meta: false, shift: false },
+      },
+    });
+
+    expect(() => input.sendControlEvent({ intent: 'collect', phase: 'start' }))
+      .toThrow('Simulation save/load is in progress.');
+
+    const status = sim.getStatus();
+    expect(() => sim.enqueue([
+      {
+        type: RUNTIME_COMMAND_TYPES.COLLECT_RESOURCE,
+        payload: { resourceId: 'demo', amount: 1 },
+        priority: CommandPriority.PLAYER,
+        step: status.nextStep,
+        timestamp: status.nextStep * status.stepSizeMs,
+      },
+    ])).toThrow('Simulation save/load is in progress.');
+
+    await expect(sim.step(1)).rejects.toThrow('Simulation save/load is in progress.');
+    expect(() => sim.pause()).toThrow('Simulation save/load is in progress.');
+
+    const enqueueCalls = worker?.postMessage.mock.calls.filter(
+      (call) => (call[0] as { kind?: string } | undefined)?.kind === 'enqueueCommands',
+    );
+    expect(enqueueCalls).toHaveLength(0);
+
+    worker?.emitMessage({
+      kind: 'serialized',
+      requestId: (serializeCall?.[0] as { requestId: string }).requestId,
+      state: {
+        schemaVersion: 1,
+        nextStep: 4,
+        demoState: {
+          tickCount: 4,
+          resourceCount: 2,
+          lastCollectedStep: 3,
+        },
+      },
+    });
+    await flushMicrotasks(20);
+
+    const windowAllClosedCall = app.on.mock.calls.find((call) => call[0] === 'window-all-closed');
+    const windowAllClosedHandler = windowAllClosedCall?.[1] as undefined | (() => void);
+    windowAllClosedHandler?.();
+    await flushMicrotasks();
+  });
+
+  it('publishes a hydrated frame immediately when load completes while paused', async () => {
+    vi.useFakeTimers();
+    setMonotonicNowSequence([0, 16]);
+    process.env.IDLE_ENGINE_ENABLE_MCP_SERVER = '1';
+    const savedEnvelope = {
+      schemaVersion: 1,
+      metadata: {
+        savedAt: '2026-03-12T21:00:00.000Z',
+        appVersion: '0.1.0',
+        runtime: {
+          saveFileStem: 'sample-pack',
+          saveSchemaVersion: 1,
+          contentHash: 'content:dev',
+          contentVersion: 'dev',
+        },
+      },
+      state: {
+        schemaVersion: 1,
+        nextStep: 9,
+        demoState: {
+          tickCount: 9,
+          resourceCount: 5,
+          lastCollectedStep: 8,
+        },
+      },
+    };
+    const hydratedFrame = {
+      frame: {
+        schemaVersion: 1,
+        step: 9,
+        simTimeMs: 144,
+        contentHash: 'content:dev',
+      },
+      scene: {
+        camera: { x: 0, y: 0, zoom: 1 },
+      },
+      passes: [],
+      draws: [],
+    };
+    fsPromises.readFile.mockImplementationOnce(
+      async () => JSON.stringify(savedEnvelope) as unknown as Buffer,
+    );
+
+    await import('./main.js');
+    await flushMicrotasks();
+
+    const { sim } = getRegisteredMcpControllers();
+    const mainWindow = BrowserWindow.windows[0];
+    const worker = Worker.instances[0];
+    expect(mainWindow).toBeDefined();
+    expect(worker).toBeDefined();
+
+    worker?.emitMessage({
+      kind: 'ready',
+      stepSizeMs: 16,
+      nextStep: 2,
+      capabilities: {
+        canSerialize: true,
+        canHydrate: true,
+        supportsOfflineCatchup: false,
+        saveFileStem: 'sample-pack',
+        saveSchemaVersion: 1,
+        contentHash: 'content:dev',
+        contentVersion: 'dev',
+      },
+    });
+    await flushMicrotasks();
+
+    sim.pause();
+    worker?.postMessage.mockClear();
+    mainWindow?.webContents.send.mockClear();
+
+    getMenuEntry(['Simulation', 'Load']).click?.();
+    await flushMicrotasks();
+
+    const hydrateCall = worker?.postMessage.mock.calls.find(
+      (call) => (call[0] as { kind?: string } | undefined)?.kind === 'hydrate',
+    );
+    expect(hydrateCall).toBeDefined();
+
+    worker?.emitMessage({
+      kind: 'hydrated',
+      requestId: (hydrateCall?.[0] as { requestId: string }).requestId,
+      nextStep: 9,
+      capabilities: {
+        canSerialize: true,
+        canHydrate: true,
+        supportsOfflineCatchup: false,
+        saveFileStem: 'sample-pack',
+        saveSchemaVersion: 1,
+        contentHash: 'content:dev',
+        contentVersion: 'dev',
+      },
+      frame: hydratedFrame,
+    });
+    await flushMicrotasks(20);
+
+    expect(mainWindow?.webContents.send).toHaveBeenCalledWith(
+      IPC_CHANNELS.frame,
+      hydratedFrame,
+    );
+
+    await vi.advanceTimersByTimeAsync(64);
+    const tickCalls = worker?.postMessage.mock.calls.filter(
+      (call) => (call[0] as { kind?: string } | undefined)?.kind === 'tick',
+    );
+    expect(tickCalls).toHaveLength(0);
+
+    const windowAllClosedCall = app.on.mock.calls.find((call) => call[0] === 'window-all-closed');
+    const windowAllClosedHandler = windowAllClosedCall?.[1] as undefined | (() => void);
+    windowAllClosedHandler?.();
+    await flushMicrotasks();
+  });
+
+  it('rejects pending sim.step waiters when load completes and retargets later steps', async () => {
+    vi.useFakeTimers();
+    setMonotonicNowSequence([0, 16]);
+    process.env.IDLE_ENGINE_ENABLE_MCP_SERVER = '1';
+    const savedEnvelope = {
+      schemaVersion: 1,
+      metadata: {
+        savedAt: '2026-03-12T21:00:00.000Z',
+        appVersion: '0.1.0',
+        runtime: {
+          saveFileStem: 'sample-pack',
+          saveSchemaVersion: 1,
+          contentHash: 'content:dev',
+          contentVersion: 'dev',
+        },
+      },
+      state: {
+        schemaVersion: 1,
+        nextStep: 9,
+        demoState: {
+          tickCount: 9,
+          resourceCount: 5,
+          lastCollectedStep: 8,
+        },
+      },
+    };
+    fsPromises.readFile.mockImplementationOnce(
+      async () => JSON.stringify(savedEnvelope) as unknown as Buffer,
+    );
+
+    await import('./main.js');
+    await flushMicrotasks();
+
+    const { sim } = getRegisteredMcpControllers();
+    const worker = Worker.instances[0];
+    expect(worker).toBeDefined();
+
+    worker?.emitMessage({
+      kind: 'ready',
+      stepSizeMs: 16,
+      nextStep: 2,
+      capabilities: {
+        canSerialize: true,
+        canHydrate: true,
+        supportsOfflineCatchup: false,
+        saveFileStem: 'sample-pack',
+        saveSchemaVersion: 1,
+        contentHash: 'content:dev',
+        contentVersion: 'dev',
+      },
+    });
+    await flushMicrotasks();
+
+    worker?.postMessage.mockClear();
+
+    const interruptedStepPromise = sim.step(3);
+
+    let interruptedStepSettled = false;
+    void interruptedStepPromise.then(() => {
+      interruptedStepSettled = true;
+    }, () => {
+      interruptedStepSettled = true;
+    });
+    await flushMicrotasks();
+    expect(interruptedStepSettled).toBe(false);
+
+    getMenuEntry(['Simulation', 'Load']).click?.();
+    await flushMicrotasks();
+
+    const hydrateCall = worker?.postMessage.mock.calls.find(
+      (call) => (call[0] as { kind?: string } | undefined)?.kind === 'hydrate',
+    );
+    expect(hydrateCall).toBeDefined();
+
+    worker?.emitMessage({
+      kind: 'hydrated',
+      requestId: (hydrateCall?.[0] as { requestId: string }).requestId,
+      nextStep: 9,
+      capabilities: {
+        canSerialize: true,
+        canHydrate: true,
+        supportsOfflineCatchup: false,
+        saveFileStem: 'sample-pack',
+        saveSchemaVersion: 1,
+        contentHash: 'content:dev',
+        contentVersion: 'dev',
+      },
+    });
+
+    await expect(interruptedStepPromise).rejects.toThrow('Simulation step was interrupted by state load.');
+
+    worker?.postMessage.mockClear();
+
+    const resumedStepPromise = sim.step(2);
+    let resumedStepSettled = false;
+    void resumedStepPromise.then(() => {
+      resumedStepSettled = true;
+    }, () => {
+      resumedStepSettled = true;
+    });
+    await flushMicrotasks();
+    expect(resumedStepSettled).toBe(false);
+
+    worker?.emitMessage({ kind: 'frame', droppedFrames: 0, nextStep: 10 });
+    await flushMicrotasks();
+    expect(resumedStepSettled).toBe(false);
+
+    worker?.emitMessage({ kind: 'frame', droppedFrames: 0, nextStep: 11 });
+    await expect(resumedStepPromise).resolves.toEqual({
+      state: 'paused',
+      stepSizeMs: 16,
+      nextStep: 11,
+    });
+
+    const windowAllClosedCall = app.on.mock.calls.find((call) => call[0] === 'window-all-closed');
+    const windowAllClosedHandler = windowAllClosedCall?.[1] as undefined | (() => void);
+    windowAllClosedHandler?.();
+    await flushMicrotasks();
+  });
+
+  it('rejects pending sim.step waiters before load reads the save file', async () => {
+    vi.useFakeTimers();
+    setMonotonicNowSequence([0, 16]);
+    process.env.IDLE_ENGINE_ENABLE_MCP_SERVER = '1';
+    const savedEnvelope = {
+      schemaVersion: 1,
+      metadata: {
+        savedAt: '2026-03-12T21:00:00.000Z',
+        appVersion: '0.1.0',
+        runtime: {
+          saveFileStem: 'sample-pack',
+          saveSchemaVersion: 1,
+          contentHash: 'content:dev',
+          contentVersion: 'dev',
+        },
+      },
+      state: {
+        schemaVersion: 1,
+        nextStep: 9,
+        demoState: {
+          tickCount: 9,
+          resourceCount: 5,
+          lastCollectedStep: 8,
+        },
+      },
+    };
+
+    let resolveReadFile: ((value: Buffer) => void) | undefined;
+    fsPromises.readFile.mockImplementationOnce(
+      () => new Promise((resolve) => {
+        resolveReadFile = (value) => resolve(value);
+      }),
+    );
+
+    await import('./main.js');
+    await flushMicrotasks();
+
+    const { sim } = getRegisteredMcpControllers();
+    const worker = Worker.instances[0];
+    expect(worker).toBeDefined();
+
+    worker?.emitMessage({
+      kind: 'ready',
+      stepSizeMs: 16,
+      nextStep: 2,
+      capabilities: {
+        canSerialize: true,
+        canHydrate: true,
+        supportsOfflineCatchup: false,
+        saveFileStem: 'sample-pack',
+        saveSchemaVersion: 1,
+        contentHash: 'content:dev',
+        contentVersion: 'dev',
+      },
+    });
+    await flushMicrotasks();
+
+    worker?.postMessage.mockClear();
+
+    const interruptedStepResult = sim.step(3).then(
+      (status) => ({ status }),
+      (error: unknown) => ({ error }),
+    );
+    await flushMicrotasks();
+
+    getMenuEntry(['Simulation', 'Load']).click?.();
+    await flushMicrotasks();
+
+    const hydrateCallsBeforeReadCompletes = worker?.postMessage.mock.calls.filter(
+      (call) => (call[0] as { kind?: string } | undefined)?.kind === 'hydrate',
+    );
+    expect(hydrateCallsBeforeReadCompletes).toHaveLength(0);
+
+    worker?.emitMessage({ kind: 'frame', droppedFrames: 0, nextStep: 5 });
+
+    await expect(interruptedStepResult).resolves.toEqual({
+      error: expect.objectContaining({
+        message: 'Simulation step was interrupted by state load.',
+      }),
+    });
+
+    resolveReadFile?.(Buffer.from(JSON.stringify(savedEnvelope)));
+    await flushMicrotasks();
+
+    const hydrateCall = worker?.postMessage.mock.calls.find(
+      (call) => (call[0] as { kind?: string } | undefined)?.kind === 'hydrate',
+    );
+    expect(hydrateCall).toBeDefined();
+
+    worker?.emitMessage({
+      kind: 'hydrated',
+      requestId: (hydrateCall?.[0] as { requestId: string }).requestId,
+      nextStep: 9,
+      capabilities: {
+        canSerialize: true,
+        canHydrate: true,
+        supportsOfflineCatchup: false,
+        saveFileStem: 'sample-pack',
+        saveSchemaVersion: 1,
+        contentHash: 'content:dev',
+        contentVersion: 'dev',
+      },
+    });
+    await flushMicrotasks(20);
+
+    const windowAllClosedCall = app.on.mock.calls.find((call) => call[0] === 'window-all-closed');
+    const windowAllClosedHandler = windowAllClosedCall?.[1] as undefined | (() => void);
+    windowAllClosedHandler?.();
+    await flushMicrotasks();
+  });
+
+  it('writes saves atomically after requesting worker serialization', async () => {
+    vi.useFakeTimers();
+    setMonotonicNowSequence([0, 16]);
+    await import('./main.js');
+    await flushMicrotasks();
+
+    const worker = Worker.instances[0];
+    expect(worker).toBeDefined();
+
+    worker?.emitMessage({
+      kind: 'ready',
+      stepSizeMs: 16,
+      nextStep: 4,
+      capabilities: {
+        canSerialize: true,
+        canHydrate: true,
+        supportsOfflineCatchup: false,
+        saveFileStem: 'sample-pack',
+        saveSchemaVersion: 3,
+        contentHash: 'content:dev',
+        contentVersion: 'dev',
+      },
+    });
+    await flushMicrotasks();
+
+    getMenuEntry(['Simulation', 'Save']).click?.();
+    await flushMicrotasks();
+
+    const serializeCall = worker?.postMessage.mock.calls.find(
+      (call) => (call[0] as { kind?: string } | undefined)?.kind === 'serialize',
+    );
+    expect(serializeCall).toBeDefined();
+
+    const requestId = (serializeCall?.[0] as { requestId: string }).requestId;
+    worker?.emitMessage({
+      kind: 'serialized',
+      requestId,
+      state: {
+        schemaVersion: 1,
+        nextStep: 4,
+        demoState: {
+          tickCount: 12,
+          resourceCount: 7,
+          lastCollectedStep: 3,
+        },
+      },
+    });
+    await flushMicrotasks(20);
+
+    expect(fsPromises.mkdir).toHaveBeenCalledWith(path.join('C:', 'mock-user-data'), { recursive: true });
+    expect(fsPromises.writeFile).toHaveBeenCalledTimes(1);
+    expect(fsPromises.rename).toHaveBeenCalledTimes(1);
+
+    const [tempPath, rawSave, encoding] =
+      fsPromises.writeFile.mock.calls[0] as unknown as [string, string, string];
+    expect(tempPath).toMatch(/sample-pack\.save\.json\.\d+\.\d+\.tmp$/);
+    expect(encoding).toBe('utf8');
+
+    const savedEnvelope = JSON.parse(rawSave);
+    expect(savedEnvelope).toMatchObject({
+      schemaVersion: 1,
+      metadata: {
+        appVersion: '0.1.0',
+        runtime: {
+          saveFileStem: 'sample-pack',
+          saveSchemaVersion: 3,
+          contentHash: 'content:dev',
+          contentVersion: 'dev',
+        },
+      },
+      state: {
+        schemaVersion: 1,
+        nextStep: 4,
+        demoState: {
+          tickCount: 12,
+          resourceCount: 7,
+          lastCollectedStep: 3,
+        },
+      },
+    });
+
+    expect(fsPromises.rename).toHaveBeenCalledWith(
+      tempPath,
+      path.join('C:', 'mock-user-data', 'sample-pack.save.json'),
+    );
+
+    const windowAllClosedCall = app.on.mock.calls.find((call) => call[0] === 'window-all-closed');
+    const windowAllClosedHandler = windowAllClosedCall?.[1] as undefined | (() => void);
+    windowAllClosedHandler?.();
+    await flushMicrotasks();
+  });
+
+  it('loads a saved envelope and hydrates the worker state', async () => {
+    vi.useFakeTimers();
+    setMonotonicNowSequence([0, 16]);
+    const savedEnvelope = {
+      schemaVersion: 1,
+      metadata: {
+        savedAt: '2026-03-12T21:00:00.000Z',
+        appVersion: '0.1.0',
+        runtime: {
+          saveFileStem: 'sample-pack',
+          saveSchemaVersion: 1,
+          contentHash: 'content:dev',
+          contentVersion: 'dev',
+        },
+      },
+      state: {
+        schemaVersion: 1,
+        nextStep: 9,
+        demoState: {
+          tickCount: 9,
+          resourceCount: 5,
+          lastCollectedStep: 8,
+        },
+      },
+    };
+    fsPromises.readFile.mockImplementationOnce(
+      async () => JSON.stringify(savedEnvelope) as unknown as Buffer,
+    );
+
+    await import('./main.js');
+    await flushMicrotasks();
+
+    const worker = Worker.instances[0];
+    expect(worker).toBeDefined();
+
+    worker?.emitMessage({
+      kind: 'ready',
+      stepSizeMs: 16,
+      nextStep: 2,
+      capabilities: {
+        canSerialize: true,
+        canHydrate: true,
+        supportsOfflineCatchup: false,
+        saveFileStem: 'sample-pack',
+        saveSchemaVersion: 1,
+        contentHash: 'content:dev',
+        contentVersion: 'dev',
+      },
+    });
+    await flushMicrotasks();
+
+    getMenuEntry(['Simulation', 'Load']).click?.();
+    await flushMicrotasks();
+
+    expect(fsPromises.readFile).toHaveBeenCalledWith(
+      path.join('C:', 'mock-user-data', 'sample-pack.save.json'),
+      'utf8',
+    );
+
+    const hydrateCall = worker?.postMessage.mock.calls.find(
+      (call) => (call[0] as { kind?: string } | undefined)?.kind === 'hydrate',
+    );
+    expect(hydrateCall).toBeDefined();
+    expect(hydrateCall?.[0]).toMatchObject({
+      kind: 'hydrate',
+      state: savedEnvelope.state,
+    });
+
+    const requestId = (hydrateCall?.[0] as { requestId: string }).requestId;
+    worker?.emitMessage({
+      kind: 'hydrated',
+      requestId,
+      nextStep: 9,
+      capabilities: {
+        canSerialize: true,
+        canHydrate: true,
+        supportsOfflineCatchup: false,
+        saveFileStem: 'sample-pack',
+        saveSchemaVersion: 1,
+        contentHash: 'content:dev',
+        contentVersion: 'dev',
+      },
+    });
+    await flushMicrotasks(20);
+
+    const windowAllClosedCall = app.on.mock.calls.find((call) => call[0] === 'window-all-closed');
+    const windowAllClosedHandler = windowAllClosedCall?.[1] as undefined | (() => void);
+    windowAllClosedHandler?.();
+    await flushMicrotasks();
+  });
+
+  it('freezes command ingress before load reads the save file', async () => {
+    vi.useFakeTimers();
+    setMonotonicNowSequence([0, 16]);
+    process.env.IDLE_ENGINE_ENABLE_MCP_SERVER = '1';
+
+    const savedEnvelope = {
+      schemaVersion: 1,
+      metadata: {
+        savedAt: '2026-03-12T21:00:00.000Z',
+        appVersion: '0.1.0',
+        runtime: {
+          saveFileStem: 'sample-pack',
+          saveSchemaVersion: 1,
+          contentHash: 'content:dev',
+          contentVersion: 'dev',
+        },
+      },
+      state: {
+        schemaVersion: 1,
+        nextStep: 9,
+        demoState: {
+          tickCount: 9,
+          resourceCount: 5,
+          lastCollectedStep: 8,
+        },
+      },
+    };
+
+    let resolveReadFile: ((value: Buffer) => void) | undefined;
+    fsPromises.readFile.mockImplementationOnce(
+      () => new Promise((resolve) => {
+        resolveReadFile = (value) => resolve(value);
+      }),
+    );
+
+    await import('./main.js');
+    await flushMicrotasks();
+
+    const { sim, input } = getRegisteredMcpControllers();
+    const worker = Worker.instances[0];
+    expect(worker).toBeDefined();
+
+    worker?.emitMessage({
+      kind: 'ready',
+      stepSizeMs: 16,
+      nextStep: 2,
+      capabilities: {
+        canSerialize: true,
+        canHydrate: true,
+        supportsOfflineCatchup: false,
+        saveFileStem: 'sample-pack',
+        saveSchemaVersion: 1,
+        contentHash: 'content:dev',
+        contentVersion: 'dev',
+      },
+    });
+    await flushMicrotasks();
+
+    const controlEventCall = ipcMain.on.mock.calls.find((call) => call[0] === IPC_CHANNELS.controlEvent);
+    const controlEventHandler = controlEventCall?.[1] as undefined | ((event: unknown, payload: unknown) => void);
+    const inputEventCall = ipcMain.on.mock.calls.find((call) => call[0] === IPC_CHANNELS.inputEvent);
+    const inputEventHandler = inputEventCall?.[1] as undefined | ((event: unknown, payload: unknown) => void);
+    expect(controlEventHandler).toBeTypeOf('function');
+    expect(inputEventHandler).toBeTypeOf('function');
+
+    worker?.postMessage.mockClear();
+
+    getMenuEntry(['Simulation', 'Load']).click?.();
+    await flushMicrotasks();
+
+    expect(fsPromises.readFile).toHaveBeenCalledWith(
+      path.join('C:', 'mock-user-data', 'sample-pack.save.json'),
+      'utf8',
+    );
+
+    const hydrateCallsBeforeReadCompletes = worker?.postMessage.mock.calls.filter(
+      (call) => (call[0] as { kind?: string } | undefined)?.kind === 'hydrate',
+    );
+    expect(hydrateCallsBeforeReadCompletes).toHaveLength(0);
+
+    expect(() => input.sendControlEvent({ intent: 'collect', phase: 'start' }))
+      .toThrow('Simulation save/load is in progress.');
+
+    const status = sim.getStatus();
+    expect(() => sim.enqueue([
+      {
+        type: RUNTIME_COMMAND_TYPES.COLLECT_RESOURCE,
+        payload: { resourceId: 'demo', amount: 1 },
+        priority: CommandPriority.PLAYER,
+        step: status.nextStep,
+        timestamp: status.nextStep * status.stepSizeMs,
+      },
+    ])).toThrow('Simulation save/load is in progress.');
+
+    controlEventHandler?.({}, { intent: 'collect', phase: 'start' });
+    inputEventHandler?.({}, {
+      schemaVersion: 1,
+      event: {
+        kind: 'pointer',
+        intent: 'mouse-down',
+        phase: 'start',
+        x: 100,
+        y: 200,
+        button: 0,
+        buttons: 1,
+        pointerType: 'mouse',
+        modifiers: { alt: false, ctrl: false, meta: false, shift: false },
+      },
+    });
+
+    const enqueueCallsWhileReadPending = worker?.postMessage.mock.calls.filter(
+      (call) => (call[0] as { kind?: string } | undefined)?.kind === 'enqueueCommands',
+    );
+    expect(enqueueCallsWhileReadPending).toHaveLength(0);
+
+    resolveReadFile?.(Buffer.from(JSON.stringify(savedEnvelope)));
+    await flushMicrotasks();
+
+    const hydrateCall = worker?.postMessage.mock.calls.find(
+      (call) => (call[0] as { kind?: string } | undefined)?.kind === 'hydrate',
+    );
+    expect(hydrateCall).toBeDefined();
+
+    worker?.emitMessage({
+      kind: 'hydrated',
+      requestId: (hydrateCall?.[0] as { requestId: string }).requestId,
+      nextStep: 9,
+      capabilities: {
+        canSerialize: true,
+        canHydrate: true,
+        supportsOfflineCatchup: false,
+        saveFileStem: 'sample-pack',
+        saveSchemaVersion: 1,
+        contentHash: 'content:dev',
+        contentVersion: 'dev',
+      },
+    });
+    await flushMicrotasks(20);
+
+    const windowAllClosedCall = app.on.mock.calls.find((call) => call[0] === 'window-all-closed');
+    const windowAllClosedHandler = windowAllClosedCall?.[1] as undefined | (() => void);
+    windowAllClosedHandler?.();
+    await flushMicrotasks();
+  });
+
+  it('sanitizes save paths and cleans up temp files when atomic save writes fail', async () => {
+    vi.useFakeTimers();
+    setMonotonicNowSequence([0, 16]);
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    fsPromises.rename.mockImplementationOnce(async () => {
+      throw new Error('rename failed');
+    });
+
+    await import('./main.js');
+    await flushMicrotasks();
+
+    const worker = Worker.instances[0];
+    expect(worker).toBeDefined();
+
+    worker?.emitMessage({
+      kind: 'ready',
+      stepSizeMs: 16,
+      nextStep: 4,
+      capabilities: {
+        canSerialize: true,
+        canHydrate: false,
+        supportsOfflineCatchup: false,
+        saveFileStem: '  sample pack !!!  ',
+      },
+    });
+    await flushMicrotasks();
+
+    getMenuEntry(['Simulation', 'Save']).click?.();
+    await flushMicrotasks();
+
+    const serializeCall = worker?.postMessage.mock.calls.find(
+      (call) => (call[0] as { kind?: string } | undefined)?.kind === 'serialize',
+    );
+    expect(serializeCall).toBeDefined();
+
+    const requestId = (serializeCall?.[0] as { requestId: string }).requestId;
+    worker?.emitMessage({
+      kind: 'serialized',
+      requestId,
+      state: {
+        schemaVersion: 1,
+        nextStep: 4,
+        demoState: {
+          tickCount: 12,
+          resourceCount: 7,
+          lastCollectedStep: 3,
+        },
+      },
+    });
+    await flushMicrotasks(20);
+
+    const [tempPath, rawSave] =
+      fsPromises.writeFile.mock.calls[0] as unknown as [string, string];
+    expect(tempPath).toMatch(/sample-pack\.save\.json\.\d+\.\d+\.tmp$/);
+    expect(fsPromises.rename).toHaveBeenCalledWith(
+      tempPath,
+      path.join('C:', 'mock-user-data', 'sample-pack.save.json'),
+    );
+    expect(fsPromises.unlink).toHaveBeenCalledWith(tempPath);
+
+    const savedEnvelope = JSON.parse(rawSave);
+    expect(savedEnvelope.metadata.runtime).toEqual({
+      saveFileStem: 'sample-pack',
+      saveSchemaVersion: 1,
+    });
+
+    const errorCall = consoleError.mock.calls.at(-1);
+    const errorValue = errorCall?.[1];
+    const errorMessage = errorValue instanceof Error ? errorValue.message : String(errorValue);
+    expect(errorCall?.[0]).toContain('[shell-desktop] Save state failed');
+    expect(errorMessage).toContain('rename failed');
+
+    const windowAllClosedCall = app.on.mock.calls.find((call) => call[0] === 'window-all-closed');
+    const windowAllClosedHandler = windowAllClosedCall?.[1] as undefined | (() => void);
+    windowAllClosedHandler?.();
+    await flushMicrotasks();
+
+    consoleError.mockRestore();
+  });
+
+  it('rejects invalid and incompatible save envelopes before hydrating', async () => {
+    vi.useFakeTimers();
+    setMonotonicNowSequence(Array.from({ length: 32 }, (_value, index) => index * 16));
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const baseEnvelope = {
+      schemaVersion: 1,
+      metadata: {
+        savedAt: '2026-03-12T21:00:00.000Z',
+        appVersion: '0.1.0',
+        runtime: {
+          saveFileStem: 'sample-pack',
+          saveSchemaVersion: 1,
+          contentHash: 'content:dev',
+          contentVersion: 'dev',
+        },
+      },
+      state: {
+        schemaVersion: 1,
+        nextStep: 9,
+        demoState: {
+          tickCount: 9,
+          resourceCount: 5,
+          lastCollectedStep: 8,
+        },
+      },
+    };
+
+    await import('./main.js');
+    await flushMicrotasks();
+
+    const worker = Worker.instances[0];
+    expect(worker).toBeDefined();
+
+    worker?.emitMessage({
+      kind: 'ready',
+      stepSizeMs: 16,
+      nextStep: 2,
+      capabilities: {
+        canSerialize: true,
+        canHydrate: true,
+        supportsOfflineCatchup: false,
+        saveFileStem: 'sample-pack',
+        saveSchemaVersion: 1,
+        contentHash: 'content:dev',
+        contentVersion: 'dev',
+      },
+    });
+    await flushMicrotasks();
+
+    const cases = [
+      {
+        description: 'shell schema mismatch',
+        raw: JSON.stringify({ ...baseEnvelope, schemaVersion: 2 }),
+        error: 'Unsupported shell save schema version',
+      },
+      {
+        description: 'blank savedAt',
+        raw: JSON.stringify({
+          ...baseEnvelope,
+          metadata: { ...baseEnvelope.metadata, savedAt: '' },
+        }),
+        error: 'metadata.savedAt',
+      },
+      {
+        description: 'missing runtime metadata',
+        raw: JSON.stringify({
+          ...baseEnvelope,
+          metadata: { ...baseEnvelope.metadata, runtime: null },
+        }),
+        error: 'metadata.runtime object',
+      },
+      {
+        description: 'blank save file stem',
+        raw: JSON.stringify({
+          ...baseEnvelope,
+          metadata: {
+            ...baseEnvelope.metadata,
+            runtime: { ...baseEnvelope.metadata.runtime, saveFileStem: '' },
+          },
+        }),
+        error: 'saveFileStem',
+      },
+      {
+        description: 'invalid save schema version',
+        raw: JSON.stringify({
+          ...baseEnvelope,
+          metadata: {
+            ...baseEnvelope.metadata,
+            runtime: { ...baseEnvelope.metadata.runtime, saveSchemaVersion: 0 },
+          },
+        }),
+        error: 'saveSchemaVersion',
+      },
+      {
+        description: 'invalid content hash type',
+        raw: JSON.stringify({
+          ...baseEnvelope,
+          metadata: {
+            ...baseEnvelope.metadata,
+            runtime: { ...baseEnvelope.metadata.runtime, contentHash: 42 },
+          },
+        }),
+        error: 'contentHash',
+      },
+      {
+        description: 'invalid content version type',
+        raw: JSON.stringify({
+          ...baseEnvelope,
+          metadata: {
+            ...baseEnvelope.metadata,
+            runtime: { ...baseEnvelope.metadata.runtime, contentVersion: 42 },
+          },
+        }),
+        error: 'contentVersion',
+      },
+      {
+        description: 'missing state payload',
+        raw: JSON.stringify({
+          schemaVersion: 1,
+          metadata: baseEnvelope.metadata,
+        }),
+        error: 'persisted state payload',
+      },
+      {
+        description: 'identity mismatch',
+        raw: JSON.stringify({
+          ...baseEnvelope,
+          metadata: {
+            ...baseEnvelope.metadata,
+            runtime: { ...baseEnvelope.metadata.runtime, saveFileStem: 'other-pack' },
+          },
+        }),
+        error: 'Save identity mismatch',
+      },
+      {
+        description: 'runtime schema mismatch',
+        raw: JSON.stringify({
+          ...baseEnvelope,
+          metadata: {
+            ...baseEnvelope.metadata,
+            runtime: { ...baseEnvelope.metadata.runtime, saveSchemaVersion: 2 },
+          },
+        }),
+        error: 'Save schema mismatch',
+      },
+      {
+        description: 'content hash mismatch',
+        raw: JSON.stringify({
+          ...baseEnvelope,
+          metadata: {
+            ...baseEnvelope.metadata,
+            runtime: { ...baseEnvelope.metadata.runtime, contentHash: 'content:other' },
+          },
+        }),
+        error: 'Save content hash mismatch',
+      },
+    ];
+
+    for (const testCase of cases) {
+      fsPromises.readFile.mockImplementationOnce(
+        async () => testCase.raw as unknown as Buffer,
+      );
+      worker?.postMessage.mockClear();
+      consoleError.mockClear();
+
+      getMenuEntry(['Simulation', 'Load']).click?.();
+      await flushMicrotasks(20);
+
+      const hydrateCalls = worker?.postMessage.mock.calls.filter(
+        (call) => (call[0] as { kind?: string } | undefined)?.kind === 'hydrate',
+      ) ?? [];
+      expect(hydrateCalls, testCase.description).toHaveLength(0);
+
+      const errorCall = consoleError.mock.calls.at(-1);
+      const errorValue = errorCall?.[1];
+      const errorMessage = errorValue instanceof Error ? errorValue.message : String(errorValue);
+      expect(errorCall?.[0], testCase.description).toContain('[shell-desktop] Load state failed');
+      expect(errorMessage, testCase.description).toContain(testCase.error);
+    }
+
+    const windowAllClosedCall = app.on.mock.calls.find((call) => call[0] === 'window-all-closed');
+    const windowAllClosedHandler = windowAllClosedCall?.[1] as undefined | (() => void);
+    windowAllClosedHandler?.();
+    await flushMicrotasks();
+
+    consoleError.mockRestore();
+  });
+
+  it('enqueues offline catch-up without resourceDeltas when supported', async () => {
+    vi.useFakeTimers();
+    setMonotonicNowSequence([0, 16]);
+    await import('./main.js');
+    await flushMicrotasks();
+
+    const worker = Worker.instances[0];
+    expect(worker).toBeDefined();
+
+    worker?.emitMessage({
+      kind: 'ready',
+      stepSizeMs: 20,
+      nextStep: 7,
+      capabilities: {
+        canSerialize: false,
+        canHydrate: false,
+        supportsOfflineCatchup: true,
+      },
+    });
+    await flushMicrotasks();
+
+    getMenuEntry(['Simulation', 'Offline Catch-up: 5 Minutes']).click?.();
+    await flushMicrotasks();
+
+    const enqueueCall = worker?.postMessage.mock.calls.find(
+      (call) => (call[0] as { kind?: string } | undefined)?.kind === 'enqueueCommands',
+    );
+    expect(enqueueCall).toBeDefined();
+
+    const command = ((enqueueCall?.[0] as { commands?: Array<Record<string, unknown>> }).commands ?? [])[0];
+    expect(command).toMatchObject({
+      type: RUNTIME_COMMAND_TYPES.OFFLINE_CATCHUP,
+      priority: CommandPriority.SYSTEM,
+      step: 7,
+      timestamp: 140,
+      payload: {
+        elapsedMs: 5 * 60 * 1000,
+      },
+    });
+    expect(command?.payload).not.toHaveProperty('resourceDeltas');
+
+    const windowAllClosedCall = app.on.mock.calls.find((call) => call[0] === 'window-all-closed');
+    const windowAllClosedHandler = windowAllClosedCall?.[1] as undefined | (() => void);
+    windowAllClosedHandler?.();
+    await flushMicrotasks();
   });
 
   it('logs startup failures without crashing the process', async () => {

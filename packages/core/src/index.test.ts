@@ -1148,6 +1148,16 @@ describe('IdleEngineRuntime', () => {
     expect(runtime.getCurrentStep()).toBe(0);
   });
 
+  it('processes previously credited time when ticked with zero deltaMs', () => {
+    const { runtime } = createRuntime({ stepSizeMs: 10, maxStepsPerFrame: 2 });
+
+    runtime.creditTime(25);
+
+    expect(runtime.tick(0)).toBe(2);
+    expect(runtime.getCurrentStep()).toBe(2);
+    expect(runtime.getNextExecutableStep()).toBe(2);
+  });
+
   it('does not emit diagnostics entries for zero/negative deltaMs', () => {
     const { runtime, diagnostics } = createRuntime({
       diagnostics: {

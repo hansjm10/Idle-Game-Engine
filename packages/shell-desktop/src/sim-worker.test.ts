@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { RUNTIME_COMMAND_TYPES } from '@idle-engine/core';
 import type { SimWorkerInboundMessage, SimWorkerOutboundMessage } from './sim/worker-protocol.js';
 
 type MessageHandler = ((message: unknown) => void) | undefined;
@@ -12,10 +13,13 @@ describe('shell-desktop sim worker', () => {
 
   it('throws when started without parentPort', async () => {
     vi.doMock('node:worker_threads', () => ({ parentPort: null }));
-    vi.doMock('./sim/sim-runtime.js', () => ({ createSimRuntime: vi.fn() }));
+    vi.doMock('./sim/sim-runtime.js', () => ({
+      createSimRuntime: vi.fn(),
+      loadSerializedSimRuntimeState: vi.fn(),
+    }));
 
     await expect(import('./sim-worker.js')).rejects.toThrow(/requires parentPort/);
-  });
+  }, 10_000);
 
   it('emits ready after init', async () => {
     const createSimRuntime = vi.fn(() => ({
@@ -23,6 +27,13 @@ describe('shell-desktop sim worker', () => {
       enqueueCommands: vi.fn(),
       getStepSizeMs: vi.fn(() => 25),
       getNextStep: vi.fn(() => 7),
+      getCapabilities: vi.fn(() => ({
+        canSerialize: true,
+        canHydrate: true,
+        supportsOfflineCatchup: true,
+        saveFileStem: 'sample-pack',
+        saveSchemaVersion: 1,
+      })),
     }));
 
     let messageHandler: MessageHandler;
@@ -42,7 +53,346 @@ describe('shell-desktop sim worker', () => {
     messageHandler?.({ kind: 'init', stepSizeMs: 25, maxStepsPerFrame: 99 });
 
     expect(createSimRuntime).toHaveBeenCalledWith({ stepSizeMs: 25, maxStepsPerFrame: 99 });
-    expect(parentPort.postMessage).toHaveBeenCalledWith({ kind: 'ready', stepSizeMs: 25, nextStep: 7 });
+    expect(parentPort.postMessage).toHaveBeenCalledWith({
+      kind: 'ready',
+      stepSizeMs: 25,
+      nextStep: 7,
+      capabilities: {
+        canSerialize: true,
+        canHydrate: true,
+        supportsOfflineCatchup: true,
+        saveFileStem: 'sample-pack',
+        saveSchemaVersion: 1,
+      },
+    });
+  });
+
+  it('handles serialize and hydrate requests without crashing the worker', async () => {
+    const hydratedFrame = {
+      frame: {
+        schemaVersion: 1,
+        step: 12,
+        simTimeMs: 240,
+        contentHash: 'content:dev',
+      },
+      scene: {
+        camera: { x: 0, y: 0, zoom: 1 },
+      },
+      passes: [],
+      draws: [],
+    };
+    const runtime = {
+      tick: vi.fn(),
+      enqueueCommands: vi.fn(),
+      getStepSizeMs: vi.fn(() => 20),
+      getNextStep: vi.fn(() => 5),
+      getCapabilities: vi.fn(() => ({
+        canSerialize: true,
+        canHydrate: true,
+        supportsOfflineCatchup: true,
+        saveFileStem: 'sample-pack',
+        saveSchemaVersion: 1,
+      })),
+      serialize: vi.fn(() => ({
+        schemaVersion: 1,
+        nextStep: 5,
+        gameState: {
+          runtime: { step: 5 },
+          commandQueue: {
+            schemaVersion: 1,
+            entries: [],
+          },
+        },
+        accumulatorBacklogMs: 0,
+      })),
+    };
+    const restoredRuntime = {
+      tick: vi.fn(),
+      enqueueCommands: vi.fn(),
+      getStepSizeMs: vi.fn(() => 20),
+      getNextStep: vi.fn(() => 12),
+      getCapabilities: vi.fn(() => ({
+        canSerialize: true,
+        canHydrate: true,
+        supportsOfflineCatchup: true,
+        saveFileStem: 'sample-pack',
+        saveSchemaVersion: 1,
+      })),
+      serialize: vi.fn(),
+      renderCurrentFrame: vi.fn(() => hydratedFrame),
+    };
+    const createSimRuntime = vi
+      .fn()
+      .mockReturnValueOnce(runtime)
+      .mockReturnValueOnce(restoredRuntime);
+    const loadSerializedSimRuntimeState = vi.fn((value: unknown) => value);
+
+    let messageHandler: MessageHandler;
+    const parentPort = {
+      on: vi.fn((_event: string, handler: (message: unknown) => void) => {
+        messageHandler = handler;
+      }),
+      postMessage: vi.fn(),
+      close: vi.fn(),
+    };
+
+    vi.doMock('node:worker_threads', () => ({ parentPort }));
+    vi.doMock('./sim/sim-runtime.js', () => ({
+      createSimRuntime,
+      loadSerializedSimRuntimeState,
+    }));
+
+    await import('./sim-worker.js');
+
+    messageHandler?.({ kind: 'init', stepSizeMs: 20, maxStepsPerFrame: 30 });
+    parentPort.postMessage.mockClear();
+
+    messageHandler?.({ kind: 'serialize', requestId: 'serialize-1' });
+
+    expect(runtime.serialize).toHaveBeenCalledTimes(1);
+    expect(parentPort.postMessage).toHaveBeenCalledWith({
+      kind: 'serialized',
+      requestId: 'serialize-1',
+      state: {
+        schemaVersion: 1,
+        nextStep: 5,
+        gameState: {
+          runtime: { step: 5 },
+          commandQueue: {
+            schemaVersion: 1,
+            entries: [],
+          },
+        },
+        accumulatorBacklogMs: 0,
+      },
+    });
+
+    parentPort.postMessage.mockClear();
+
+    const savedState = {
+      schemaVersion: 1,
+      nextStep: 12,
+      gameState: {
+        runtime: { step: 12 },
+        commandQueue: {
+          schemaVersion: 1,
+          entries: [
+            {
+              type: RUNTIME_COMMAND_TYPES.COLLECT_RESOURCE,
+              priority: 1,
+              timestamp: 240,
+              step: 12,
+              payload: { resourceId: 'sample-pack.energy', amount: 2 },
+            },
+          ],
+        },
+      },
+      accumulatorBacklogMs: 7,
+    };
+    messageHandler?.({ kind: 'hydrate', requestId: 'hydrate-1', state: savedState });
+
+    expect(loadSerializedSimRuntimeState).toHaveBeenCalledWith(savedState);
+    expect(createSimRuntime).toHaveBeenLastCalledWith({
+      stepSizeMs: 20,
+      maxStepsPerFrame: 30,
+      initialSerializedState: savedState,
+    });
+    expect(parentPort.postMessage).toHaveBeenCalledWith({
+      kind: 'hydrated',
+      requestId: 'hydrate-1',
+      nextStep: 12,
+      capabilities: {
+        canSerialize: true,
+        canHydrate: true,
+        supportsOfflineCatchup: true,
+        saveFileStem: 'sample-pack',
+        saveSchemaVersion: 1,
+      },
+      frame: hydratedFrame,
+    });
+  });
+
+  it('emits protocol errors for blank serialize and hydrate request ids', async () => {
+    const runtime = {
+      tick: vi.fn(),
+      enqueueCommands: vi.fn(),
+      getStepSizeMs: vi.fn(() => 20),
+      getNextStep: vi.fn(() => 5),
+      getCapabilities: vi.fn(() => ({
+        canSerialize: true,
+        canHydrate: true,
+        supportsOfflineCatchup: true,
+      })),
+      serialize: vi.fn(() => ({ schemaVersion: 1, nextStep: 5, demoState: {} })),
+    };
+    const createSimRuntime = vi.fn(() => runtime);
+    const loadSerializedSimRuntimeState = vi.fn();
+
+    let messageHandler: MessageHandler;
+    const parentPort = {
+      on: vi.fn((_event: string, handler: (message: unknown) => void) => {
+        messageHandler = handler;
+      }),
+      postMessage: vi.fn(),
+      close: vi.fn(),
+    };
+
+    vi.doMock('node:worker_threads', () => ({ parentPort }));
+    vi.doMock('./sim/sim-runtime.js', () => ({
+      createSimRuntime,
+      loadSerializedSimRuntimeState,
+    }));
+
+    await import('./sim-worker.js');
+
+    messageHandler?.({ kind: 'init', stepSizeMs: 20, maxStepsPerFrame: 30 });
+    parentPort.postMessage.mockClear();
+
+    messageHandler?.({ kind: 'serialize', requestId: '   ' });
+    messageHandler?.({ kind: 'hydrate', requestId: '', state: {} });
+
+    expect(parentPort.postMessage).toHaveBeenCalledWith({
+      kind: 'error',
+      error: 'protocol:serialize invalid requestId',
+    });
+    expect(parentPort.postMessage).toHaveBeenCalledWith({
+      kind: 'error',
+      error: 'protocol:hydrate invalid requestId',
+    });
+    expect(loadSerializedSimRuntimeState).not.toHaveBeenCalled();
+  });
+
+  it('emits requestError when serialization is unsupported or throws', async () => {
+    const runtime: {
+      tick: ReturnType<typeof vi.fn>;
+      enqueueCommands: ReturnType<typeof vi.fn>;
+      getStepSizeMs: ReturnType<typeof vi.fn>;
+      getNextStep: ReturnType<typeof vi.fn>;
+      getCapabilities: ReturnType<typeof vi.fn>;
+      serialize?: ReturnType<typeof vi.fn>;
+    } = {
+      tick: vi.fn(),
+      enqueueCommands: vi.fn(),
+      getStepSizeMs: vi.fn(() => 20),
+      getNextStep: vi.fn(() => 5),
+      getCapabilities: vi.fn(() => ({
+        canSerialize: false,
+        canHydrate: true,
+        supportsOfflineCatchup: true,
+      })),
+    };
+    const createSimRuntime = vi.fn(() => runtime);
+    const loadSerializedSimRuntimeState = vi.fn();
+
+    let messageHandler: MessageHandler;
+    const parentPort = {
+      on: vi.fn((_event: string, handler: (message: unknown) => void) => {
+        messageHandler = handler;
+      }),
+      postMessage: vi.fn(),
+      close: vi.fn(),
+    };
+
+    vi.doMock('node:worker_threads', () => ({ parentPort }));
+    vi.doMock('./sim/sim-runtime.js', () => ({
+      createSimRuntime,
+      loadSerializedSimRuntimeState,
+    }));
+
+    await import('./sim-worker.js');
+
+    messageHandler?.({ kind: 'init', stepSizeMs: 20, maxStepsPerFrame: 30 });
+    parentPort.postMessage.mockClear();
+
+    messageHandler?.({ kind: 'serialize', requestId: 'serialize-unsupported' });
+
+    expect(parentPort.postMessage).toHaveBeenCalledWith({
+      kind: 'requestError',
+      requestId: 'serialize-unsupported',
+      error: 'Simulation runtime does not support serialization.',
+    });
+
+    parentPort.postMessage.mockClear();
+    runtime.serialize = vi.fn(() => {
+      throw new Error('serialize failed');
+    });
+
+    messageHandler?.({ kind: 'serialize', requestId: 'serialize-throws' });
+
+    expect(parentPort.postMessage).toHaveBeenCalledWith({
+      kind: 'requestError',
+      requestId: 'serialize-throws',
+      error: 'serialize failed',
+    });
+  });
+
+  it('emits requestError when hydration is unsupported or the save payload is invalid', async () => {
+    const runtime = {
+      tick: vi.fn(),
+      enqueueCommands: vi.fn(),
+      getStepSizeMs: vi.fn(() => 20),
+      getNextStep: vi.fn(() => 5),
+      getCapabilities: vi
+        .fn()
+        .mockReturnValueOnce({
+          canSerialize: false,
+          canHydrate: true,
+          supportsOfflineCatchup: true,
+        })
+        .mockReturnValueOnce({
+          canSerialize: false,
+          canHydrate: false,
+          supportsOfflineCatchup: true,
+        })
+        .mockReturnValue({
+          canSerialize: false,
+          canHydrate: true,
+          supportsOfflineCatchup: true,
+        }),
+    };
+    const createSimRuntime = vi.fn(() => runtime);
+    const loadSerializedSimRuntimeState = vi.fn(() => {
+      throw new TypeError('invalid save');
+    });
+
+    let messageHandler: MessageHandler;
+    const parentPort = {
+      on: vi.fn((_event: string, handler: (message: unknown) => void) => {
+        messageHandler = handler;
+      }),
+      postMessage: vi.fn(),
+      close: vi.fn(),
+    };
+
+    vi.doMock('node:worker_threads', () => ({ parentPort }));
+    vi.doMock('./sim/sim-runtime.js', () => ({
+      createSimRuntime,
+      loadSerializedSimRuntimeState,
+    }));
+
+    await import('./sim-worker.js');
+
+    messageHandler?.({ kind: 'init', stepSizeMs: 20, maxStepsPerFrame: 30 });
+    parentPort.postMessage.mockClear();
+
+    messageHandler?.({ kind: 'hydrate', requestId: 'hydrate-unsupported', state: {} });
+
+    expect(parentPort.postMessage).toHaveBeenCalledWith({
+      kind: 'requestError',
+      requestId: 'hydrate-unsupported',
+      error: 'Simulation runtime does not support hydration.',
+    });
+
+    parentPort.postMessage.mockClear();
+
+    messageHandler?.({ kind: 'hydrate', requestId: 'hydrate-invalid', state: {} });
+
+    expect(loadSerializedSimRuntimeState).toHaveBeenCalledWith({});
+    expect(parentPort.postMessage).toHaveBeenCalledWith({
+      kind: 'requestError',
+      requestId: 'hydrate-invalid',
+      error: 'invalid save',
+    });
   });
 
   it('emits error with protocol:init and stepSizeMs when stepSizeMs is missing', async () => {

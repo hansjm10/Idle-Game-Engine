@@ -11,6 +11,7 @@ import {
   type InputEvent,
   type InputEventCommandPayload,
   type RuntimeCommand,
+  type RuntimeCommandPayloads,
 } from '@idle-engine/core';
 import {
   IPC_CHANNELS,
@@ -37,7 +38,12 @@ import type { InputMcpController } from './mcp/input-tools.js';
 import type { ShellDesktopMcpServer } from './mcp/mcp-server.js';
 import { SIM_MCP_MAX_STEP_COUNT, type SimMcpController, type SimMcpStatus } from './mcp/sim-tools.js';
 import type { WindowMcpController } from './mcp/window-tools.js';
-import type { SimWorkerInboundMessage, SimWorkerOutboundMessage } from './sim/worker-protocol.js';
+import {
+  DEFAULT_SIM_RUNTIME_CAPABILITIES,
+  type SimRuntimeCapabilities,
+  type SimWorkerInboundMessage,
+  type SimWorkerOutboundMessage,
+} from './sim/worker-protocol.js';
 
 const isDev = !app.isPackaged || process.env.NODE_ENV === 'development';
 
@@ -61,6 +67,11 @@ const compiledAssetsRootPath = configuredCompiledAssetsRootPath
   ? path.resolve(configuredCompiledAssetsRootPath)
   : defaultCompiledAssetsRootPath;
 const MAX_DIAGNOSTICS_LOG_ENTRIES = 2_000;
+const SHELL_DESKTOP_SAVE_SCHEMA_VERSION = 1;
+const OFFLINE_CATCHUP_PRESETS = [
+  { label: 'Offline Catch-up: 5 Minutes', elapsedMs: 5 * 60 * 1000 },
+  { label: 'Offline Catch-up: 1 Hour', elapsedMs: 60 * 60 * 1000 },
+] as const;
 
 const assetMcpController: AssetMcpController = {
   compiledAssetsRootPath,
@@ -125,21 +136,243 @@ function stringifyUnknown(value: unknown): string {
   return String(value);
 }
 
+type ShellDesktopSaveEnvelope = Readonly<{
+  schemaVersion: typeof SHELL_DESKTOP_SAVE_SCHEMA_VERSION;
+  metadata: Readonly<{
+    savedAt: string;
+    appVersion: string;
+    runtime: Readonly<{
+      saveFileStem: string;
+      saveSchemaVersion: number;
+      contentHash?: string;
+      contentVersion?: string;
+    }>;
+  }>;
+  state: unknown;
+}>;
+
+type OfflineCatchupPayload =
+  RuntimeCommandPayloads[typeof RUNTIME_COMMAND_TYPES.OFFLINE_CATCHUP];
+
+function asRecord(value: unknown, message: string): Record<string, unknown> {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    throw new TypeError(message);
+  }
+
+  return value as Record<string, unknown>;
+}
+
+function trimHyphenEdges(value: string): string {
+  let start = 0;
+  let end = value.length;
+
+  while (start < end && value.codePointAt(start) === 45) {
+    start += 1;
+  }
+
+  while (end > start && value.codePointAt(end - 1) === 45) {
+    end -= 1;
+  }
+
+  return value.slice(start, end);
+}
+
+function isAllowedSaveFileStemCharacter(codePoint: number): boolean {
+  return (
+    (codePoint >= 48 && codePoint <= 57) ||
+    (codePoint >= 65 && codePoint <= 90) ||
+    (codePoint >= 97 && codePoint <= 122) ||
+    codePoint === 45 ||
+    codePoint === 46 ||
+    codePoint === 95
+  );
+}
+
+function collapseUnsafeSaveFileStemCharacters(value: string): string {
+  let sanitized = '';
+  let previousWasReplacement = false;
+
+  for (const character of value) {
+    const codePoint = character.codePointAt(0);
+    if (codePoint !== undefined && isAllowedSaveFileStemCharacter(codePoint)) {
+      sanitized += character;
+      previousWasReplacement = false;
+      continue;
+    }
+
+    if (!previousWasReplacement) {
+      sanitized += '-';
+      previousWasReplacement = true;
+    }
+  }
+
+  return sanitized;
+}
+
+function sanitizeSaveFileStem(value: string | undefined): string {
+  if (typeof value !== 'string' || value.trim().length === 0) {
+    return 'sim-state';
+  }
+
+  const sanitized = trimHyphenEdges(
+    collapseUnsafeSaveFileStemCharacters(value.trim()),
+  );
+
+  return sanitized.length > 0 ? sanitized : 'sim-state';
+}
+
+function getSaveFileStem(capabilities: SimRuntimeCapabilities): string {
+  return sanitizeSaveFileStem(capabilities.saveFileStem);
+}
+
+function buildShellSavePath(capabilities: SimRuntimeCapabilities): string {
+  return path.join(app.getPath('userData'), `${getSaveFileStem(capabilities)}.save.json`);
+}
+
+function buildShellSaveEnvelope(
+  capabilities: SimRuntimeCapabilities,
+  state: unknown,
+): ShellDesktopSaveEnvelope {
+  return {
+    schemaVersion: SHELL_DESKTOP_SAVE_SCHEMA_VERSION,
+    metadata: {
+      savedAt: new Date().toISOString(),
+      appVersion: app.getVersion(),
+      runtime: {
+        saveFileStem: getSaveFileStem(capabilities),
+        saveSchemaVersion: capabilities.saveSchemaVersion ?? 1,
+        ...(capabilities.contentHash === undefined ? {} : { contentHash: capabilities.contentHash }),
+        ...(capabilities.contentVersion === undefined ? {} : { contentVersion: capabilities.contentVersion }),
+      },
+    },
+    state,
+  };
+}
+
+function parseShellSaveRuntimeMetadata(
+  value: unknown,
+  capabilities: SimRuntimeCapabilities,
+): ShellDesktopSaveEnvelope['metadata']['runtime'] {
+  const runtimeMetadata = asRecord(
+    value,
+    'Invalid save file: expected metadata.runtime object.',
+  );
+  const saveFileStem = runtimeMetadata['saveFileStem'];
+  const saveSchemaVersion = runtimeMetadata['saveSchemaVersion'];
+  const contentHash = runtimeMetadata['contentHash'];
+  const contentVersion = runtimeMetadata['contentVersion'];
+
+  if (typeof saveFileStem !== 'string' || saveFileStem.trim().length === 0) {
+    throw new TypeError('Invalid save file: expected metadata.runtime.saveFileStem string.');
+  }
+  if (typeof saveSchemaVersion !== 'number' || !Number.isInteger(saveSchemaVersion) || saveSchemaVersion < 1) {
+    throw new TypeError('Invalid save file: expected metadata.runtime.saveSchemaVersion integer.');
+  }
+  if (contentHash !== undefined && typeof contentHash !== 'string') {
+    throw new TypeError('Invalid save file: expected metadata.runtime.contentHash string.');
+  }
+  if (contentVersion !== undefined && typeof contentVersion !== 'string') {
+    throw new TypeError('Invalid save file: expected metadata.runtime.contentVersion string.');
+  }
+
+  const expectedSaveFileStem = getSaveFileStem(capabilities);
+  if (saveFileStem !== expectedSaveFileStem) {
+    throw new Error(
+      `Save identity mismatch: expected ${expectedSaveFileStem} but found ${saveFileStem}.`,
+    );
+  }
+
+  if (
+    capabilities.saveSchemaVersion !== undefined &&
+    saveSchemaVersion !== capabilities.saveSchemaVersion
+  ) {
+    throw new Error(
+      `Save schema mismatch: expected ${capabilities.saveSchemaVersion} but found ${saveSchemaVersion}.`,
+    );
+  }
+
+  if (
+    capabilities.contentHash !== undefined &&
+    typeof contentHash === 'string' &&
+    contentHash !== capabilities.contentHash
+  ) {
+    throw new Error(
+      `Save content hash mismatch: expected ${capabilities.contentHash} but found ${contentHash}.`,
+    );
+  }
+
+  return {
+    saveFileStem,
+    saveSchemaVersion,
+    ...(contentHash === undefined ? {} : { contentHash }),
+    ...(contentVersion === undefined ? {} : { contentVersion }),
+  };
+}
+
+function parseShellSaveEnvelope(
+  raw: string,
+  capabilities: SimRuntimeCapabilities,
+): ShellDesktopSaveEnvelope {
+  const parsed = JSON.parse(raw) as unknown;
+  const record = asRecord(parsed, 'Invalid save file: expected a top-level object.');
+  if (record['schemaVersion'] !== SHELL_DESKTOP_SAVE_SCHEMA_VERSION) {
+    throw new TypeError(`Unsupported shell save schema version: ${record['schemaVersion']}`);
+  }
+
+  const metadata = asRecord(record['metadata'], 'Invalid save file: expected metadata object.');
+  const savedAt = metadata['savedAt'];
+  const appVersion = metadata['appVersion'];
+  if (typeof savedAt !== 'string' || savedAt.trim().length === 0) {
+    throw new TypeError('Invalid save file: expected metadata.savedAt string.');
+  }
+  if (typeof appVersion !== 'string' || appVersion.trim().length === 0) {
+    throw new TypeError('Invalid save file: expected metadata.appVersion string.');
+  }
+
+  const runtime = parseShellSaveRuntimeMetadata(metadata['runtime'], capabilities);
+  if (!Reflect.has(record, 'state')) {
+    throw new TypeError('Invalid save file: expected persisted state payload.');
+  }
+
+  return {
+    schemaVersion: SHELL_DESKTOP_SAVE_SCHEMA_VERSION,
+    metadata: {
+      savedAt,
+      appVersion,
+      runtime,
+    },
+    state: record['state'],
+  };
+}
+
+async function writeFileAtomic(filePath: string, contents: string): Promise<void> {
+  await fsPromises.mkdir(path.dirname(filePath), { recursive: true });
+  const tempPath = `${filePath}.${process.pid}.${Date.now()}.tmp`;
+
+  try {
+    await fsPromises.writeFile(tempPath, contents, 'utf8');
+    await fsPromises.rename(tempPath, filePath);
+  } catch (error: unknown) {
+    await fsPromises.unlink(tempPath).catch(() => undefined);
+    throw error;
+  }
+}
+
 const DEMO_CONTROL_SCHEME: ControlScheme = {
   id: 'shell-desktop-demo',
   version: '1',
   actions: [
     {
-      id: 'collect-demo',
+      id: 'collect-sample-energy',
       commandType: RUNTIME_COMMAND_TYPES.COLLECT_RESOURCE,
-      payload: { resourceId: 'demo', amount: 1 },
+      payload: { resourceId: 'sample-pack.energy', amount: 1 },
     },
   ],
   bindings: [
     {
       id: 'collect-space',
       intent: 'collect',
-      actionId: 'collect-demo',
+      actionId: 'collect-sample-energy',
       phases: ['start'],
     },
   ],
@@ -416,11 +649,27 @@ type SimWorkerController = Readonly<{
   sendControlEvent: (event: ShellControlEvent) => void;
   sendInputEvent: (envelope: ShellInputEventEnvelope) => void;
   enqueueCommands: (commands: readonly Command[]) => void;
+  serializeState: () => Promise<unknown>;
+  hydrateState: (state: unknown) => Promise<void>;
+  runWhileCommandIngressFrozen: <T>(
+    operation: () => Promise<T> | T,
+    options?: CommandIngressFreezeOptions,
+  ) => Promise<T>;
+  isCommandIngressFrozen: () => boolean;
   pause: () => void;
   resume: () => void;
   step: (steps: number) => Promise<SimMcpStatus>;
   getStatus: () => SimMcpStatus;
+  getCapabilities: () => SimRuntimeCapabilities;
   dispose: () => void;
+}>;
+
+type SimWorkerControllerOptions = Readonly<{
+  onCapabilitiesChanged?: (capabilities: SimRuntimeCapabilities) => void;
+}>;
+
+type CommandIngressFreezeOptions = Readonly<{
+  stepInterruptionError?: Error;
 }>;
 
 const buildStoppedSimStatus = (): SimMcpStatus => ({ state: 'stopped', stepSizeMs: 16, nextStep: 0 });
@@ -428,14 +677,22 @@ const buildStoppedSimStatus = (): SimMcpStatus => ({ state: 'stopped', stepSizeM
 let mainWindow: BrowserWindow | undefined;
 let simWorkerController: SimWorkerController | undefined;
 let mcpServer: ShellDesktopMcpServer | undefined;
+let simRuntimeCapabilities: SimRuntimeCapabilities = DEFAULT_SIM_RUNTIME_CAPABILITIES;
+let simToolingBusy = false;
+const SIM_TOOLING_BUSY_ERROR = 'Simulation save/load is in progress.';
+const SIM_STEP_INVALIDATED_BY_LOAD_ERROR = 'Simulation step was interrupted by state load.';
 
-function createSimWorkerController(mainWindow: BrowserWindow): SimWorkerController {
+function createSimWorkerController(
+  mainWindow: BrowserWindow,
+  options: SimWorkerControllerOptions = {},
+): SimWorkerController {
   const worker = new Worker(new URL('./sim-worker.js', import.meta.url));
 
   let isDisposing = false;
   let hasFailed = false;
   let isReady = false;
   let isPaused = false;
+  let runtimeCapabilities: SimRuntimeCapabilities = DEFAULT_SIM_RUNTIME_CAPABILITIES;
 
   type ShellSimFailureStatusPayload = Extract<ShellSimStatusPayload, { kind: 'stopped' | 'crashed' }>;
   let lastFailure: ShellSimFailureStatusPayload | undefined;
@@ -449,11 +706,23 @@ function createSimWorkerController(mainWindow: BrowserWindow): SimWorkerControll
     reject: (error: Error) => void;
   }>;
   let stepCompletionWaiters: StepCompletionWaiter[] = [];
+  const pendingRequests = new Map<
+    string,
+    Readonly<{
+      resolve: (value: unknown) => void;
+      reject: (error: Error) => void;
+    }>
+  >();
+  let requestSequence = 0;
+  let commandIngressFreezeDepth = 0;
 
   const tickIntervalMs = 16;
   const MAX_TICK_DELTA_MS = 250;
   let lastTickMs = 0;
   let tickTimer: NodeJS.Timeout | undefined;
+  const notifyCapabilitiesChanged = (): void => {
+    options.onCapabilitiesChanged?.(runtimeCapabilities);
+  };
 
   const clampTickDeltaMs = (rawDeltaMs: number): number => {
     if (!Number.isFinite(rawDeltaMs)) {
@@ -470,6 +739,21 @@ function createSimWorkerController(mainWindow: BrowserWindow): SimWorkerControll
     if (tickTimer) {
       clearInterval(tickTimer);
       tickTimer = undefined;
+    }
+  };
+
+  const isCommandIngressFrozen = (): boolean => commandIngressFreezeDepth > 0;
+
+  const publishFrame = (frame: Extract<SimWorkerOutboundMessage, { kind: 'frame' }>['frame']): void => {
+    if (!frame) {
+      return;
+    }
+
+    try {
+      mainWindow.webContents.send(IPC_CHANNELS.frame, frame);
+    } catch (error: unknown) {
+      // eslint-disable-next-line no-console
+      console.error(error);
     }
   };
 
@@ -505,6 +789,17 @@ function createSimWorkerController(mainWindow: BrowserWindow): SimWorkerControll
     for (const waiter of pending) {
       waiter.reject(error);
     }
+  };
+
+  const rejectPendingRequests = (error: Error): void => {
+    if (pendingRequests.size === 0) {
+      return;
+    }
+
+    for (const pendingRequest of pendingRequests.values()) {
+      pendingRequest.reject(error);
+    }
+    pendingRequests.clear();
   };
 
   const resolvePendingStepCompletions = (): void => {
@@ -543,6 +838,9 @@ function createSimWorkerController(mainWindow: BrowserWindow): SimWorkerControll
     lastFailure = status;
     stopTickLoop();
     rejectPendingStepCompletions(new Error(`Sim ${status.kind}: ${status.reason}`));
+    rejectPendingRequests(new Error(`Sim ${status.kind}: ${status.reason}`));
+    runtimeCapabilities = DEFAULT_SIM_RUNTIME_CAPABILITIES;
+    notifyCapabilitiesChanged();
 
     pushDiagnosticsLog({
       source: 'main',
@@ -580,6 +878,74 @@ function createSimWorkerController(mainWindow: BrowserWindow): SimWorkerControll
       handleWorkerFailure({ kind: 'crashed', reason }, error);
     }
   };
+
+  const takePendingRequest = (
+    requestId: string,
+  ): Readonly<{
+    resolve: (value: unknown) => void;
+    reject: (error: Error) => void;
+  }> | undefined => {
+    const pendingRequest = pendingRequests.get(requestId);
+    if (!pendingRequest) {
+      return undefined;
+    }
+
+    pendingRequests.delete(requestId);
+    return pendingRequest;
+  };
+
+  const requestWorker = <TResponse>(message: SimWorkerInboundMessage & Readonly<{ requestId: string }>): Promise<TResponse> => {
+    if (hasFailed || isDisposing) {
+      throw new Error('Simulation is not running.');
+    }
+
+    if (!isReady) {
+      throw new Error('Sim is not ready yet.');
+    }
+
+    return new Promise<TResponse>((resolve, reject) => {
+      pendingRequests.set(message.requestId, {
+        resolve: (value: unknown) => {
+          resolve(value as TResponse);
+        },
+        reject,
+      });
+      safePostMessage(message);
+    });
+  };
+
+  const runWhileCommandIngressFrozen = async <T>(
+    operation: () => Promise<T> | T,
+    options: CommandIngressFreezeOptions = {},
+  ): Promise<T> => {
+    if (hasFailed || isDisposing) {
+      throw new Error('Simulation is not running.');
+    }
+
+    if (!isReady) {
+      throw new Error('Sim is not ready yet.');
+    }
+
+    const wasPaused = isPaused;
+    isPaused = true;
+    commandIngressFreezeDepth += 1;
+    stopTickLoop();
+    if (options.stepInterruptionError) {
+      rejectPendingStepCompletions(options.stepInterruptionError);
+    }
+
+    try {
+      return await operation();
+    } finally {
+      commandIngressFreezeDepth = Math.max(0, commandIngressFreezeDepth - 1);
+      isPaused = wasPaused;
+      if (!wasPaused && !isCommandIngressFrozen()) {
+        startTickLoop();
+      }
+    }
+  };
+
+  notifyCapabilitiesChanged();
 
   const startTickLoop = (): void => {
     if (tickTimer || hasFailed || isDisposing || isPaused || !isReady) {
@@ -620,12 +986,14 @@ function createSimWorkerController(mainWindow: BrowserWindow): SimWorkerControll
       stepSizeMs = message.stepSizeMs;
       nextStep = message.nextStep;
       isReady = true;
+      runtimeCapabilities = message.capabilities ?? DEFAULT_SIM_RUNTIME_CAPABILITIES;
+      notifyCapabilitiesChanged();
       pushDiagnosticsLog({
         source: 'main',
         subsystem: 'sim',
         severity: 'info',
         message: 'Sim worker is ready.',
-        metadata: { stepSizeMs, nextStep },
+        metadata: { stepSizeMs, nextStep, capabilities: runtimeCapabilities },
       });
       resolvePendingStepCompletions();
       // Emit sim-status 'running' when the worker is ready
@@ -637,15 +1005,27 @@ function createSimWorkerController(mainWindow: BrowserWindow): SimWorkerControll
     if (message.kind === 'frame') {
       nextStep = message.nextStep;
       resolvePendingStepCompletions();
-      if (!message.frame) {
-        return;
-      }
-      try {
-        mainWindow.webContents.send(IPC_CHANNELS.frame, message.frame);
-      } catch (error: unknown) {
-        // eslint-disable-next-line no-console
-        console.error(error);
-      }
+      publishFrame(message.frame);
+      return;
+    }
+
+    if (message.kind === 'serialized') {
+      takePendingRequest(message.requestId)?.resolve(message.state);
+      return;
+    }
+
+    if (message.kind === 'hydrated') {
+      rejectPendingStepCompletions(new Error(SIM_STEP_INVALIDATED_BY_LOAD_ERROR));
+      nextStep = message.nextStep;
+      runtimeCapabilities = message.capabilities ?? runtimeCapabilities;
+      notifyCapabilitiesChanged();
+      publishFrame(message.frame);
+      takePendingRequest(message.requestId)?.resolve(undefined);
+      return;
+    }
+
+    if (message.kind === 'requestError') {
+      takePendingRequest(message.requestId)?.reject(new Error(message.error));
       return;
     }
 
@@ -685,7 +1065,7 @@ function createSimWorkerController(mainWindow: BrowserWindow): SimWorkerControll
 
   const sendControlEvent = (event: ShellControlEvent): void => {
     // Drop control events until worker is ready (design workflow rule)
-    if (!isReady) {
+    if (!isReady || isCommandIngressFrozen()) {
       return;
     }
 
@@ -726,7 +1106,7 @@ function createSimWorkerController(mainWindow: BrowserWindow): SimWorkerControll
    */
   const sendInputEvent = (envelope: ShellInputEventEnvelope): void => {
     // Drop input events until worker is ready (design workflow rule)
-    if (!isReady) {
+    if (!isReady || isCommandIngressFrozen()) {
       return;
     }
 
@@ -745,12 +1125,36 @@ function createSimWorkerController(mainWindow: BrowserWindow): SimWorkerControll
   };
 
   const enqueueCommands = (commands: readonly Command[]): void => {
+    if (isCommandIngressFrozen()) {
+      return;
+    }
+
     safePostMessage({ kind: 'enqueueCommands', commands });
+  };
+
+  const serializeState = async (): Promise<unknown> => {
+    return runWhileCommandIngressFrozen(async () => {
+      const requestId = `serialize-${++requestSequence}`;
+      return requestWorker<unknown>({ kind: 'serialize', requestId });
+    });
+  };
+
+  const hydrateState = async (state: unknown): Promise<void> => {
+    await runWhileCommandIngressFrozen(async () => {
+      const requestId = `hydrate-${++requestSequence}`;
+      await requestWorker<void>({ kind: 'hydrate', requestId, state });
+    }, {
+      stepInterruptionError: new Error(SIM_STEP_INVALIDATED_BY_LOAD_ERROR),
+    });
   };
 
   const pause = (): void => {
     if (hasFailed || isDisposing) {
       return;
+    }
+
+    if (isCommandIngressFrozen()) {
+      throw new Error(SIM_TOOLING_BUSY_ERROR);
     }
 
     isPaused = true;
@@ -760,6 +1164,10 @@ function createSimWorkerController(mainWindow: BrowserWindow): SimWorkerControll
   const resume = (): void => {
     if (hasFailed || isDisposing) {
       return;
+    }
+
+    if (isCommandIngressFrozen()) {
+      throw new Error(SIM_TOOLING_BUSY_ERROR);
     }
 
     isPaused = false;
@@ -777,6 +1185,10 @@ function createSimWorkerController(mainWindow: BrowserWindow): SimWorkerControll
 
     if (!isReady) {
       throw new Error('Sim is not ready to step yet.');
+    }
+
+    if (isCommandIngressFrozen()) {
+      throw new Error(SIM_TOOLING_BUSY_ERROR);
     }
 
     isPaused = true;
@@ -802,18 +1214,37 @@ function createSimWorkerController(mainWindow: BrowserWindow): SimWorkerControll
     return buildStatusSnapshot();
   };
 
+  const getCapabilities = (): SimRuntimeCapabilities => runtimeCapabilities;
+
   const dispose = (): void => {
     isDisposing = true;
     isPaused = true;
     stopTickLoop();
     rejectPendingStepCompletions(new Error('Simulation stopped before step completed.'));
+    rejectPendingRequests(new Error('Simulation stopped before worker request completed.'));
+    runtimeCapabilities = DEFAULT_SIM_RUNTIME_CAPABILITIES;
+    notifyCapabilitiesChanged();
     void worker.terminate().catch((error: unknown) => {
       // eslint-disable-next-line no-console
       console.error(error);
     });
   };
 
-  return { sendControlEvent, sendInputEvent, enqueueCommands, pause, resume, step, getStatus, dispose };
+  return {
+    sendControlEvent,
+    sendInputEvent,
+    enqueueCommands,
+    serializeState,
+    hydrateState,
+    runWhileCommandIngressFrozen,
+    isCommandIngressFrozen,
+    pause,
+    resume,
+    step,
+    getStatus,
+    getCapabilities,
+    dispose,
+  };
 }
 
 const simMcpController: SimMcpController = {
@@ -836,7 +1267,9 @@ const simMcpController: SimMcpController = {
       throw new Error('Main window is not ready; cannot start simulation.');
     }
 
-    simWorkerController = createSimWorkerController(mainWindow);
+    simWorkerController = createSimWorkerController(mainWindow, {
+      onCapabilitiesChanged: updateSimRuntimeCapabilities,
+    });
     pushDiagnosticsLog({
       source: 'main',
       subsystem: 'sim',
@@ -876,6 +1309,10 @@ const simMcpController: SimMcpController = {
       throw new Error('Simulation is not running.');
     }
 
+    if (simWorkerController.isCommandIngressFrozen()) {
+      throw new Error(SIM_TOOLING_BUSY_ERROR);
+    }
+
     simWorkerController.resume();
     pushDiagnosticsLog({
       source: 'main',
@@ -891,6 +1328,10 @@ const simMcpController: SimMcpController = {
       throw new Error('Simulation is not running.');
     }
 
+    if (controller.isCommandIngressFrozen()) {
+      throw new Error(SIM_TOOLING_BUSY_ERROR);
+    }
+
     return controller.step(steps);
   },
   enqueue: (commands) => {
@@ -904,10 +1345,141 @@ const simMcpController: SimMcpController = {
       throw new Error(`Simulation is ${status.state}; cannot enqueue commands.`);
     }
 
+    if (controller.isCommandIngressFrozen()) {
+      throw new Error(SIM_TOOLING_BUSY_ERROR);
+    }
+
     controller.enqueueCommands(commands);
     return { enqueued: commands.length };
   },
 };
+
+function updateSimRuntimeCapabilities(capabilities: SimRuntimeCapabilities): void {
+  if (simRuntimeCapabilities === capabilities) {
+    return;
+  }
+
+  simRuntimeCapabilities = capabilities;
+  installAppMenu();
+}
+
+function setSimToolingBusy(isBusy: boolean): void {
+  if (simToolingBusy === isBusy) {
+    return;
+  }
+
+  simToolingBusy = isBusy;
+  installAppMenu();
+}
+
+async function saveSimulationState(): Promise<void> {
+  const controller = simWorkerController;
+  const capabilities = controller?.getCapabilities() ?? DEFAULT_SIM_RUNTIME_CAPABILITIES;
+  if (!controller || !capabilities.canSerialize) {
+    throw new Error('Simulation runtime does not support save.');
+  }
+
+  const serializedState = await controller.serializeState();
+  const savePath = buildShellSavePath(capabilities);
+  const envelope = buildShellSaveEnvelope(capabilities, serializedState);
+  await writeFileAtomic(savePath, `${JSON.stringify(envelope, null, 2)}\n`);
+
+  pushDiagnosticsLog({
+    source: 'main',
+    subsystem: 'sim-tooling',
+    severity: 'info',
+    message: 'Simulation save written.',
+    metadata: {
+      savePath,
+      saveFileStem: getSaveFileStem(capabilities),
+    },
+  });
+}
+
+async function loadSimulationState(): Promise<void> {
+  const controller = simWorkerController;
+  const capabilities = controller?.getCapabilities() ?? DEFAULT_SIM_RUNTIME_CAPABILITIES;
+  if (!controller || !capabilities.canHydrate) {
+    throw new Error('Simulation runtime does not support load.');
+  }
+
+  const savePath = buildShellSavePath(capabilities);
+  const envelope = await controller.runWhileCommandIngressFrozen(async () => {
+    const rawSave = await fsPromises.readFile(savePath, 'utf8');
+    const parsedEnvelope = parseShellSaveEnvelope(rawSave, capabilities);
+    await controller.hydrateState(parsedEnvelope.state);
+    return parsedEnvelope;
+  }, {
+    stepInterruptionError: new Error(SIM_STEP_INVALIDATED_BY_LOAD_ERROR),
+  });
+
+  pushDiagnosticsLog({
+    source: 'main',
+    subsystem: 'sim-tooling',
+    severity: 'info',
+    message: 'Simulation save loaded.',
+    metadata: {
+      savePath,
+      savedAt: envelope.metadata.savedAt,
+      saveFileStem: envelope.metadata.runtime.saveFileStem,
+    },
+  });
+}
+
+function enqueueOfflineCatchup(elapsedMs: number): void {
+  const controller = simWorkerController;
+  const capabilities = controller?.getCapabilities() ?? DEFAULT_SIM_RUNTIME_CAPABILITIES;
+  if (!controller || !capabilities.supportsOfflineCatchup) {
+    throw new Error('Simulation runtime does not support offline catch-up.');
+  }
+
+  const status = controller.getStatus();
+  const payload: OfflineCatchupPayload = { elapsedMs };
+  controller.enqueueCommands([
+    {
+      type: RUNTIME_COMMAND_TYPES.OFFLINE_CATCHUP,
+      priority: CommandPriority.SYSTEM,
+      payload,
+      step: status.nextStep,
+      timestamp: status.nextStep * status.stepSizeMs,
+    },
+  ]);
+
+  pushDiagnosticsLog({
+    source: 'main',
+    subsystem: 'sim-tooling',
+    severity: 'info',
+    message: 'Offline catch-up enqueued.',
+    metadata: {
+      elapsedMs,
+      step: status.nextStep,
+    },
+  });
+}
+
+function runSimToolingAction(label: string, action: () => Promise<void> | void): void {
+  if (simToolingBusy) {
+    return;
+  }
+
+  setSimToolingBusy(true);
+  void Promise.resolve()
+    .then(action)
+    .catch((error: unknown) => {
+      pushDiagnosticsLog({
+        source: 'main',
+        subsystem: 'sim-tooling',
+        severity: 'error',
+        message: `${label} failed.`,
+        metadata: { error: stringifyUnknown(error) },
+      });
+      // eslint-disable-next-line no-console
+      console.error(`[shell-desktop] ${label} failed`, error);
+    })
+    .finally(() => {
+      setSimToolingBusy(false);
+    });
+}
 
 const getMainWindowOrThrow = (): BrowserWindow => {
   if (!mainWindow) {
@@ -966,6 +1538,10 @@ const inputMcpController: InputMcpController = {
   sendControlEvent: (event) => {
     if (!simWorkerController) {
       throw new Error('Simulation is not running.');
+    }
+
+    if (simWorkerController.isCommandIngressFrozen()) {
+      throw new Error(SIM_TOOLING_BUSY_ERROR);
     }
 
     simWorkerController.sendControlEvent(event);
@@ -1085,6 +1661,46 @@ function registerIpcHandlers(): void {
 }
 
 function installAppMenu(): void {
+  const hasSaveSupport =
+    simWorkerController !== undefined &&
+    !simToolingBusy &&
+    simRuntimeCapabilities.canSerialize;
+  const hasLoadSupport =
+    simWorkerController !== undefined &&
+    !simToolingBusy &&
+    simRuntimeCapabilities.canHydrate;
+  const hasOfflineCatchupSupport =
+    simWorkerController !== undefined &&
+    !simToolingBusy &&
+    simRuntimeCapabilities.supportsOfflineCatchup;
+
+  const simulationSubmenu: MenuItemConstructorOptions[] = [
+    {
+      label: 'Save',
+      enabled: hasSaveSupport,
+      click: () => {
+        runSimToolingAction('Save state', saveSimulationState);
+      },
+    },
+    {
+      label: 'Load',
+      enabled: hasLoadSupport,
+      click: () => {
+        runSimToolingAction('Load state', loadSimulationState);
+      },
+    },
+    { type: 'separator' },
+    ...OFFLINE_CATCHUP_PRESETS.map<MenuItemConstructorOptions>((preset) => ({
+      label: preset.label,
+      enabled: hasOfflineCatchupSupport,
+      click: () => {
+        runSimToolingAction(preset.label, () => {
+          enqueueOfflineCatchup(preset.elapsedMs);
+        });
+      },
+    })),
+  ];
+
   const viewSubmenu: MenuItemConstructorOptions[] = [
     { role: 'reload' },
     { role: 'forceReload' },
@@ -1110,6 +1726,7 @@ function installAppMenu(): void {
           },
         ]
       : []),
+    { label: 'Simulation', submenu: simulationSubmenu },
     { label: 'View', submenu: viewSubmenu },
     { role: 'windowMenu' },
   ];
@@ -1150,7 +1767,9 @@ async function createMainWindow(): Promise<BrowserWindow> {
     }
 
     simWorkerController.dispose();
-    simWorkerController = createSimWorkerController(mainWindow);
+    simWorkerController = createSimWorkerController(mainWindow, {
+      onCapabilitiesChanged: updateSimRuntimeCapabilities,
+    });
   });
 
   await mainWindow.loadFile(rendererHtmlPath);
@@ -1183,7 +1802,9 @@ app
       }
     }
     mainWindow = await createMainWindow();
-    simWorkerController = createSimWorkerController(mainWindow);
+    simWorkerController = createSimWorkerController(mainWindow, {
+      onCapabilitiesChanged: updateSimRuntimeCapabilities,
+    });
   })
   .catch((error: unknown) => {
     // Avoid unhandled promise rejection noise; Electron will exit if startup fails.
@@ -1195,7 +1816,10 @@ app
 app.on('window-all-closed', () => {
   simWorkerController?.dispose();
   simWorkerController = undefined;
+  simRuntimeCapabilities = DEFAULT_SIM_RUNTIME_CAPABILITIES;
+  simToolingBusy = false;
   mainWindow = undefined;
+  installAppMenu();
   if (process.platform !== 'darwin') {
     mcpServer?.close().catch((error: unknown) => {
       // eslint-disable-next-line no-console
@@ -1219,7 +1843,9 @@ app.on('activate', () => {
     void createMainWindow()
       .then((createdWindow) => {
         mainWindow = createdWindow;
-        simWorkerController = createSimWorkerController(createdWindow);
+        simWorkerController = createSimWorkerController(createdWindow, {
+          onCapabilitiesChanged: updateSimRuntimeCapabilities,
+        });
       })
       .catch((error: unknown) => {
         // eslint-disable-next-line no-console
