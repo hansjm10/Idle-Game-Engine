@@ -115,6 +115,15 @@ describe('shell-desktop sim runtime', () => {
     expect(energyFillWidth(result.frames[0])).toBe(44);
   });
 
+  it('trims fractional resource labels without regex backtracking', () => {
+    const sim = createSimRuntime({ stepSizeMs: 10, maxStepsPerFrame: 50 });
+
+    sim.enqueueCommands([collectEnergyCommand(sim.getNextStep(), 0.5)]);
+
+    const result = sim.tick(10);
+    expect(hasText(result.frames[0], 'Energy: 10.5 / 100 +0/s')).toBe(true);
+  });
+
   it('keeps the sample-pack state unchanged for unknown resource ids', () => {
     const sim = createSimRuntime({ stepSizeMs: 10, maxStepsPerFrame: 50 });
 

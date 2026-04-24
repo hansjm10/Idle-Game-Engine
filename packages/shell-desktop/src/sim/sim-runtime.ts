@@ -68,7 +68,14 @@ const formatNumber = (value: number): string => {
     return String(Math.round(value));
   }
 
-  return value.toFixed(2).replace(/\.?0+$/, '');
+  const fixed = value.toFixed(2);
+  if (fixed.endsWith('.00')) {
+    return fixed.slice(0, -3);
+  }
+  if (fixed.endsWith('0')) {
+    return fixed.slice(0, -1);
+  }
+  return fixed;
 };
 
 const formatSignedRate = (value: number): string => {
