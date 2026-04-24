@@ -651,7 +651,7 @@ export function createSimRuntime(options: SimRuntimeOptions = {}): SimRuntime {
     frameQueue.length = 0;
     droppedFrames = 0;
     lastFrame = undefined;
-    accumulatorBacklogMs += deltaMs > 0 ? deltaMs : 0;
+    accumulatorBacklogMs += Math.max(0, deltaMs);
 
     processTickBudget(deltaMs);
 
