@@ -432,34 +432,45 @@ describe('shell-desktop sim runtime', () => {
   });
 
   it('drains offline catch-up backlog in bounded chunks', () => {
-    const sim = createSimRuntime({ stepSizeMs: 10, maxStepsPerFrame: 2 });
+    const drainCreditedBacklog = vi.spyOn(
+      IdleEngineRuntime.prototype,
+      'drainCreditedBacklog',
+    );
 
-    sim.enqueueCommands([
-      {
-        type: RUNTIME_COMMAND_TYPES.OFFLINE_CATCHUP,
-        priority: CommandPriority.SYSTEM,
-        payload: { elapsedMs: 60 },
-        timestamp: 0,
-        step: sim.getNextStep(),
-      },
-    ]);
+    try {
+      const sim = createSimRuntime({ stepSizeMs: 10, maxStepsPerFrame: 2 });
 
-    const result = sim.tick(10);
+      sim.enqueueCommands([
+        {
+          type: RUNTIME_COMMAND_TYPES.OFFLINE_CATCHUP,
+          priority: CommandPriority.SYSTEM,
+          payload: { elapsedMs: 60 },
+          timestamp: 0,
+          step: sim.getNextStep(),
+        },
+      ]);
 
-    expect(result.frames).toHaveLength(4);
-    expect(result.frame?.frame.step).toBe(3);
-    expect(result.droppedFrames).toBe(3);
-    expect(result.nextStep).toBe(4);
-    expect(sim.getNextStep()).toBe(4);
+      const result = sim.tick(10);
 
-    const savedState = loadSerializedSimRuntimeState(sim.serialize?.());
-    expect(savedState.nextStep).toBe(4);
-    expect(savedState.accumulatorBacklogMs).toBe(20);
+      expect(result.frames).toHaveLength(4);
+      expect(result.frame?.frame.step).toBe(3);
+      expect(result.droppedFrames).toBe(3);
+      expect(result.nextStep).toBe(4);
+      expect(sim.getNextStep()).toBe(4);
+      expect(drainCreditedBacklog).toHaveBeenCalledTimes(1);
 
-    const continued = sim.tick(0);
-    expect(continued.frames).toHaveLength(2);
-    expect(continued.frame?.frame.step).toBe(5);
-    expect(continued.nextStep).toBe(6);
+      const savedState = loadSerializedSimRuntimeState(sim.serialize?.());
+      expect(savedState.nextStep).toBe(4);
+      expect(savedState.accumulatorBacklogMs).toBe(20);
+
+      const continued = sim.tick(0);
+      expect(continued.frames).toHaveLength(2);
+      expect(continued.frame?.frame.step).toBe(5);
+      expect(continued.nextStep).toBe(6);
+      expect(drainCreditedBacklog).toHaveBeenCalledTimes(2);
+    } finally {
+      drainCreditedBacklog.mockRestore();
+    }
   });
 
   it('does not drain a one-hour offline catch-up payload in one tick', () => {

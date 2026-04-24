@@ -74,10 +74,6 @@ const SAMPLE_COLLECT_AMOUNT = 1;
 const SAMPLE_FONT_ASSET_ID = 'sample-pack.ui-font' as AssetId;
 const SIM_RUNTIME_SAVE_FILE_STEM = 'sample-pack';
 const MAX_RETAINED_TICK_FRAMES = 128;
-// Some packaged runtime builds ignore zero-delta ticks before checking credited backlog.
-const CREDITED_BACKLOG_DRAIN_DELTA_MS = Number.MIN_VALUE;
-// Each extra pass is still clamped by the core runtime's maxStepsPerFrame.
-const MAX_OFFLINE_CATCHUP_DRAIN_PASSES_PER_TICK = 1;
 
 const SAMPLE_UI_PANEL = {
   x: 16,
@@ -510,7 +506,6 @@ export function createSimRuntime(options: SimRuntimeOptions = {}): SimRuntime {
   const frameQueue: RenderCommandBuffer[] = [];
   const initialAccumulatorBacklogMs =
     initialSerializedState?.accumulatorBacklogMs ?? options.initialAccumulatorBacklogMs;
-  let accumulatorBacklogMs = normalizeAccumulatorBacklogMs(initialAccumulatorBacklogMs);
   let droppedFrames = 0;
   let lastFrame: RenderCommandBuffer | undefined;
   let offlineCatchupDrainBudgetMs = 0;
@@ -544,7 +539,6 @@ export function createSimRuntime(options: SimRuntimeOptions = {}): SimRuntime {
       const result = offlineCatchupHandler(payload, context);
       if (totalOfflineMs > 0) {
         offlineCatchupDrainBudgetMs += totalOfflineMs;
-        accumulatorBacklogMs += Math.max(0, totalOfflineMs - stepSizeMs);
       }
       return result;
     });
@@ -581,8 +575,11 @@ export function createSimRuntime(options: SimRuntimeOptions = {}): SimRuntime {
     game.hydrate(initialSerializedState.gameState);
   }
 
-  if (accumulatorBacklogMs > 0) {
-    runtime.creditTime(accumulatorBacklogMs);
+  const normalizedInitialAccumulatorBacklogMs = normalizeAccumulatorBacklogMs(
+    initialAccumulatorBacklogMs,
+  );
+  if (normalizedInitialAccumulatorBacklogMs > 0) {
+    runtime.creditTime(normalizedInitialAccumulatorBacklogMs);
   }
 
   const getCapabilities = (): SimRuntimeCapabilities => ({
@@ -599,7 +596,7 @@ export function createSimRuntime(options: SimRuntimeOptions = {}): SimRuntime {
     schemaVersion: SIM_RUNTIME_SAVE_SCHEMA_VERSION,
     nextStep: runtime.getNextExecutableStep(),
     gameState: game.serialize(),
-    accumulatorBacklogMs,
+    accumulatorBacklogMs: runtime.getAccumulatorBacklogMs(),
   });
 
   runtime.addSystem({
@@ -625,24 +622,31 @@ export function createSimRuntime(options: SimRuntimeOptions = {}): SimRuntime {
     }
   };
 
-  const processTickBudget = (
-    deltaMs: number,
-    options: { readonly drainCreditedBacklog?: boolean } = {},
-  ): number => {
+  const recordProcessedSteps = (processedSteps: number): void => {
+    if (processedSteps > 0) {
+      const processedMs = processedSteps * runtime.getStepSizeMs();
+      offlineCatchupDrainBudgetMs = Math.max(0, offlineCatchupDrainBudgetMs - processedMs);
+    }
+  };
+
+  const processTickBudget = (deltaMs: number): number => {
     const nextStepBeforeTick = runtime.getNextExecutableStep();
-    game.tick(
-      options.drainCreditedBacklog && deltaMs === 0
-        ? CREDITED_BACKLOG_DRAIN_DELTA_MS
-        : deltaMs,
-    );
+    game.tick(deltaMs);
     rethrowFatalCommandFailures();
 
     const processedSteps = Math.max(0, runtime.getNextExecutableStep() - nextStepBeforeTick);
-    if (processedSteps > 0) {
-      const processedMs = processedSteps * runtime.getStepSizeMs();
-      accumulatorBacklogMs = Math.max(0, accumulatorBacklogMs - processedMs);
-      offlineCatchupDrainBudgetMs = Math.max(0, offlineCatchupDrainBudgetMs - processedMs);
-    }
+    recordProcessedSteps(processedSteps);
+
+    return processedSteps;
+  };
+
+  const drainOfflineCatchupBacklog = (): number => {
+    const nextStepBeforeDrain = runtime.getNextExecutableStep();
+    runtime.drainCreditedBacklog();
+    rethrowFatalCommandFailures();
+
+    const processedSteps = Math.max(0, runtime.getNextExecutableStep() - nextStepBeforeDrain);
+    recordProcessedSteps(processedSteps);
 
     return processedSteps;
   };
@@ -651,20 +655,11 @@ export function createSimRuntime(options: SimRuntimeOptions = {}): SimRuntime {
     frameQueue.length = 0;
     droppedFrames = 0;
     lastFrame = undefined;
-    accumulatorBacklogMs += Math.max(0, deltaMs);
 
     processTickBudget(deltaMs);
 
-    let remainingOfflineCatchupDrainPasses = MAX_OFFLINE_CATCHUP_DRAIN_PASSES_PER_TICK;
-    while (
-      remainingOfflineCatchupDrainPasses > 0 &&
-      offlineCatchupDrainBudgetMs >= runtime.getStepSizeMs()
-    ) {
-      remainingOfflineCatchupDrainPasses -= 1;
-      const processedSteps = processTickBudget(0, { drainCreditedBacklog: true });
-      if (processedSteps <= 0) {
-        break;
-      }
+    if (offlineCatchupDrainBudgetMs >= runtime.getStepSizeMs()) {
+      drainOfflineCatchupBacklog();
     }
 
     return {

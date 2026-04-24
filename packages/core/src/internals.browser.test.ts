@@ -28,6 +28,22 @@ describe('internals.browser', () => {
       expect(runtime.fastForward(deltaMs)).toBe(0);
       expect(runtime.getCurrentStep()).toBe(0);
     });
+
+    it.each([
+      Number.NaN,
+      Number.POSITIVE_INFINITY,
+      -1,
+      0,
+    ])('drainCreditedBacklog ignores invalid maxSteps (%s)', (maxSteps) => {
+      const runtime = new IdleEngineRuntime({
+        stepSizeMs: 10,
+        maxStepsPerFrame: 5,
+      });
+      runtime.creditTime(50);
+
+      expect(runtime.drainCreditedBacklog({ maxSteps })).toBe(0);
+      expect(runtime.getCurrentStep()).toBe(0);
+      expect(runtime.getAccumulatorBacklogMs()).toBe(50);
+    });
   });
 });
-

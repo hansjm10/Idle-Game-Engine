@@ -1148,14 +1148,46 @@ describe('IdleEngineRuntime', () => {
     expect(runtime.getCurrentStep()).toBe(0);
   });
 
-  it('processes previously credited time when ticked with zero deltaMs', () => {
+  it('does not drain credited time from a zero-delta tick', () => {
     const { runtime } = createRuntime({ stepSizeMs: 10, maxStepsPerFrame: 2 });
 
     runtime.creditTime(25);
 
-    expect(runtime.tick(0)).toBe(2);
+    expect(runtime.tick(0)).toBe(0);
+    expect(runtime.getCurrentStep()).toBe(0);
+    expect(runtime.getNextExecutableStep()).toBe(0);
+    expect(runtime.getAccumulatorBacklogMs()).toBe(25);
+  });
+
+  it('drains previously credited backlog with the explicit runtime API', () => {
+    const { runtime } = createRuntime({ stepSizeMs: 10, maxStepsPerFrame: 2 });
+
+    runtime.creditTime(25);
+
+    expect(runtime.drainCreditedBacklog()).toBe(2);
     expect(runtime.getCurrentStep()).toBe(2);
     expect(runtime.getNextExecutableStep()).toBe(2);
+    expect(runtime.getAccumulatorBacklogMs()).toBe(5);
+  });
+
+  it('caps credited backlog drains to maxStepsPerFrame', () => {
+    const { runtime } = createRuntime({ stepSizeMs: 10, maxStepsPerFrame: 2 });
+
+    runtime.creditTime(50);
+
+    expect(runtime.drainCreditedBacklog({ maxSteps: 10 })).toBe(2);
+    expect(runtime.getCurrentStep()).toBe(2);
+    expect(runtime.getAccumulatorBacklogMs()).toBe(30);
+  });
+
+  it('honors caller-provided credited backlog drain budgets below maxStepsPerFrame', () => {
+    const { runtime } = createRuntime({ stepSizeMs: 10, maxStepsPerFrame: 5 });
+
+    runtime.creditTime(50);
+
+    expect(runtime.drainCreditedBacklog({ maxSteps: 3 })).toBe(3);
+    expect(runtime.getCurrentStep()).toBe(3);
+    expect(runtime.getAccumulatorBacklogMs()).toBe(20);
   });
 
   it('does not emit diagnostics entries for zero/negative deltaMs', () => {
