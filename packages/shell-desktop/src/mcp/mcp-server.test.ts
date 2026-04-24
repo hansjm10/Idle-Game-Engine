@@ -58,15 +58,18 @@ async function closeHttpServer(server: http.Server): Promise<void> {
   });
 }
 
-async function createBusyServer(port = 0): Promise<{
-  server: http.Server;
-  port: number;
-}> {
-  const server = http.createServer((_req, res) => {
+function createBusyHttpServer(): http.Server {
+  return http.createServer((_req, res) => {
     res.writeHead(200);
     res.end('busy');
   });
+}
 
+function isPortBusyError(error: unknown): error is NodeJS.ErrnoException {
+  return error instanceof Error && 'code' in error && error.code === 'EADDRINUSE';
+}
+
+async function listenBusyServer(server: http.Server, port: number): Promise<number> {
   await new Promise<void>((resolve, reject) => {
     server.once('error', reject);
     server.listen({ host: '127.0.0.1', port }, () => {
@@ -80,7 +83,35 @@ async function createBusyServer(port = 0): Promise<{
     throw new Error('Expected blocker server to expose a bound TCP address');
   }
 
-  return { server, port: address.port };
+  return address.port;
+}
+
+async function createBusyServer(port = 0): Promise<{
+  server: http.Server;
+  port: number;
+}> {
+  const server = createBusyHttpServer();
+  const boundPort = await listenBusyServer(server, port);
+
+  return { server, port: boundPort };
+}
+
+async function tryCreateBusyServer(port: number): Promise<{
+  server: http.Server;
+  port: number;
+} | undefined> {
+  const server = createBusyHttpServer();
+
+  try {
+    const boundPort = await listenBusyServer(server, port);
+    return { server, port: boundPort };
+  } catch (error: unknown) {
+    if (isPortBusyError(error)) {
+      return undefined;
+    }
+
+    throw error;
+  }
 }
 
 describe('shell-desktop MCP server', () => {
@@ -157,7 +188,7 @@ describe('shell-desktop MCP server', () => {
   });
 
   it('falls back from the built-in default MCP port to the built-in fallback port', async () => {
-    const blockerDefault = await createBusyServer(8570);
+    const blockerDefault = await tryCreateBusyServer(8570);
 
     try {
       const server = await maybeStartShellDesktopMcpServer({
@@ -172,7 +203,9 @@ describe('shell-desktop MCP server', () => {
       servers.push(server);
       expect(server.url.port).toBe('8571');
     } finally {
-      await closeHttpServer(blockerDefault.server);
+      if (blockerDefault) {
+        await closeHttpServer(blockerDefault.server);
+      }
     }
   });
 
