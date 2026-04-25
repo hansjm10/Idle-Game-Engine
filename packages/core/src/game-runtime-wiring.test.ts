@@ -335,6 +335,46 @@ describe('createGameRuntime', () => {
     expect(roundTrip).toEqual(save);
   });
 
+  it.each([
+    {
+      name: 'legacy accumulator-only backlog',
+      runtimeBacklog: { accumulatorBacklogMs: 275 },
+      expected: { totalMs: 275, hostFrameMs: 275, creditedMs: 0 },
+    },
+    {
+      name: 'missing host-frame split backlog',
+      runtimeBacklog: { accumulatorBacklogMs: 275, creditedBacklogMs: 125 },
+      expected: { totalMs: 275, hostFrameMs: 150, creditedMs: 125 },
+    },
+  ])('hydrates $name through direct wiring hydrate', ({ runtimeBacklog, expected }) => {
+    const content = createContentPack({
+      resources: [
+        createResourceDefinition('resource.energy', { startAmount: 0 }),
+      ],
+    });
+    const wiring = createGameRuntime({
+      content,
+      stepSizeMs: 100,
+    });
+    const save = wiring.serialize({ savedAt: 1234 });
+    const legacyBacklogSave = {
+      ...save,
+      runtime: {
+        step: save.runtime.step,
+        ...runtimeBacklog,
+      },
+    };
+
+    const restored = createGameRuntime({
+      content,
+      stepSizeMs: 100,
+    });
+
+    restored.hydrate(legacyBacklogSave);
+
+    expect(restored.runtime.getAccumulatorBacklogState()).toEqual(expected);
+  });
+
   it('hydrates using the saved runtime step by default', () => {
     const wiring = createGameRuntime({
       content: createContentWithGeneratorAutomationAndTransform(),
