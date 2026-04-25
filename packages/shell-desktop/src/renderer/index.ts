@@ -423,18 +423,31 @@ async function run(): Promise<void> {
     shift: event.shiftKey,
   });
 
+  const getCanvasLocalPoint = (event: MouseEvent): { readonly x: number; readonly y: number } => {
+    const rect = canvasElement.getBoundingClientRect();
+    const localWidth = canvasElement.clientWidth || rect.width;
+    const localHeight = canvasElement.clientHeight || rect.height;
+    const scaleX = rect.width > 0 ? localWidth / rect.width : 1;
+    const scaleY = rect.height > 0 ? localHeight / rect.height : 1;
+
+    return {
+      x: (event.clientX - rect.left) * scaleX,
+      y: (event.clientY - rect.top) * scaleY,
+    };
+  };
+
   const buildPointerInputEvent = (
     intent: PointerInputEvent['intent'],
     phase: PointerInputEvent['phase'],
     event: PointerEvent,
   ): PointerInputEvent => {
-    const rect = canvasElement.getBoundingClientRect();
+    const { x, y } = getCanvasLocalPoint(event);
     return {
       kind: 'pointer',
       intent,
       phase,
-      x: event.clientX - rect.left,
-      y: event.clientY - rect.top,
+      x,
+      y,
       button: event.button,
       buttons: event.buttons,
       pointerType: event.pointerType as PointerInputEvent['pointerType'],
@@ -443,13 +456,13 @@ async function run(): Promise<void> {
   };
 
   const buildWheelInputEvent = (event: WheelEvent): WheelInputEvent => {
-    const rect = canvasElement.getBoundingClientRect();
+    const { x, y } = getCanvasLocalPoint(event);
     return {
       kind: 'wheel',
       intent: 'mouse-wheel',
       phase: 'repeat',
-      x: event.clientX - rect.left,
-      y: event.clientY - rect.top,
+      x,
+      y,
       deltaX: event.deltaX,
       deltaY: event.deltaY,
       deltaZ: event.deltaZ,

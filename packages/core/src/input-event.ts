@@ -22,8 +22,10 @@ export interface InputEventModifiers {
 /**
  * Pointer input event (mouse-down, mouse-up, mouse-move).
  *
- * Coordinates `x/y` are derived in **CSS pixels** as:
- * `clientX/Y - canvas.getBoundingClientRect().left/top`
+ * Coordinates `x/y` are canvas-local UI pixels, matching render-command UI
+ * coordinates rather than backing-store device pixels or world units. Desktop
+ * shell renderer inputs derive them by mapping `clientX/Y` offsets through the
+ * canvas `getBoundingClientRect()` and `clientWidth/clientHeight`.
  */
 export interface PointerInputEvent {
   readonly kind: 'pointer';
@@ -40,8 +42,8 @@ export interface PointerInputEvent {
 /**
  * Wheel input event (mouse-wheel).
  *
- * Coordinates `x/y` are derived in **CSS pixels** as:
- * `clientX/Y - canvas.getBoundingClientRect().left/top`
+ * Coordinates `x/y` use the same canvas-local UI pixel space as
+ * `PointerInputEvent`.
  */
 export interface WheelInputEvent {
   readonly kind: 'wheel';

@@ -296,8 +296,8 @@ This feature introduces a **typed, versioned input-event schema** for desktop-sh
 | `packages/core/src/input-event.ts` | `InputEvent.kind` | `'pointer' \| 'wheel'` | yes | n/a | must be one of the listed literals |
 | `packages/core/src/input-event.ts` | `InputEvent.intent` | `'mouse-down' \| 'mouse-up' \| 'mouse-move' \| 'mouse-wheel'` | yes | n/a | if `kind:'pointer'`: must be one of `mouse-down`/`mouse-up`/`mouse-move`; if `kind:'wheel'`: must equal `mouse-wheel` |
 | `packages/core/src/input-event.ts` | `InputEvent.phase` | `'start' \| 'repeat' \| 'end'` | yes | n/a | if `kind:'pointer'`: must match intent (`mouse-down→start`, `mouse-move→repeat`, `mouse-up→end`); if `kind:'wheel'`: must equal `repeat` |
-| `packages/core/src/input-event.ts` | `InputEvent.x` | `number` | yes | n/a | finite; canvas-relative CSS pixels (`clientX - canvas.getBoundingClientRect().left`) |
-| `packages/core/src/input-event.ts` | `InputEvent.y` | `number` | yes | n/a | finite; canvas-relative CSS pixels (`clientY - canvas.getBoundingClientRect().top`) |
+| `packages/core/src/input-event.ts` | `InputEvent.x` | `number` | yes | n/a | finite; canvas-local UI pixels mapped from `clientX - canvas.getBoundingClientRect().left` through the canvas CSS size |
+| `packages/core/src/input-event.ts` | `InputEvent.y` | `number` | yes | n/a | finite; canvas-local UI pixels mapped from `clientY - canvas.getBoundingClientRect().top` through the canvas CSS size |
 | `packages/core/src/input-event.ts` | `InputEvent.button` | `number` | yes (kind:pointer) | n/a | integer; range `-1..32` |
 | `packages/core/src/input-event.ts` | `InputEvent.buttons` | `number` | yes (kind:pointer) | n/a | integer; range `0..0xFFFF` |
 | `packages/core/src/input-event.ts` | `InputEvent.pointerType` | `'mouse' \| 'pen' \| 'touch'` | yes (kind:pointer) | n/a | must be one of the listed literals |
@@ -352,7 +352,7 @@ The `INPUT_EVENT` command is only allowed in the player priority lane so that UI
 - Derived fields:
   - If `kind:'pointer'`, `phase` is derived from `intent` (`mouse-down→start`, `mouse-move→repeat`, `mouse-up→end`) and must remain consistent; mismatches are rejected.
   - If `kind:'wheel'`, `phase` is always `repeat`.
-  - `x/y` are derived in the renderer in **CSS pixels** as `clientX/Y - canvas.getBoundingClientRect().left/top` (no devicePixelRatio scaling).
+  - `x/y` are derived in the renderer as canvas-local UI pixels: DOM client offsets are mapped through `canvas.getBoundingClientRect()` into `canvas.clientWidth/clientHeight`. They are not backing-store device pixels and are not world-space coordinates.
 - Ordering dependencies: None stored in the payload; ordering is defined by IPC delivery order and the main-process enqueue policy (commands are scheduled at the runtime’s next executable step).
 
 **`InputEventCommandPayload.schemaVersion`**

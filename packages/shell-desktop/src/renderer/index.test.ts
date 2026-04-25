@@ -27,7 +27,8 @@ describe('shell-desktop renderer entrypoint', () => {
   let rafCallbacks: Map<number, FrameRequestCallback>;
   let nextRafId: number;
   let resizeObserverInstances: Array<{ trigger: () => void; disconnect: () => void }>;
-  let canvasRect: { left: number; top: number };
+  let canvasRect: { left: number; top: number; width: number; height: number };
+  let canvasSize: { width: number; height: number; clientWidth: number; clientHeight: number };
 
   beforeEach(() => {
     vi.resetModules();
@@ -42,10 +43,29 @@ describe('shell-desktop renderer entrypoint', () => {
     rafCallbacks = new Map();
     nextRafId = 1;
     resizeObserverInstances = [];
-    canvasRect = { left: 10, top: 20 };
+    canvasRect = { left: 10, top: 20, width: 300, height: 150 };
+    canvasSize = { width: 300, height: 150, clientWidth: 300, clientHeight: 150 };
 
     const outputElement = { textContent: '' } as unknown as HTMLPreElement;
     const canvasElement = {
+      get width(): number {
+        return canvasSize.width;
+      },
+      set width(value: number) {
+        canvasSize.width = value;
+      },
+      get height(): number {
+        return canvasSize.height;
+      },
+      set height(value: number) {
+        canvasSize.height = value;
+      },
+      get clientWidth(): number {
+        return canvasSize.clientWidth;
+      },
+      get clientHeight(): number {
+        return canvasSize.clientHeight;
+      },
       addEventListener: vi.fn((event: string, handler: (...args: unknown[]) => void) => {
         if (event === 'pointerdown') {
           pointerDownHandler = handler as PointerHandler;
@@ -279,6 +299,76 @@ describe('shell-desktop renderer entrypoint', () => {
         buttons: 0,
         pointerType: 'pen',
         modifiers: { alt: false, ctrl: false, meta: true, shift: false },
+      },
+    });
+  });
+
+  it('maps pointer click and move coordinates into canvas-local UI space for a scaled HiDPI canvas', async () => {
+    const idleEngine = (
+      globalThis as unknown as { idleEngine: { sendInputEvent: ReturnType<typeof vi.fn> } }
+    ).idleEngine;
+    canvasRect = { left: 10, top: 20, width: 200, height: 150 };
+    canvasSize = { width: 800, height: 600, clientWidth: 400, clientHeight: 300 };
+
+    await import('./index.js');
+    await flushMicrotasks();
+
+    pointerDownHandler?.({
+      clientX: 120,
+      clientY: 100,
+      button: 0,
+      buttons: 1,
+      pointerType: 'mouse',
+      altKey: false,
+      ctrlKey: false,
+      metaKey: false,
+      shiftKey: false,
+    } as PointerEvent);
+
+    expect(idleEngine.sendInputEvent).toHaveBeenNthCalledWith(1, {
+      schemaVersion: 1,
+      event: {
+        kind: 'pointer',
+        intent: 'mouse-down',
+        phase: 'start',
+        x: 220,
+        y: 160,
+        button: 0,
+        buttons: 1,
+        pointerType: 'mouse',
+        modifiers: { alt: false, ctrl: false, meta: false, shift: false },
+      },
+    });
+
+    pointerMoveHandler?.({
+      clientX: 130,
+      clientY: 110,
+      button: 0,
+      buttons: 1,
+      pointerType: 'mouse',
+      altKey: false,
+      ctrlKey: false,
+      metaKey: false,
+      shiftKey: false,
+    } as PointerEvent);
+
+    const rafEntries = Array.from(rafCallbacks.entries());
+    const [moveId, moveCallback] = rafEntries[rafEntries.length - 1] as [number, FrameRequestCallback];
+    rafCallbacks.delete(moveId);
+    moveCallback(0);
+
+    expect(idleEngine.sendInputEvent).toHaveBeenNthCalledWith(2, {
+      schemaVersion: 1,
+      event: {
+        kind: 'pointer',
+        intent: 'mouse-move',
+        phase: 'repeat',
+        x: 240,
+        y: 180,
+        button: 0,
+        buttons: 1,
+        pointerType: 'mouse',
+        modifiers: { alt: false, ctrl: false, meta: false, shift: false },
       },
     });
   });
