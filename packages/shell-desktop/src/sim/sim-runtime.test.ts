@@ -270,6 +270,16 @@ describe('shell-desktop sim runtime', () => {
     expect(energyFillWidth(result.frames[0])).toBe(48);
   });
 
+  it('serializes tiny negative fractional-step accumulator residuals as zero', () => {
+    const sim = createSimRuntime({ stepSizeMs: 1.1, maxStepsPerFrame: 200 });
+
+    sim.tick(187);
+
+    const savedState = loadSerializedSimRuntimeState(sim.serialize?.());
+    expect(savedState.accumulatorBacklogMs).toBe(0);
+    expect(savedState.offlineCatchupDrainBudgetMs).toBe(0);
+  });
+
   it('renders the last completed frame after restoring serialized state', () => {
     const sim = createSimRuntime({ stepSizeMs: 10, maxStepsPerFrame: 50 });
 

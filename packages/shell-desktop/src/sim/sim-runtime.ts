@@ -626,16 +626,19 @@ export function createSimRuntime(options: SimRuntimeOptions = {}): SimRuntime {
     contentHash: sampleContentArtifactHash,
     contentVersion: sampleContentSummary.version,
   });
-  const clampOfflineCatchupDrainBudgetToBacklog = (): void => {
-    offlineCatchupDrainBudgetMs = Math.min(
-      offlineCatchupDrainBudgetMs,
+  const clampOfflineCatchupDrainBudgetToBacklog = (): number => {
+    const accumulatorBacklogMs = normalizeAccumulatorBacklogMs(
       runtime.getAccumulatorBacklogMs(),
     );
+    offlineCatchupDrainBudgetMs = normalizeOfflineCatchupDrainBudgetMs(
+      offlineCatchupDrainBudgetMs,
+      accumulatorBacklogMs,
+    );
+    return accumulatorBacklogMs;
   };
 
   const serialize = (): SerializedSimRuntimeState => {
-    clampOfflineCatchupDrainBudgetToBacklog();
-    const accumulatorBacklogMs = runtime.getAccumulatorBacklogMs();
+    const accumulatorBacklogMs = clampOfflineCatchupDrainBudgetToBacklog();
     return {
       schemaVersion: SIM_RUNTIME_SAVE_SCHEMA_VERSION,
       nextStep: runtime.getNextExecutableStep(),
