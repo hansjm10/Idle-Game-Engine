@@ -94,7 +94,7 @@ sidebar_position: 99
 ### 7.1 Issue Map
 | Issue Title | Scope Summary | Proposed Assignee/Agent | Dependencies | Acceptance Criteria |
 |-------------|---------------|-------------------------|--------------|---------------------|
-| `feat(renderer-webgpu): centralize texture usage for external copies` | Add a helper that applies required usage flags for `copyExternalImageToTexture` destinations; update atlas texture creation and usage enum fallbacks accordingly. | Renderer Implementation Agent | Doc approval | Atlas texture is created with `COPY_DST | RENDER_ATTACHMENT | TEXTURE_BINDING`; no scattered one-off bitmask tweaks; Node fallback constants include `RENDER_ATTACHMENT`. |
+| `feat(renderer-webgpu): centralize texture usage for external copies` | Add a helper that applies required usage flags for `copyExternalImageToTexture` destinations; update atlas texture creation and usage enum fallbacks accordingly. | Renderer Implementation Agent | Doc approval | Atlas texture is created with `COPY_DST`, `RENDER_ATTACHMENT`, and `TEXTURE_BINDING`; no scattered one-off bitmask tweaks; Node fallback constants include `RENDER_ATTACHMENT`. |
 | `test(renderer-webgpu): assert atlas texture usage flags` | Add regression tests verifying `createTexture` is called with the expected usage mask when `loadAssets()` uploads an atlas via `copyExternalImageToTexture`. | Test Agent | Implementation | New tests fail if `RENDER_ATTACHMENT` is omitted; tests run deterministically in Node with the existing WebGPU stubs. |
 | `docs(renderer-webgpu): document copyExternalImageToTexture backend variance` | Add a short rationale and reference links (GPUWeb issue, MDN/spec notes) explaining why `RENDER_ATTACHMENT` is included for external-copy destination textures. | Docs Agent | Implementation | Documentation exists either as code comments near the helper or as a package doc entry; references are linked. |
 
@@ -176,4 +176,3 @@ sidebar_position: 99
 | Date       | Author | Change Summary |
 |------------|--------|----------------|
 | 2026-01-26 | Codex (AI) | Initial draft |
-

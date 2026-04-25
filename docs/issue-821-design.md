@@ -235,4 +235,3 @@ Example filtered definition (subset of generators):
 | Date       | Author | Change Summary |
 |------------|--------|----------------|
 | 2026-01-25 | Ralph (AI agent) | Initial draft for Issue 821 |
-

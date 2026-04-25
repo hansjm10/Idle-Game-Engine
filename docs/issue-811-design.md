@@ -223,4 +223,3 @@ This keeps cleanup local and explicit without adding a general-purpose resource 
 | Date       | Author | Change Summary |
 |------------|--------|----------------|
 | 2026-01-21 | Codex (AI) | Initial draft |
-

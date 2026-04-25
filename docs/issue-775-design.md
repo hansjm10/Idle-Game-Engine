@@ -20,7 +20,7 @@ This design document proposes documenting the exact mathematical formulas used t
 ## 2. Context & Problem Statement
 - **Background**: The engine uses a flexible system for defining costs via `costCurve` (which supports various mathematical functions) and `costMultiplier`.
 - **Problem**: The exact formulas are not documented. Content creators resort to trial-and-error or reverse-engineering to understand how costs scale with level, leading to unexpected values and inefficient balancing workflows. The issue reporter specifically noted confusion around the `exponential` curve and how `offset` applies.
-- **Forces**: 
+- **Forces**:
     - Accuracy: The documentation must strictly reflect the runtime implementation.
     - Clarity: Formulas should be expressed in standard mathematical notation where possible, alongside JSON examples.
 
@@ -36,9 +36,9 @@ This design document proposes documenting the exact mathematical formulas used t
 
 ## 4. Stakeholders, Agents & Impacted Surfaces
 - **Primary Stakeholders**: Content Creators / Game Designers.
-- **Agent Roles**: 
+- **Agent Roles**:
     - **Documentation Agent**: Responsible for updating the markdown files.
-- **Affected Packages/Services**: 
+- **Affected Packages/Services**:
     - `docs/` (documentation only).
 - **Compatibility Considerations**: None (doc change only).
 
@@ -62,15 +62,15 @@ Where `evaluateNumericFormula` behaves as follows:
 We will add a new section "Cost Calculation Formulas" to `docs/content-dsl-usage-guidelines.md` (or `docs/content-quick-reference.md` as requested, but "Usage Guidelines" seems more appropriate for deep dives).
 
 The section will detail:
-1.  **Generator Cost Formula**: `FinalCost = BaseCostFromCurve * CostMultiplier * GlobalMultipliers`
-2.  **Upgrade Cost Formula**: `FinalCost = BaseCostFromCurve * CostMultiplier * RepeatableAdjustment` (no global multipliers; RepeatableAdjustment comes from `repeatable.costCurve` for repeatable upgrades, defaults to 1 otherwise)
-3.  **Curve Formulas**:
-    *   **Exponential**: `Cost(level) = base * growth^level + offset`
-        *   *Note: Explicitly clarify that `offset` is added to the result, not the level.*
-    *   **Linear**: `Cost(level) = base + slope * level`
-    *   **Constant**: `Cost(level) = value`
-    *   **Polynomial**: `Cost(level) = sum(coefficient_i * level^i)`
-4.  **Examples**: JSON snippets + calculated values for levels 0, 1, 10.
+1. **Generator Cost Formula**: `FinalCost = BaseCostFromCurve * CostMultiplier * GlobalMultipliers`
+2. **Upgrade Cost Formula**: `FinalCost = BaseCostFromCurve * CostMultiplier * RepeatableAdjustment` (no global multipliers; RepeatableAdjustment comes from `repeatable.costCurve` for repeatable upgrades, defaults to 1 otherwise)
+3. **Curve Formulas**:
+    - **Exponential**: `Cost(level) = base * growth^level + offset`
+        - *Note: Explicitly clarify that `offset` is added to the result, not the level.*
+    - **Linear**: `Cost(level) = base + slope * level`
+    - **Constant**: `Cost(level) = value`
+    - **Polynomial**: `Cost(level) = sum(coefficient_i * level^i)`
+4. **Examples**: JSON snippets + calculated values for levels 0, 1, 10.
 
 ### 6.2 Detailed Design
 No code changes.
