@@ -24,7 +24,12 @@ import { registerResourceCommandHandlers } from './resource-command-handlers.js'
 import { EntitySystem, createSeededRng } from './entity-system.js';
 import { registerEntityCommandHandlers } from './entity-command-handlers.js';
 import { PRDRegistry, seededRandom } from './rng.js';
-import type { ProgressionAuthoritativeState, ProgressionEntityState } from './progression.js';
+import type {
+  ProgressionAutomationState,
+  ProgressionAuthoritativeState,
+  ProgressionEntityState,
+  ProgressionTransformState,
+} from './progression.js';
 
 export interface RuntimeWiringRuntime {
   getStepSizeMs(): number;
@@ -169,7 +174,14 @@ export function wireGameRuntime<
   registerSystemIfDefined(runtime, systems, automationSystem);
   registerSystemIfDefined(runtime, systems, transformSystem);
   registerSystemIfDefined(runtime, systems, entitySystem);
-  syncCoordinatorEntityStateIfEnabled(coordinator, entitySystem, content.entities);
+  syncCoordinatorRuntimeViewState({
+    coordinator,
+    content,
+    automationSystem,
+    transformSystem,
+    entitySystem,
+    resourceStateAdapter,
+  });
 
   const coordinatorUpdateSystem: System = {
     id: 'progression-coordinator',
@@ -217,6 +229,14 @@ export function wireGameRuntime<
       commandQueue: runtime.getCommandQueue(),
       currentStep: hydrateOptions?.currentStep,
       applyRngSeed: hydrateOptions?.applyRngSeed,
+    });
+    syncCoordinatorRuntimeViewState({
+      coordinator,
+      content,
+      automationSystem,
+      transformSystem,
+      entitySystem,
+      resourceStateAdapter,
     });
     runtime.restoreAccumulatorBacklog(
       normalizeRuntimeBacklogSourceState(save.runtime),
@@ -419,6 +439,72 @@ function registerSystemIfDefined(
   }
   runtime.addSystem(system);
   systems.push(system);
+}
+
+function syncCoordinatorRuntimeViewState(options: Readonly<{
+  coordinator: ProgressionCoordinator;
+  content: NormalizedContentPack;
+  automationSystem: ReturnType<typeof createAutomationSystem> | undefined;
+  transformSystem: ReturnType<typeof createTransformSystem> | undefined;
+  entitySystem: EntitySystem | undefined;
+  resourceStateAdapter: ReturnType<typeof createResourceStateAdapter>;
+}>): void {
+  syncCoordinatorAutomationStateIfEnabled(
+    options.coordinator,
+    options.automationSystem,
+    options.content.automations,
+  );
+  syncCoordinatorTransformStateIfEnabled(
+    options.coordinator,
+    options.transformSystem,
+    options.content.transforms,
+    options.resourceStateAdapter,
+  );
+  syncCoordinatorEntityStateIfEnabled(
+    options.coordinator,
+    options.entitySystem,
+    options.content.entities,
+  );
+}
+
+function syncCoordinatorAutomationStateIfEnabled(
+  coordinator: ProgressionCoordinator,
+  automationSystem: ReturnType<typeof createAutomationSystem> | undefined,
+  automationDefinitions: NormalizedContentPack['automations'],
+): void {
+  if (!automationSystem) {
+    return;
+  }
+
+  const coordinatorState = coordinator.state as ProgressionAuthoritativeState & {
+    automations?: ProgressionAutomationState;
+  };
+  coordinatorState.automations = {
+    definitions: automationDefinitions,
+    state: automationSystem.getState(),
+    conditionContext: coordinator.getConditionContext(),
+  };
+}
+
+function syncCoordinatorTransformStateIfEnabled(
+  coordinator: ProgressionCoordinator,
+  transformSystem: ReturnType<typeof createTransformSystem> | undefined,
+  transformDefinitions: NormalizedContentPack['transforms'],
+  resourceStateAdapter: ReturnType<typeof createResourceStateAdapter>,
+): void {
+  if (!transformSystem) {
+    return;
+  }
+
+  const coordinatorState = coordinator.state as ProgressionAuthoritativeState & {
+    transforms?: ProgressionTransformState;
+  };
+  coordinatorState.transforms = {
+    definitions: transformDefinitions,
+    state: transformSystem.getState(),
+    resourceState: resourceStateAdapter,
+    conditionContext: coordinator.getConditionContext(),
+  };
 }
 
 function syncCoordinatorEntityStateIfEnabled(

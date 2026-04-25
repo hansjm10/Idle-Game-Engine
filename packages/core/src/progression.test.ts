@@ -465,7 +465,7 @@ describe('buildProgressionSnapshot', () => {
         description: 'Does the thing',
         unlocked: true,
         visible: false,
-        isEnabled: true,
+        enabled: true,
         lastTriggeredAt: 4700,
         cooldownRemainingMs: 300,
         isOnCooldown: true,

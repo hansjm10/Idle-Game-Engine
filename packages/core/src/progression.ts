@@ -138,7 +138,7 @@ export type AutomationView = Readonly<{
   description: string;
   unlocked: boolean;
   visible: boolean;
-  isEnabled: boolean;
+  enabled: boolean;
   lastTriggeredAt: number | null;
   cooldownRemainingMs: number;
   isOnCooldown: boolean;
@@ -793,7 +793,7 @@ function createAutomationViews(
         description: automation.description.default,
         unlocked,
         visible,
-        isEnabled: state?.enabled ?? automation.enabledByDefault ?? false,
+        enabled: state?.enabled ?? automation.enabledByDefault ?? false,
         lastTriggeredAt,
         cooldownRemainingMs,
         isOnCooldown: cooldownRemainingMs > 0,

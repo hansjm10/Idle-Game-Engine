@@ -66,6 +66,7 @@ Notes:
 - `game.hydrate(save)` accepts raw parsed saves (including older schema versions) and will throw if the save is from an earlier step than the current runtime. If the built-in scheduler is running, hydration pauses it and restores the running state when `hydrate(...)` returns or throws.
 - Facade actions return a `CommandResult` (`{ success: true }` or `{ success: false, error }`). Failures include `COMMAND_UNSUPPORTED` (no handler registered for this game instance) and `COMMAND_REJECTED` (queue refused the command, e.g. backpressure/max size). Some actions may also validate inputs (for example `INVALID_COLLECT_AMOUNT` / `UNKNOWN_RESOURCE` / `INVALID_PURCHASE_COUNT`).
 - `game.purchaseGenerator(id, count)` expects `count` to be a positive integer (values are floored; values < 1 return `INVALID_PURCHASE_COUNT`).
+- `game.getSnapshot()` returns UI-ready `automations` and `transforms` arrays when those systems are enabled. Automation entries include `id`, `displayName`, `description`, `visible`, `unlocked`, `enabled`, `lastTriggeredAt`, `cooldownRemainingMs`, and `isOnCooldown`. Transform entries include `id`, `displayName`, `description`, `mode`, `visible`, `unlocked`, `canAfford`, `cooldownRemainingMs`, `isOnCooldown`, resolved `inputs`/`outputs`, and batch timing fields such as `outstandingBatches` and `nextBatchReadyAtStep` for batch or mission transforms.
 
 ## Required fields by content type
 

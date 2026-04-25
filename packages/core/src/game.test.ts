@@ -40,6 +40,78 @@ function createTestTransform() {
   });
 }
 
+function createSnapshotViewContent() {
+  return createContentPack({
+    resources: [
+      createResourceDefinition('resource.energy', { startAmount: 20 }),
+      createResourceDefinition('resource.gold', { startAmount: 0 }),
+    ],
+    automations: [
+      createAutomation({
+        id: 'automation.cooldown',
+        name: { default: 'Cooldown Automation' },
+        description: { default: 'Shows cooldown state' },
+        targetType: 'collectResource',
+        targetId: 'resource.gold',
+        targetAmount: literalOne,
+        trigger: {
+          kind: 'resourceThreshold',
+          resourceId: 'resource.energy',
+          comparator: 'gte',
+          threshold: { kind: 'constant', value: 999 },
+        },
+        unlockCondition: { kind: 'always' },
+        enabledByDefault: true,
+        cooldown: { kind: 'constant', value: 400 },
+        order: 0,
+      }),
+      createAutomation({
+        id: 'automation.locked',
+        name: { default: 'Locked Automation' },
+        description: { default: 'Hidden until unlocked' },
+        targetType: 'collectResource',
+        targetId: 'resource.gold',
+        targetAmount: literalOne,
+        trigger: { kind: 'commandQueueEmpty' },
+        unlockCondition: { kind: 'never' },
+        enabledByDefault: false,
+        order: 1,
+      }),
+    ],
+    transforms: [
+      createTransform({
+        id: 'transform.batch',
+        name: { default: 'Batch Transform' },
+        description: { default: 'Converts energy later' },
+        mode: 'batch',
+        trigger: { kind: 'manual' },
+        inputs: [
+          { resourceId: 'resource.energy', amount: { kind: 'constant', value: 5 } },
+        ],
+        outputs: [
+          { resourceId: 'resource.gold', amount: { kind: 'constant', value: 2 } },
+        ],
+        duration: { kind: 'constant', value: 300 },
+        order: 0,
+      }),
+      createTransform({
+        id: 'transform.expensive',
+        name: { default: 'Expensive Transform' },
+        description: { default: 'Costs more than the player owns' },
+        mode: 'instant',
+        trigger: { kind: 'manual' },
+        inputs: [
+          { resourceId: 'resource.energy', amount: { kind: 'constant', value: 999 } },
+        ],
+        outputs: [
+          { resourceId: 'resource.gold', amount: { kind: 'constant', value: 1 } },
+        ],
+        order: 1,
+      }),
+    ],
+  });
+}
+
 function createTestContent() {
   return createContentPack({
     resources: [
@@ -97,6 +169,97 @@ describe('createGame', () => {
     expect(snapshot.step).toBe(0);
     expect(snapshot.publishedAt).toBe(1234);
     expect(snapshot.resources).toHaveLength(1);
+
+    game.stop();
+    vi.useRealTimers();
+  });
+
+  it('exposes automation and transform view state through snapshots', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(1000);
+
+    const game = createGame(createSnapshotViewContent(), { stepSizeMs: 100 });
+    if (!game.internals.automationSystem) {
+      throw new Error('Expected automation system to be enabled.');
+    }
+
+    game.internals.automationSystem.restoreState([
+      {
+        id: 'automation.cooldown',
+        enabled: true,
+        lastFiredStep: 0,
+        cooldownExpiresStep: 4,
+        unlocked: true,
+      },
+      {
+        id: 'automation.locked',
+        enabled: false,
+        lastFiredStep: null,
+        cooldownExpiresStep: 0,
+        unlocked: false,
+      },
+    ]);
+
+    expect(game.startTransform('transform.batch')).toEqual({ success: true });
+    game.tick(game.internals.runtime.getStepSizeMs());
+
+    const snapshot = game.getSnapshot();
+
+    expect(snapshot.automations).toEqual([
+      {
+        id: 'automation.cooldown',
+        displayName: 'Cooldown Automation',
+        description: 'Shows cooldown state',
+        unlocked: true,
+        visible: true,
+        enabled: true,
+        lastTriggeredAt: 900,
+        cooldownRemainingMs: 300,
+        isOnCooldown: true,
+      },
+      {
+        id: 'automation.locked',
+        displayName: 'Locked Automation',
+        description: 'Hidden until unlocked',
+        unlocked: false,
+        visible: false,
+        enabled: false,
+        lastTriggeredAt: null,
+        cooldownRemainingMs: 0,
+        isOnCooldown: false,
+      },
+    ]);
+
+    expect(snapshot.transforms).toEqual([
+      {
+        id: 'transform.batch',
+        displayName: 'Batch Transform',
+        description: 'Converts energy later',
+        mode: 'batch',
+        unlocked: true,
+        visible: true,
+        cooldownRemainingMs: 0,
+        isOnCooldown: false,
+        canAfford: true,
+        inputs: [{ resourceId: 'resource.energy', amount: 5 }],
+        outputs: [{ resourceId: 'resource.gold', amount: 2 }],
+        outstandingBatches: 1,
+        nextBatchReadyAtStep: 3,
+      },
+      {
+        id: 'transform.expensive',
+        displayName: 'Expensive Transform',
+        description: 'Costs more than the player owns',
+        mode: 'instant',
+        unlocked: true,
+        visible: true,
+        cooldownRemainingMs: 0,
+        isOnCooldown: false,
+        canAfford: false,
+        inputs: [{ resourceId: 'resource.energy', amount: 999 }],
+        outputs: [{ resourceId: 'resource.gold', amount: 1 }],
+      },
+    ]);
 
     game.stop();
     vi.useRealTimers();

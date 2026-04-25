@@ -586,14 +586,13 @@ export function createAutomationSystem(
           ? originalCooldownExpires + rebaseDelta
           : originalCooldownExpires;
 
-        // Shallow-merge to preserve any fields not present in older saves,
-        // and override with normalized/rebased values where needed.
-        automationStates.set(restored.id, {
-          ...existing,
-          ...restored,
-          lastFiredStep: rebasedLastFired,
-          cooldownExpiresStep: rebasedCooldownExpires,
-        });
+        existing.enabled = restored.enabled;
+        existing.unlocked = restored.unlocked;
+        existing.lastFiredStep = rebasedLastFired;
+        existing.cooldownExpiresStep = rebasedCooldownExpires;
+        if ('lastThresholdSatisfied' in restored) {
+          existing.lastThresholdSatisfied = restored.lastThresholdSatisfied;
+        }
       }
     },
 
