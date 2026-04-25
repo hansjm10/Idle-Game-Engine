@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="generator" content="Docusaurus v3.9.2">
 <title data-rh="true">Contributor Handbook | Idle Engine Docs</title><meta data-rh="true" name="viewport" content="width=device-width,initial-scale=1"><meta data-rh="true" name="twitter:card" content="summary_large_image"><meta data-rh="true" property="og:image" content="https://hansjm10.github.io/Idle-Game-Engine/img/docusaurus-social-card.jpg"><meta data-rh="true" name="twitter:image" content="https://hansjm10.github.io/Idle-Game-Engine/img/docusaurus-social-card.jpg"><meta data-rh="true" property="og:url" content="https://hansjm10.github.io/Idle-Game-Engine/contributor-handbook"><meta data-rh="true" property="og:locale" content="en"><meta data-rh="true" name="docusaurus_locale" content="en"><meta data-rh="true" name="docsearch:language" content="en"><meta data-rh="true" name="docusaurus_version" content="current"><meta data-rh="true" name="docusaurus_tag" content="docs-default-current"><meta data-rh="true" name="docsearch:version" content="current"><meta data-rh="true" name="docsearch:docusaurus_tag" content="docs-default-current"><meta data-rh="true" property="og:title" content="Contributor Handbook | Idle Engine Docs"><meta data-rh="true" name="description" content="This guide covers day-to-day development in the Idle Engine monorepo. Pair it"><meta data-rh="true" property="og:description" content="This guide covers day-to-day development in the Idle Engine monorepo. Pair it"><link data-rh="true" rel="icon" href="/Idle-Game-Engine/img/favicon.ico"><link data-rh="true" rel="canonical" href="https://hansjm10.github.io/Idle-Game-Engine/contributor-handbook"><link data-rh="true" rel="alternate" href="https://hansjm10.github.io/Idle-Game-Engine/contributor-handbook" hreflang="en"><link data-rh="true" rel="alternate" href="https://hansjm10.github.io/Idle-Game-Engine/contributor-handbook" hreflang="x-default"><script data-rh="true" type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Contributor Handbook","item":"https://hansjm10.github.io/Idle-Game-Engine/contributor-handbook"}]}</script><link rel="stylesheet" href="/Idle-Game-Engine/assets/css/styles.0ca8729c.css">
-<script src="/Idle-Game-Engine/assets/js/runtime~main.7ca9c5c1.js" defer="defer"></script>
+<script src="/Idle-Game-Engine/assets/js/runtime~main.fdd97c38.js" defer="defer"></script>
 <script src="/Idle-Game-Engine/assets/js/main.1672bcab.js" defer="defer"></script>
 </head>
 <body class="navigation-with-keyboard">
@@ -94,8 +94,17 @@ and esbuild aligned with <code>tsc</code>, avoids unused import churn, and docum
 for future contributors skimming barrel files.</p>
 <h3 class="anchor anchorTargetStickyNavbar_pQUT" id="regenerate-coverage-report">Regenerate coverage report<a href="#regenerate-coverage-report" class="hash-link" aria-label="Direct link to Regenerate coverage report" title="Direct link to Regenerate coverage report" translate="no">​</a></h3>
 <ul>
-<li class="">Run <code>pnpm coverage:md</code> from the repository root after changing tests. The command executes coverage-enabled Vitest suites for every package and rewrites <code>docs/coverage/index.md</code>.</li>
-<li class="">Commit the updated <code>docs/coverage/index.md</code> file alongside your code so CI stays in sync with the documentation site.</li>
+<li class="">Coverage report refreshes are deliberate maintenance, not routine local
+verification for unrelated fixes. Use focused tests, lint, and typecheck for
+normal development.</li>
+<li class="">Prefer the manual <strong>Coverage Report</strong> GitHub Actions workflow when the page
+needs a refresh. Run it from the branch that should receive the update; it
+executes <code>pnpm coverage:md</code>, uploads <code>docs/coverage/index.md</code>, and includes a
+patch plus instructions in the workflow summary.</li>
+<li class="">Commit the updated <code>docs/coverage/index.md</code> file when applying the workflow
+artifact so CI stays in sync with the documentation site.</li>
+<li class="">If the workflow is unavailable and you are explicitly preparing a coverage
+refresh, run <code>nvm use</code> and then <code>pnpm coverage:md</code> from the repository root.</li>
 <li class="">The generated page surfaces under <strong>Diagnostics &amp; Quality → Coverage Report</strong> in the Docusaurus sidebar.</li>
 </ul>
 <h2 class="anchor anchorTargetStickyNavbar_pQUT" id="documentation-contributions">Documentation contributions<a href="#documentation-contributions" class="hash-link" aria-label="Direct link to Documentation contributions" title="Direct link to Documentation contributions" translate="no">​</a></h2>
