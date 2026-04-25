@@ -204,4 +204,3 @@ The test suite (`packages/renderer-webgpu/src/webgpu-renderer.test.ts`) currentl
 | Date       | Author | Change Summary |
 |------------|--------|----------------|
 | 2026-01-21 | Codex (AI) | Initial draft for Issue 809 |
-

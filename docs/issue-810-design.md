@@ -201,4 +201,3 @@ Add a renderer bundling step to `@idle-engine/shell-desktop`’s build:
 | Date       | Author          | Change Summary |
 |------------|-----------------|----------------|
 | 2026-01-24 | Ralph (AI agent) | Initial draft for issue-810 |
-

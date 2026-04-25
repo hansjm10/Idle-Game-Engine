@@ -20,6 +20,12 @@ Vitest drives unit tests with shared config in `@idle-engine/config-vitest`; add
 
 Always leave the JSON intact and avoid console noise that could corrupt the payload, and note any remaining coverage gaps in the PR description.
 
+### Coverage report page (docs)
+- Do not run `pnpm coverage:md` as routine local verification for unrelated fixes; prefer focused tests, lint, and typecheck.
+- When the coverage report page must be refreshed, prefer the manual **Coverage Report** GitHub Actions workflow. It uploads the regenerated `docs/coverage/index.md` and a patch for review.
+- If applying a generated refresh, commit the updated `docs/coverage/index.md` file. The folder `docs/coverage/` is ignored by default, but `index.md` is allow‑listed in `.gitignore` and must be tracked so the Docusaurus build succeeds.
+- Do not edit `docs/coverage/index.md` manually—regenerate it via the workflow artifact or `pnpm coverage:md` when explicitly preparing a coverage refresh.
+
 ## Commit & Pull Request Guidelines
 History favours Conventional Commits such as `chore: add vitest llm reporter` and `feat: define runtime command payloads`, occasionally supplemented by merge commits like `Integrate runtime command queue... (#52)`. Aim for `type(scope?): concise summary`, link issues or PR numbers in parentheses, and keep imperative voice. PRs should outline the problem, the solution, and test commands executed, and note any follow-up work. Ensure Lefthook is installed (`pnpm prepare`) so pre-commit lint, test, and build checks run before pushing.
 

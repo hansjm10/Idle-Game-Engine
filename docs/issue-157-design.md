@@ -79,7 +79,7 @@ This design adds a fast, release-gating schema compatibility check for `@idle-en
       - Build a `FeatureGateMap` where every module in `FEATURE_GATES` is treated as “in use”.
       - Assert `resolveFeatureViolations(RUNTIME_VERSION, allEnabledMap)` returns `[]`.
       - This directly enforces that `FEATURE_GATES[].introducedIn` never points to a future runtime release.
-    2. **Schema validates a compat pack under current runtime**
+    1. **Schema validates a compat pack under current runtime**
       - Construct a minimal pack object that includes at least one entry in each gated module array:
         - `automations`, `entities`, `transforms`, `runtimeEvents`, `prestigeLayers`
       - Ensure all cross references are self-contained (resources referenced by generators/transforms exist; prestige layers include the required `${layerId}-prestige-count` resource).
