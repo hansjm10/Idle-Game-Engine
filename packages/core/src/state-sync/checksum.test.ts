@@ -128,6 +128,33 @@ describe('computeStateChecksum', () => {
 
     expect(computeStateChecksum(snapshotA)).not.toBe(computeStateChecksum(changed));
   });
+
+  it('canonicalizes equivalent optional runtime backlog fields', () => {
+    const accumulatorOnly: GameStateSnapshot = {
+      ...snapshotA,
+      runtime: {
+        ...snapshotA.runtime,
+        accumulatorBacklogMs: 75,
+        creditedBacklogMs: 25,
+      },
+    };
+    const sourceAware: GameStateSnapshot = {
+      ...snapshotA,
+      runtime: {
+        ...snapshotA.runtime,
+        accumulatorBacklogMs: 75,
+        hostFrameBacklogMs: 50,
+        creditedBacklogMs: 25,
+      },
+    };
+
+    expect(computeStateChecksum(accumulatorOnly)).toBe(
+      computeStateChecksum(sourceAware),
+    );
+    expect(computePartialChecksum(accumulatorOnly, ['runtime'])).toBe(
+      computePartialChecksum(sourceAware, ['runtime']),
+    );
+  });
 });
 
 describe('computePartialChecksum', () => {

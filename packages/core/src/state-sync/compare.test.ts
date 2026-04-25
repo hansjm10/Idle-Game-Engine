@@ -219,6 +219,63 @@ describe('compareStates', () => {
     ).toEqual({ local: 1, remote: 2 });
   });
 
+  it.each([
+    {
+      label: 'omitted zero backlog fields',
+      localRuntime: {},
+      remoteRuntime: {
+        accumulatorBacklogMs: 0,
+        hostFrameBacklogMs: 0,
+        creditedBacklogMs: 0,
+      },
+    },
+    {
+      label: 'legacy accumulator-only backlog',
+      localRuntime: {
+        accumulatorBacklogMs: 75,
+      },
+      remoteRuntime: {
+        accumulatorBacklogMs: 75,
+        hostFrameBacklogMs: 75,
+        creditedBacklogMs: 0,
+      },
+    },
+    {
+      label: 'legacy accumulator backlog with credited source',
+      localRuntime: {
+        accumulatorBacklogMs: 75,
+        creditedBacklogMs: 25,
+      },
+      remoteRuntime: {
+        accumulatorBacklogMs: 75,
+        hostFrameBacklogMs: 50,
+        creditedBacklogMs: 25,
+      },
+    },
+  ])('treats $label as equivalent runtime backlog', ({
+    localRuntime,
+    remoteRuntime,
+  }) => {
+    const snapshot = createSnapshot();
+    const local: GameStateSnapshot = {
+      ...snapshot,
+      runtime: {
+        ...snapshot.runtime,
+        ...localRuntime,
+      },
+    };
+    const remote: GameStateSnapshot = {
+      ...snapshot,
+      runtime: {
+        ...snapshot.runtime,
+        ...remoteRuntime,
+      },
+    };
+
+    expect(compareStates(local, remote)).toEqual({ identical: true });
+    expect(hasStateDiverged(local, remote)).toBe(false);
+  });
+
   it('reports automation, transform, and command queue differences', () => {
     const local = createSnapshot();
     const updatedAutomation: SerializedAutomationState[] = [
