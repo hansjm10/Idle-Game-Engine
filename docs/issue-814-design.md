@@ -221,4 +221,3 @@ sidebar_position: 99
 | Date       | Author | Change Summary |
 |------------|--------|----------------|
 | 2026-01-24 | Codex (AI) | Initial draft for Issue 814 |
-

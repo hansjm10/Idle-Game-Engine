@@ -121,7 +121,7 @@ This feature changes the **input event workflow** so that pointer/UI interaction
 | sim.running.input.enqueued | None (postMessage has no acknowledgment). | sim.running.input.idle | No-op. |
 | sim.running.input.dropped | None (event already dropped). | sim.running.input.idle | No-op. |
 | sim.running.input.rejected | None (event already rejected). | sim.running.input.idle | No-op. |
-| sim.running.input.* | `webContents.send(frame|simStatus)` throws (renderer not ready/crashed). | sim.running.input.* | Log error; continue sim tick loop; renderer recovery is via reload. |
+| sim.running.input.* | `webContents.send` throws for `frame` or `simStatus` (renderer not ready/crashed). | sim.running.input.* | Log error; continue sim tick loop; renderer recovery is via reload. |
 | sim.running.input.* | Worker becomes unresponsive (no `frame`/`ready`/`error` messages arrive). | sim.running.input.* | No automatic transition; renderer appears stalled; operator recovery is explicit restart (reload). |
 | sim.running.input.* | Worker exits with code `0`. | sim.stopped | Log stop; send `simStatus` (stopped); terminate worker; ignore further input until restart. |
 | sim.running.input.* | Worker exits non-zero OR emits `error`/`messageerror` OR sends `kind:'error'`. | sim.crashed | Log crash; send `simStatus` (crashed); terminate worker; ignore further input until restart. |
@@ -401,14 +401,14 @@ The `INPUT_EVENT` command is only allowed in the player priority lane so that UI
 3. **Parallel work**: Yes; after the IPC surface exists, renderer capture (T3) and main mapping (T4) can proceed in parallel; sim-runtime wiring (T5) can proceed after core types land (T1).
 
 ### Ordering Gates
-7. **Must be done first**: Define shared types + `INPUT_EVENT` command type in `@idle-engine/core` (T1).
-8. **Must be done last**: Integration checks + coverage/docs regeneration (T6).
-9. **Circular dependencies**: None in this breakdown; shared input-event types live in `@idle-engine/core` to avoid core↔shell cycles.
+1. **Must be done first**: Define shared types + `INPUT_EVENT` command type in `@idle-engine/core` (T1).
+2. **Must be done last**: Integration checks + coverage/docs regeneration (T6).
+3. **Circular dependencies**: None in this breakdown; shared input-event types live in `@idle-engine/core` to avoid core↔shell cycles.
 
 ### Infrastructure Gates
-10. **Build/config changes**: None expected beyond updating TypeScript sources and checked-in `dist/` outputs via existing `pnpm build` scripts.
-11. **New dependencies**: None.
-12. **Env vars/secrets**: None required; optional dev-only `IDLE_ENGINE_ENABLE_UNSAFE_WEBGPU=1` remains unchanged.
+1. **Build/config changes**: None expected beyond updating TypeScript sources and checked-in `dist/` outputs via existing `pnpm build` scripts.
+2. **New dependencies**: None.
+3. **Env vars/secrets**: None required; optional dev-only `IDLE_ENGINE_ENABLE_UNSAFE_WEBGPU=1` remains unchanged.
 
 ### Task Dependency Graph
 ```
