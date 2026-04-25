@@ -23,6 +23,7 @@ import type { SerializedPRDRegistryState } from '../rng.js';
 import type { SerializedTransformState } from '../transform-system.js';
 import type { GameStateSnapshot } from './types.js';
 
+import { normalizeRuntimeBacklogFields } from '../runtime-backlog.js';
 import { computeStateChecksum } from './checksum.js';
 
 type Mutable<T> = {
@@ -86,6 +87,9 @@ export interface StateDiff {
 export interface RuntimeDiff {
   readonly step?: ValueDiff<number>;
   readonly stepSizeMs?: ValueDiff<number>;
+  readonly accumulatorBacklogMs?: ValueDiff<number | undefined>;
+  readonly hostFrameBacklogMs?: ValueDiff<number | undefined>;
+  readonly creditedBacklogMs?: ValueDiff<number | undefined>;
   readonly rngSeed?: ValueDiff<number | undefined>;
   readonly rngState?: ValueDiff<number | undefined>;
 }
@@ -350,11 +354,34 @@ const compareRuntime = (
 ): RuntimeDiff | undefined => {
   const diff: Mutable<RuntimeDiff> = {};
   let hasDiff = false;
+  const localBacklog = normalizeRuntimeBacklogFields(local);
+  const remoteBacklog = normalizeRuntimeBacklogFields(remote);
 
   hasDiff = recordValueDiff(diff, 'step', local.step, remote.step) || hasDiff;
   hasDiff =
     recordValueDiff(diff, 'stepSizeMs', local.stepSizeMs, remote.stepSizeMs) ||
     hasDiff;
+  hasDiff =
+    recordValueDiff(
+      diff,
+      'accumulatorBacklogMs',
+      localBacklog.accumulatorBacklogMs,
+      remoteBacklog.accumulatorBacklogMs,
+    ) || hasDiff;
+  hasDiff =
+    recordValueDiff(
+      diff,
+      'hostFrameBacklogMs',
+      localBacklog.hostFrameBacklogMs,
+      remoteBacklog.hostFrameBacklogMs,
+    ) || hasDiff;
+  hasDiff =
+    recordValueDiff(
+      diff,
+      'creditedBacklogMs',
+      localBacklog.creditedBacklogMs,
+      remoteBacklog.creditedBacklogMs,
+    ) || hasDiff;
   hasDiff =
     recordValueDiff(diff, 'rngSeed', local.rngSeed, remote.rngSeed) || hasDiff;
   hasDiff =

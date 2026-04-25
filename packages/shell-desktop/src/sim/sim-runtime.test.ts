@@ -5,7 +5,11 @@ import {
   sampleContentSummary,
 } from '@idle-engine/content-sample';
 import { CommandPriority, IdleEngineRuntime, RUNTIME_COMMAND_TYPES } from '@idle-engine/core';
-import { createSimRuntime, loadSerializedSimRuntimeState } from './sim-runtime.js';
+import {
+  createSimRuntime,
+  loadSerializedSimRuntimeState,
+  type SerializedSimRuntimeState,
+} from './sim-runtime.js';
 import { SHELL_CONTROL_EVENT_COMMAND_TYPE } from '../ipc.js';
 import type {
   Command,
@@ -68,6 +72,30 @@ const energyFillWidth = (frame: RenderCommandBuffer | undefined): number | undef
       draw.height === 10,
   );
   return fills?.at(-1)?.width;
+};
+
+const getRuntimeBacklog = (
+  state: SerializedSimRuntimeState,
+): SerializedSimRuntimeState['gameState']['runtime'] => state.gameState.runtime;
+
+const withRuntimeBacklog = (
+  state: SerializedSimRuntimeState,
+  backlog: { readonly hostFrameMs?: number; readonly creditedMs?: number },
+): SerializedSimRuntimeState => {
+  const hostFrameBacklogMs = backlog.hostFrameMs ?? 0;
+  const creditedBacklogMs = backlog.creditedMs ?? 0;
+  return {
+    ...state,
+    gameState: {
+      ...state.gameState,
+      runtime: {
+        ...state.gameState.runtime,
+        accumulatorBacklogMs: hostFrameBacklogMs + creditedBacklogMs,
+        hostFrameBacklogMs,
+        creditedBacklogMs,
+      },
+    },
+  };
 };
 
 describe('shell-desktop sim runtime', () => {
@@ -244,7 +272,7 @@ describe('shell-desktop sim runtime', () => {
       canHydrate: true,
       supportsOfflineCatchup: true,
       saveFileStem: 'sample-pack',
-      saveSchemaVersion: 1,
+      saveSchemaVersion: 2,
       contentHash: sampleContentArtifactHash,
       contentVersion: sampleContentSummary.version,
     });
@@ -276,8 +304,8 @@ describe('shell-desktop sim runtime', () => {
     sim.tick(187);
 
     const savedState = loadSerializedSimRuntimeState(sim.serialize?.());
-    expect(savedState.accumulatorBacklogMs).toBe(0);
-    expect(savedState.offlineCatchupDrainBudgetMs).toBe(0);
+    expect(getRuntimeBacklog(savedState).accumulatorBacklogMs).toBe(0);
+    expect(getRuntimeBacklog(savedState).creditedBacklogMs).toBe(0);
   });
 
   it('renders the last completed frame after restoring serialized state', () => {
@@ -317,61 +345,33 @@ describe('shell-desktop sim runtime', () => {
     expect(energyFillWidth(frame)).toBe(40);
   });
 
-  it('defaults missing scheduler state when loading legacy serialized saves', () => {
+  it('rejects legacy serialized save schema versions', () => {
     const sim = createSimRuntime({ stepSizeMs: 10, maxStepsPerFrame: 50 });
     const savedState = loadSerializedSimRuntimeState(sim.serialize?.());
-    const {
-      accumulatorBacklogMs: _accumulatorBacklogMs,
-      offlineCatchupDrainBudgetMs: _offlineCatchupDrainBudgetMs,
-      ...legacyState
-    } = savedState;
 
-    expect(loadSerializedSimRuntimeState(legacyState)).toEqual({
+    expect(() => loadSerializedSimRuntimeState({
       ...savedState,
-      accumulatorBacklogMs: 0,
-      offlineCatchupDrainBudgetMs: 0,
-    });
+      schemaVersion: 1,
+    })).toThrow(/schema version/);
   });
 
   it('rejects serialized saves with missing or malformed game state data', () => {
     expect(() => loadSerializedSimRuntimeState({
-      schemaVersion: 1,
+      schemaVersion: 2,
       nextStep: 4,
     })).toThrow(/gameState object/);
 
     expect(() => loadSerializedSimRuntimeState({
-      schemaVersion: 1,
+      schemaVersion: 2,
       nextStep: -1,
       gameState: { runtime: { step: 4 } },
     })).toThrow(/nextStep/);
 
     expect(() => loadSerializedSimRuntimeState({
-      schemaVersion: 1,
+      schemaVersion: 2,
       nextStep: 4,
       gameState: { runtime: { step: -1 } },
     })).toThrow(/gameState\.runtime\.step/);
-  });
-
-  it('rejects malformed scheduler backlog state in serialized saves', () => {
-    const sim = createSimRuntime({ stepSizeMs: 10, maxStepsPerFrame: 50 });
-    const savedState = loadSerializedSimRuntimeState(sim.serialize?.());
-
-    expect(() => loadSerializedSimRuntimeState({
-      ...savedState,
-      accumulatorBacklogMs: -1,
-    })).toThrow(/accumulatorBacklogMs/);
-
-    expect(() => loadSerializedSimRuntimeState({
-      ...savedState,
-      accumulatorBacklogMs: 10,
-      offlineCatchupDrainBudgetMs: -1,
-    })).toThrow(/offlineCatchupDrainBudgetMs/);
-
-    expect(() => loadSerializedSimRuntimeState({
-      ...savedState,
-      accumulatorBacklogMs: 10,
-      offlineCatchupDrainBudgetMs: 20,
-    })).toThrow(/offlineCatchupDrainBudgetMs/);
   });
 
   it('restores pending commands and fractional accumulator backlog from serialized saves', () => {
@@ -381,8 +381,9 @@ describe('shell-desktop sim runtime', () => {
     source.enqueueCommands([collectEnergyCommand(source.getNextStep(), 2)]);
 
     const savedState = loadSerializedSimRuntimeState(source.serialize?.());
-    expect(savedState.accumulatorBacklogMs).toBe(5);
-    expect(savedState.offlineCatchupDrainBudgetMs).toBe(0);
+    expect(getRuntimeBacklog(savedState).accumulatorBacklogMs).toBe(5);
+    expect(getRuntimeBacklog(savedState).hostFrameBacklogMs).toBe(5);
+    expect(getRuntimeBacklog(savedState).creditedBacklogMs).toBe(0);
     expect(savedState.gameState.commandQueue.entries).toHaveLength(1);
 
     const expectedNextTick = source.tick(5);
@@ -398,10 +399,10 @@ describe('shell-desktop sim runtime', () => {
 
     const restoredStateAfterTick = loadSerializedSimRuntimeState(restored.serialize?.());
     expect(restoredStateAfterTick.nextStep).toBe(expectedStateAfterTick.nextStep);
-    expect(restoredStateAfterTick.accumulatorBacklogMs).toBe(
-      expectedStateAfterTick.accumulatorBacklogMs,
+    expect(getRuntimeBacklog(restoredStateAfterTick).accumulatorBacklogMs).toBe(
+      getRuntimeBacklog(expectedStateAfterTick).accumulatorBacklogMs,
     );
-    expect(restoredStateAfterTick.offlineCatchupDrainBudgetMs).toBe(0);
+    expect(getRuntimeBacklog(restoredStateAfterTick).creditedBacklogMs).toBe(0);
     expect(restoredStateAfterTick.gameState.resources).toEqual(
       expectedStateAfterTick.gameState.resources,
     );
@@ -457,7 +458,7 @@ describe('shell-desktop sim runtime', () => {
 
     const savedState = loadSerializedSimRuntimeState(sim.serialize?.());
     expect(savedState.nextStep).toBe(1);
-    expect(savedState.accumulatorBacklogMs).toBe(0);
+    expect(getRuntimeBacklog(savedState).accumulatorBacklogMs).toBe(0);
   });
 
   it('drains offline catch-up backlog in bounded chunks', () => {
@@ -490,8 +491,8 @@ describe('shell-desktop sim runtime', () => {
 
       const savedState = loadSerializedSimRuntimeState(sim.serialize?.());
       expect(savedState.nextStep).toBe(4);
-      expect(savedState.accumulatorBacklogMs).toBe(20);
-      expect(savedState.offlineCatchupDrainBudgetMs).toBe(20);
+      expect(getRuntimeBacklog(savedState).accumulatorBacklogMs).toBe(20);
+      expect(getRuntimeBacklog(savedState).creditedBacklogMs).toBe(20);
 
       const continued = sim.tick(0);
       expect(continued.frames).toHaveLength(2);
@@ -521,27 +522,30 @@ describe('shell-desktop sim runtime', () => {
     expect(firstTick.nextStep).toBe(4);
 
     const stateAfterFirstTick = loadSerializedSimRuntimeState(sim.serialize?.());
-    expect(stateAfterFirstTick.accumulatorBacklogMs).toBe(40);
-    expect(stateAfterFirstTick.offlineCatchupDrainBudgetMs).toBe(30);
+    expect(getRuntimeBacklog(stateAfterFirstTick).accumulatorBacklogMs).toBe(40);
+    expect(getRuntimeBacklog(stateAfterFirstTick).hostFrameBacklogMs).toBe(10);
+    expect(getRuntimeBacklog(stateAfterFirstTick).creditedBacklogMs).toBe(30);
 
     const secondTick = sim.tick(0);
     expect(secondTick.frames).toHaveLength(2);
     expect(secondTick.nextStep).toBe(6);
 
     const stateAfterSecondTick = loadSerializedSimRuntimeState(sim.serialize?.());
-    expect(stateAfterSecondTick.accumulatorBacklogMs).toBe(20);
-    expect(stateAfterSecondTick.offlineCatchupDrainBudgetMs).toBe(10);
+    expect(getRuntimeBacklog(stateAfterSecondTick).accumulatorBacklogMs).toBe(20);
+    expect(getRuntimeBacklog(stateAfterSecondTick).hostFrameBacklogMs).toBe(10);
+    expect(getRuntimeBacklog(stateAfterSecondTick).creditedBacklogMs).toBe(10);
 
     const thirdTick = sim.tick(0);
     expect(thirdTick.frames).toHaveLength(1);
     expect(thirdTick.nextStep).toBe(7);
 
     const drainedState = loadSerializedSimRuntimeState(sim.serialize?.());
-    expect(drainedState.accumulatorBacklogMs).toBe(10);
-    expect(drainedState.offlineCatchupDrainBudgetMs).toBe(0);
+    expect(getRuntimeBacklog(drainedState).accumulatorBacklogMs).toBe(10);
+    expect(getRuntimeBacklog(drainedState).hostFrameBacklogMs).toBe(10);
+    expect(getRuntimeBacklog(drainedState).creditedBacklogMs).toBe(0);
   });
 
-  it('restores offline catch-up drain budget for zero-delta backlog drains', () => {
+  it('restores credited offline backlog for zero-delta backlog drains', () => {
     const sim = createSimRuntime({ stepSizeMs: 10, maxStepsPerFrame: 2 });
 
     sim.enqueueCommands([
@@ -557,8 +561,8 @@ describe('shell-desktop sim runtime', () => {
     sim.tick(10);
 
     const savedState = loadSerializedSimRuntimeState(sim.serialize?.());
-    expect(savedState.accumulatorBacklogMs).toBe(20);
-    expect(savedState.offlineCatchupDrainBudgetMs).toBe(20);
+    expect(getRuntimeBacklog(savedState).accumulatorBacklogMs).toBe(20);
+    expect(getRuntimeBacklog(savedState).creditedBacklogMs).toBe(20);
 
     const restored = createSimRuntime({
       stepSizeMs: 10,
@@ -572,18 +576,19 @@ describe('shell-desktop sim runtime', () => {
     expect(continued.nextStep).toBe(6);
 
     const drainedState = loadSerializedSimRuntimeState(restored.serialize?.());
-    expect(drainedState.accumulatorBacklogMs).toBe(0);
-    expect(drainedState.offlineCatchupDrainBudgetMs).toBe(0);
+    expect(getRuntimeBacklog(drainedState).accumulatorBacklogMs).toBe(0);
+    expect(getRuntimeBacklog(drainedState).creditedBacklogMs).toBe(0);
   });
 
-  it('does not infer offline drain budget from ordinary restored accumulator backlog', () => {
+  it('does not infer credited backlog from ordinary restored accumulator backlog', () => {
     const sim = createSimRuntime({ stepSizeMs: 10, maxStepsPerFrame: 2 });
 
     sim.tick(25);
 
     const savedState = loadSerializedSimRuntimeState(sim.serialize?.());
-    expect(savedState.accumulatorBacklogMs).toBe(5);
-    expect(savedState.offlineCatchupDrainBudgetMs).toBe(0);
+    expect(getRuntimeBacklog(savedState).accumulatorBacklogMs).toBe(5);
+    expect(getRuntimeBacklog(savedState).hostFrameBacklogMs).toBe(5);
+    expect(getRuntimeBacklog(savedState).creditedBacklogMs).toBe(0);
 
     const restored = createSimRuntime({
       stepSizeMs: 10,
@@ -595,21 +600,21 @@ describe('shell-desktop sim runtime', () => {
     expect(zeroDelta.frames).toHaveLength(0);
 
     const restoredState = loadSerializedSimRuntimeState(restored.serialize?.());
-    expect(restoredState.accumulatorBacklogMs).toBe(5);
-    expect(restoredState.offlineCatchupDrainBudgetMs).toBe(0);
+    expect(getRuntimeBacklog(restoredState).accumulatorBacklogMs).toBe(5);
+    expect(getRuntimeBacklog(restoredState).hostFrameBacklogMs).toBe(5);
+    expect(getRuntimeBacklog(restoredState).creditedBacklogMs).toBe(0);
   });
 
-  it('limits zero-delta offline drains to the remaining restored catch-up budget', () => {
+  it('limits zero-delta offline drains to the remaining restored credited backlog', () => {
     const source = createSimRuntime({ stepSizeMs: 10, maxStepsPerFrame: 2 });
     const savedState = loadSerializedSimRuntimeState(source.serialize?.());
     const restored = createSimRuntime({
       stepSizeMs: 10,
       maxStepsPerFrame: 2,
-      initialSerializedState: {
-        ...savedState,
-        accumulatorBacklogMs: 100,
-        offlineCatchupDrainBudgetMs: 10,
-      },
+      initialSerializedState: withRuntimeBacklog(savedState, {
+        hostFrameMs: 90,
+        creditedMs: 10,
+      }),
     });
 
     const firstTick = restored.tick(0);
@@ -617,29 +622,29 @@ describe('shell-desktop sim runtime', () => {
     expect(firstTick.nextStep).toBe(1);
 
     const stateAfterFirstTick = loadSerializedSimRuntimeState(restored.serialize?.());
-    expect(stateAfterFirstTick.accumulatorBacklogMs).toBe(90);
-    expect(stateAfterFirstTick.offlineCatchupDrainBudgetMs).toBe(0);
+    expect(getRuntimeBacklog(stateAfterFirstTick).accumulatorBacklogMs).toBe(90);
+    expect(getRuntimeBacklog(stateAfterFirstTick).hostFrameBacklogMs).toBe(90);
+    expect(getRuntimeBacklog(stateAfterFirstTick).creditedBacklogMs).toBe(0);
 
     const secondTick = restored.tick(0);
     expect(secondTick.frames).toHaveLength(0);
     expect(secondTick.nextStep).toBe(1);
 
     const stateAfterSecondTick = loadSerializedSimRuntimeState(restored.serialize?.());
-    expect(stateAfterSecondTick.accumulatorBacklogMs).toBe(90);
-    expect(stateAfterSecondTick.offlineCatchupDrainBudgetMs).toBe(0);
+    expect(getRuntimeBacklog(stateAfterSecondTick).accumulatorBacklogMs).toBe(90);
+    expect(getRuntimeBacklog(stateAfterSecondTick).hostFrameBacklogMs).toBe(90);
+    expect(getRuntimeBacklog(stateAfterSecondTick).creditedBacklogMs).toBe(0);
   });
 
-  it('clears offline drain budget consumed by positive frame ticks', () => {
+  it('clears credited backlog consumed by positive frame ticks', () => {
     const source = createSimRuntime({ stepSizeMs: 10, maxStepsPerFrame: 2 });
     const savedState = loadSerializedSimRuntimeState(source.serialize?.());
     const restored = createSimRuntime({
       stepSizeMs: 10,
       maxStepsPerFrame: 2,
-      initialSerializedState: {
-        ...savedState,
-        accumulatorBacklogMs: 100,
-        offlineCatchupDrainBudgetMs: 10,
-      },
+      initialSerializedState: withRuntimeBacklog(savedState, {
+        creditedMs: 10,
+      }),
     });
 
     const positiveTick = restored.tick(10);
@@ -647,16 +652,16 @@ describe('shell-desktop sim runtime', () => {
     expect(positiveTick.nextStep).toBe(2);
 
     const stateAfterPositiveTick = loadSerializedSimRuntimeState(restored.serialize?.());
-    expect(stateAfterPositiveTick.accumulatorBacklogMs).toBe(90);
-    expect(stateAfterPositiveTick.offlineCatchupDrainBudgetMs).toBe(0);
+    expect(getRuntimeBacklog(stateAfterPositiveTick).accumulatorBacklogMs).toBe(0);
+    expect(getRuntimeBacklog(stateAfterPositiveTick).creditedBacklogMs).toBe(0);
 
     const zeroDeltaTick = restored.tick(0);
     expect(zeroDeltaTick.frames).toHaveLength(0);
     expect(zeroDeltaTick.nextStep).toBe(2);
 
     const stateAfterZeroDeltaTick = loadSerializedSimRuntimeState(restored.serialize?.());
-    expect(stateAfterZeroDeltaTick.accumulatorBacklogMs).toBe(90);
-    expect(stateAfterZeroDeltaTick.offlineCatchupDrainBudgetMs).toBe(0);
+    expect(getRuntimeBacklog(stateAfterZeroDeltaTick).accumulatorBacklogMs).toBe(0);
+    expect(getRuntimeBacklog(stateAfterZeroDeltaTick).creditedBacklogMs).toBe(0);
   });
 
   it('does not drain a one-hour offline catch-up payload in one tick', () => {
@@ -680,7 +685,7 @@ describe('shell-desktop sim runtime', () => {
 
     const savedState = loadSerializedSimRuntimeState(sim.serialize?.());
     expect(savedState.nextStep).toBe(100);
-    expect(savedState.accumulatorBacklogMs).toBeGreaterThan(0);
+    expect(getRuntimeBacklog(savedState).creditedBacklogMs).toBeGreaterThan(0);
   });
 
   it('respects offline catch-up maxElapsedMs and maxSteps limits', () => {

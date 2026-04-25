@@ -1,4 +1,5 @@
 import type { GameStateSnapshot } from './types.js';
+import { normalizeRuntimeBacklogFields } from '../runtime-backlog.js';
 
 const FNV_OFFSET_BASIS_32 = 0x811c9dc5;
 const FNV_PRIME_32 = 0x01000193;
@@ -33,6 +34,15 @@ function stringifyDeterministic(value: unknown): string {
   return JSON.stringify(normalizeForDeterministicJson(value));
 }
 
+function normalizeRuntimeForChecksum(
+  runtime: GameStateSnapshot['runtime'],
+): GameStateSnapshot['runtime'] {
+  return {
+    ...runtime,
+    ...normalizeRuntimeBacklogFields(runtime),
+  };
+}
+
 /**
  * Compute FNV-1a hash of a Uint8Array.
  * Returns a 32-bit hash as an 8-character hex string.
@@ -49,7 +59,8 @@ export function fnv1a32(data: Uint8Array): string {
 /**
  * Compute a deterministic checksum for a game state snapshot.
  *
- * The checksum excludes `capturedAt` because it is diagnostic only.
+ * The checksum excludes `capturedAt` because it is diagnostic only, and
+ * canonicalizes equivalent optional runtime backlog field shapes.
  *
  * @example
  * ```typescript
@@ -62,7 +73,7 @@ export function fnv1a32(data: Uint8Array): string {
 export function computeStateChecksum(snapshot: GameStateSnapshot): string {
   const checksumSnapshot = {
     version: snapshot.version,
-    runtime: snapshot.runtime,
+    runtime: normalizeRuntimeForChecksum(snapshot.runtime),
     resources: snapshot.resources,
     progression: snapshot.progression,
     automation: snapshot.automation,
@@ -90,7 +101,10 @@ export function computePartialChecksum<K extends keyof GameStateSnapshot>(
 ): string {
   const partial: Partial<GameStateSnapshot> = {};
   for (const key of keys) {
-    partial[key] = snapshot[key];
+    partial[key] =
+      key === 'runtime'
+        ? (normalizeRuntimeForChecksum(snapshot.runtime) as GameStateSnapshot[K])
+        : snapshot[key];
   }
   const json = stringifyDeterministic(partial);
   return fnv1a32(utf8Encoder.encode(json));

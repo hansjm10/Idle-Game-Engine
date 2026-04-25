@@ -24,6 +24,15 @@ export interface GameStateSnapshot {
     /** Step duration in milliseconds. */
     readonly stepSizeMs: number;
 
+    /** Total fixed-step backlog still owned by the runtime. */
+    readonly accumulatorBacklogMs?: number;
+
+    /** Backlog accumulated from host-frame delta time. */
+    readonly hostFrameBacklogMs?: number;
+
+    /** Backlog credited by offline catch-up or equivalent runtime commands. */
+    readonly creditedBacklogMs?: number;
+
     /** Original RNG seed captured from runtime, not the current RNG position. */
     readonly rngSeed: number | undefined;
 

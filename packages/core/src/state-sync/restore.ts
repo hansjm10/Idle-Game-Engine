@@ -10,6 +10,7 @@ import {
   type SerializedResourceState,
 } from '../resource-state.js';
 import type { GameStateSnapshot } from './types.js';
+import { normalizeRuntimeBacklogFields } from '../runtime-backlog.js';
 
 export interface RuntimeLike {
   getCurrentStep(): number;
@@ -30,6 +31,17 @@ const resolveRuntimeFactory = (): RuntimeFactory => {
     );
   }
   return runtimeFactory;
+};
+
+const normalizeSnapshotBacklog = (
+  runtime: GameStateSnapshot['runtime'],
+): NonNullable<IdleEngineRuntimeOptions['initialAccumulatorBacklog']> => {
+  const backlog = normalizeRuntimeBacklogFields(runtime);
+
+  return {
+    hostFrameMs: backlog.hostFrameBacklogMs,
+    creditedMs: backlog.creditedBacklogMs,
+  };
 };
 
 export interface RestoreSnapshotOptions {
@@ -222,6 +234,9 @@ export function restoreFromSnapshot(
     commandQueue,
     stepSizeMs: runtimeOptions?.stepSizeMs ?? snapshot.runtime.stepSizeMs,
     initialStep: runtimeOptions?.initialStep ?? snapshot.runtime.step,
+    initialAccumulatorBacklog:
+      runtimeOptions?.initialAccumulatorBacklog ??
+      normalizeSnapshotBacklog(snapshot.runtime),
   });
 
   if (applyRngSeed && snapshot.runtime.rngSeed !== undefined) {
