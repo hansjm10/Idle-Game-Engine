@@ -1,0 +1,98 @@
+name: Coverage Report
+
+on:
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: Optional note explaining why the report is being regenerated.
+        required: false
+        type: string
+
+# This manual workflow is the review path for coverage markdown refreshes.
+# Permissions: contents: read is enough because the workflow uploads artifacts and
+# never pushes commits.
+# Branch assumption: run from the branch that should receive the generated
+# docs/coverage/index.md update, then apply the uploaded artifact or patch there.
+# Expected runtime: about 5-10 minutes on ubuntu-latest, depending on coverage
+# suite duration.
+permissions:
+  contents: read
+
+jobs:
+  regenerate:
+    name: Regenerate Coverage Markdown
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      CI: true
+      NODE_OPTIONS: '--dns-result-order=ipv4first'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.18.1
+          run_install: false
+          standalone: true
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.20.0
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate coverage markdown
+        run: pnpm coverage:md
+
+      - name: Verify coverage output
+        run: |
+          if [ ! -f docs/coverage/index.md ]; then
+            echo "docs/coverage/index.md was not generated."
+            exit 1
+          fi
+
+          git diff -- docs/coverage/index.md > coverage-index.patch
+          if [ -s coverage-index.patch ]; then
+            echo "Coverage markdown changed; upload will include docs/coverage/index.md and coverage-index.patch."
+          else
+            echo "Coverage markdown matches the checked-in file; upload will still include docs/coverage/index.md."
+          fi
+
+      - name: Write artifact instructions
+        env:
+          COVERAGE_REASON: ${{ inputs.reason }}
+        run: |
+          {
+            echo "## Coverage report regeneration"
+            echo ""
+            echo "- Command: \`pnpm coverage:md\`"
+            echo "- Ref: \`${GITHUB_REF_NAME}\`"
+            echo "- Permissions: \`contents: read\`; this workflow uploads artifacts and does not push commits."
+            echo "- Branch assumption: run this workflow from the branch that should receive \`docs/coverage/index.md\`."
+            echo "- Expected runtime: about 5-10 minutes on \`ubuntu-latest\`, depending on coverage suite duration."
+            echo "- Artifact: download \`coverage-markdown-${GITHUB_RUN_ID}\` and either replace \`docs/coverage/index.md\` or apply \`coverage-index.patch\` on the same branch."
+            if [ -n "${COVERAGE_REASON}" ]; then
+              echo "- Reason: ${COVERAGE_REASON}"
+            fi
+            if [ -s coverage-index.patch ]; then
+              echo "- Result: coverage markdown changed and should be reviewed before committing."
+            else
+              echo "- Result: no markdown diff was produced."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload coverage markdown
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-markdown-${{ github.run_id }}
+          path: |
+            docs/coverage/index.md
+            coverage-index.patch
+          retention-days: 14
+          if-no-files-found: error

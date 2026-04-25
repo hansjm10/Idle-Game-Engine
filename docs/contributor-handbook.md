@@ -116,8 +116,17 @@ for future contributors skimming barrel files.
 
 ### Regenerate coverage report
 
-- Run `pnpm coverage:md` from the repository root after changing tests. The command executes coverage-enabled Vitest suites for every package and rewrites `docs/coverage/index.md`.
-- Commit the updated `docs/coverage/index.md` file alongside your code so CI stays in sync with the documentation site.
+- Coverage report refreshes are deliberate maintenance, not routine local
+  verification for unrelated fixes. Use focused tests, lint, and typecheck for
+  normal development.
+- Prefer the manual **Coverage Report** GitHub Actions workflow when the page
+  needs a refresh. Run it from the branch that should receive the update; it
+  executes `pnpm coverage:md`, uploads `docs/coverage/index.md`, and includes a
+  patch plus instructions in the workflow summary.
+- Commit the updated `docs/coverage/index.md` file when applying the workflow
+  artifact so CI stays in sync with the documentation site.
+- If the workflow is unavailable and you are explicitly preparing a coverage
+  refresh, run `nvm use` and then `pnpm coverage:md` from the repository root.
 - The generated page surfaces under **Diagnostics & Quality → Coverage Report** in the Docusaurus sidebar.
 
 ## Documentation contributions

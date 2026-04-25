@@ -51,7 +51,7 @@ The headless launcher defaults to an Xorg-backed xpra display plus Chromium `Vul
 
 ## Testing
 - Vitest suites inherit the shared `@idle-engine/config-vitest` defaults, which now include `vitest-llm-reporter` with streaming disabled. Each run prints a JSON summary block at the end of the output so AI agents and CI jobs can parse results without scraping console text.
-- `pnpm coverage:md` runs coverage-enabled Vitest suites for every package and writes `docs/coverage/index.md`. Commit the updated file after running the command so the docs build stays green. For consistent results with CI, run `nvm use` before generating coverage.
+- Routine local verification for unrelated fixes should use focused tests, lint, and typecheck rather than coverage generation. When the coverage page needs a refresh, run the manual **Coverage Report** GitHub Actions workflow from the target branch and apply the uploaded `docs/coverage/index.md` artifact or patch. Local fallback: `pnpm coverage:md` runs coverage-enabled Vitest suites for every package and rewrites the page; run `nvm use` first for CI-consistent results.
 - For a fast local pass, use `pnpm fast:check`. It runs cached linting plus `test:ci` for packages inferred from `git diff` against `origin/main`. Use `FAST_SCOPE=staged` to scope to staged files only and `FAST_BASE_REF=<ref>` to compare against a different base.
 
 ## Benchmarks
