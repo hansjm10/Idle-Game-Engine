@@ -398,6 +398,67 @@ describe('restoreFromSnapshot', () => {
     expect(getRNGState()).toBe(9001);
   });
 
+  it('restores total accumulator backlog when source-specific fields are absent', () => {
+    const resources = {
+      ids: ['resource.energy'],
+      amounts: [10],
+      capacities: [null],
+      unlocked: [true],
+      visible: [true],
+      flags: [0],
+    };
+
+    const snapshot: GameStateSnapshot = {
+      version: 1,
+      capturedAt: 0,
+      runtime: {
+        step: 3,
+        stepSizeMs: STEP_SIZE_MS,
+        accumulatorBacklogMs: 75,
+        rngSeed: undefined,
+      },
+      resources,
+      progression: {
+        schemaVersion: 2,
+        step: 3,
+        resources,
+        generators: [],
+        upgrades: [],
+        achievements: [],
+      },
+      automation: [],
+      transforms: [],
+      entities: { entities: [], instances: [], entityInstances: [] },
+      prd: {},
+      commandQueue: {
+        schemaVersion: 1,
+        entries: [],
+      },
+    };
+
+    const restored = restoreFromSnapshot({
+      snapshot,
+      resourceDefinitions: [
+        {
+          id: 'resource.energy',
+          startAmount: 0,
+          capacity: null,
+          unlocked: true,
+          visible: true,
+        },
+      ],
+      applyRngSeed: false,
+    });
+
+    expect(
+      (restored.runtime as IdleEngineRuntime).getAccumulatorBacklogState(),
+    ).toEqual({
+      totalMs: 75,
+      hostFrameMs: 75,
+      creditedMs: 0,
+    });
+  });
+
   it('reports added resource ids during reconciliation', () => {
     const resources = {
       ids: ['resource.energy'],

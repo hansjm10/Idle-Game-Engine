@@ -32,6 +32,20 @@ const resolveRuntimeFactory = (): RuntimeFactory => {
   return runtimeFactory;
 };
 
+const normalizeSnapshotBacklog = (
+  runtime: GameStateSnapshot['runtime'],
+): NonNullable<IdleEngineRuntimeOptions['initialAccumulatorBacklog']> => {
+  const creditedMs = runtime.creditedBacklogMs ?? 0;
+  const hostFrameMs =
+    runtime.hostFrameBacklogMs ??
+    Math.max(0, (runtime.accumulatorBacklogMs ?? 0) - creditedMs);
+
+  return {
+    hostFrameMs,
+    creditedMs,
+  };
+};
+
 export interface RestoreSnapshotOptions {
   /** Snapshot to restore from */
   readonly snapshot: GameStateSnapshot;
@@ -223,10 +237,8 @@ export function restoreFromSnapshot(
     stepSizeMs: runtimeOptions?.stepSizeMs ?? snapshot.runtime.stepSizeMs,
     initialStep: runtimeOptions?.initialStep ?? snapshot.runtime.step,
     initialAccumulatorBacklog:
-      runtimeOptions?.initialAccumulatorBacklog ?? {
-        hostFrameMs: snapshot.runtime.hostFrameBacklogMs,
-        creditedMs: snapshot.runtime.creditedBacklogMs,
-      },
+      runtimeOptions?.initialAccumulatorBacklog ??
+      normalizeSnapshotBacklog(snapshot.runtime),
   });
 
   if (applyRngSeed && snapshot.runtime.rngSeed !== undefined) {
