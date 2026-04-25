@@ -5,7 +5,6 @@ import {
   type Game,
   type GameSnapshot,
   type InputEventCommandPayload,
-  type RuntimeCommandPayloads,
   type SerializedGameState,
 } from '@idle-engine/core';
 import {
@@ -27,14 +26,12 @@ import type {
   SortKey,
 } from '@idle-engine/renderer-contract';
 
-export const SIM_RUNTIME_SAVE_SCHEMA_VERSION = 1;
+export const SIM_RUNTIME_SAVE_SCHEMA_VERSION = 2;
 
 export type SerializedSimRuntimeState = Readonly<{
   schemaVersion: typeof SIM_RUNTIME_SAVE_SCHEMA_VERSION;
   nextStep: number;
   gameState: SerializedGameState;
-  accumulatorBacklogMs: number;
-  offlineCatchupDrainBudgetMs: number;
 }>;
 
 export type SimRuntimeOptions = Readonly<{
@@ -42,7 +39,7 @@ export type SimRuntimeOptions = Readonly<{
   maxStepsPerFrame?: number;
   initialStep?: number;
   initialSerializedState?: SerializedSimRuntimeState;
-  initialAccumulatorBacklogMs?: number;
+  initialHostFrameBacklogMs?: number;
 }>;
 
 export type SimTickResult = Readonly<{
@@ -62,9 +59,6 @@ export type SimRuntime = Readonly<{
   serialize?: () => SerializedSimRuntimeState;
   getCapabilities?: () => SimRuntimeCapabilities;
 }>;
-
-type OfflineCatchupPayload =
-  RuntimeCommandPayloads[typeof RUNTIME_COMMAND_TYPES.OFFLINE_CATCHUP];
 
 type ShellControlEventCommandPayload = Readonly<{
   event: ShellControlEvent;
@@ -355,31 +349,6 @@ function normalizeAccumulatorBacklogMs(value: unknown): number {
   return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : 0;
 }
 
-function normalizeOfflineCatchupDrainBudgetMs(
-  value: unknown,
-  accumulatorBacklogMs: number,
-): number {
-  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) {
-    return 0;
-  }
-
-  return Math.min(value, accumulatorBacklogMs);
-}
-
-function parseSerializedNonNegativeMs(value: unknown, fieldName: string): number {
-  if (value === undefined) {
-    return 0;
-  }
-
-  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) {
-    throw new TypeError(
-      `Invalid sim runtime save: expected ${fieldName} non-negative number.`,
-    );
-  }
-
-  return value;
-}
-
 function assertRecord(value: unknown, message: string): Record<string, unknown> {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) {
     throw new TypeError(message);
@@ -401,83 +370,6 @@ function readSavedGameRuntimeStep(gameState: SerializedGameState): number {
   return Math.floor(step);
 }
 
-function resolveOfflineCatchupStepCount(
-  payload: OfflineCatchupPayload,
-  stepSizeMs: number,
-): number {
-  if (stepSizeMs <= 0) {
-    return 0;
-  }
-
-  let elapsedMs = payload.elapsedMs;
-  if (
-    typeof payload.maxElapsedMs === 'number' &&
-    Number.isFinite(payload.maxElapsedMs) &&
-    payload.maxElapsedMs >= 0
-  ) {
-    elapsedMs = Math.min(elapsedMs, payload.maxElapsedMs);
-  }
-
-  let totalSteps = Math.max(0, Math.floor(elapsedMs / stepSizeMs));
-  if (
-    typeof payload.maxSteps === 'number' &&
-    Number.isFinite(payload.maxSteps) &&
-    payload.maxSteps >= 0
-  ) {
-    totalSteps = Math.min(totalSteps, Math.floor(payload.maxSteps));
-  }
-
-  return totalSteps;
-}
-
-function resolveOfflineCatchupTotalMs(
-  payload: OfflineCatchupPayload,
-  stepSizeMs: number,
-): number {
-  if (stepSizeMs <= 0) {
-    return 0;
-  }
-
-  const totalSteps = resolveOfflineCatchupStepCount(payload, stepSizeMs);
-  if (totalSteps <= 0) {
-    return 0;
-  }
-
-  let elapsedMs = payload.elapsedMs;
-  if (
-    typeof payload.maxElapsedMs === 'number' &&
-    Number.isFinite(payload.maxElapsedMs) &&
-    payload.maxElapsedMs >= 0
-  ) {
-    elapsedMs = Math.min(elapsedMs, payload.maxElapsedMs);
-  }
-
-  const fullSteps = Math.max(0, Math.floor(elapsedMs / stepSizeMs));
-  const remainderMs =
-    totalSteps === fullSteps ? elapsedMs - fullSteps * stepSizeMs : 0;
-
-  return totalSteps * stepSizeMs + remainderMs;
-}
-
-function isBudgetableOfflineCatchupPayload(payload: unknown): payload is OfflineCatchupPayload {
-  if (typeof payload !== 'object' || payload === null) {
-    return false;
-  }
-
-  const resourceDeltas = (payload as { readonly resourceDeltas?: unknown }).resourceDeltas;
-  if (
-    resourceDeltas !== undefined &&
-    (typeof resourceDeltas !== 'object' ||
-      resourceDeltas === null ||
-      Array.isArray(resourceDeltas))
-  ) {
-    return false;
-  }
-
-  const elapsedMs = (payload as { readonly elapsedMs?: unknown }).elapsedMs;
-  return typeof elapsedMs === 'number' && Number.isFinite(elapsedMs) && elapsedMs > 0;
-}
-
 export function loadSerializedSimRuntimeState(value: unknown): SerializedSimRuntimeState {
   const record = assertRecord(value, 'Invalid sim runtime save: expected an object.');
   if (record['schemaVersion'] !== SIM_RUNTIME_SAVE_SCHEMA_VERSION) {
@@ -495,26 +387,10 @@ export function loadSerializedSimRuntimeState(value: unknown): SerializedSimRunt
   ) as SerializedGameState;
   readSavedGameRuntimeStep(gameState);
 
-  const accumulatorBacklogMs = parseSerializedNonNegativeMs(
-    record['accumulatorBacklogMs'],
-    'accumulatorBacklogMs',
-  );
-  const offlineCatchupDrainBudgetMs = parseSerializedNonNegativeMs(
-    record['offlineCatchupDrainBudgetMs'],
-    'offlineCatchupDrainBudgetMs',
-  );
-  if (offlineCatchupDrainBudgetMs > accumulatorBacklogMs) {
-    throw new TypeError(
-      'Invalid sim runtime save: expected offlineCatchupDrainBudgetMs to be less than or equal to accumulatorBacklogMs.',
-    );
-  }
-
   return {
     schemaVersion: SIM_RUNTIME_SAVE_SCHEMA_VERSION,
     nextStep: Math.floor(nextStep),
     gameState,
-    accumulatorBacklogMs,
-    offlineCatchupDrainBudgetMs,
   };
 }
 
@@ -531,11 +407,8 @@ export function createSimRuntime(options: SimRuntimeOptions = {}): SimRuntime {
   });
   const { runtime, commandDispatcher: dispatcher } = game.internals;
   const frameQueue: RenderCommandBuffer[] = [];
-  const initialAccumulatorBacklogMs =
-    initialSerializedState?.accumulatorBacklogMs ?? options.initialAccumulatorBacklogMs;
   let droppedFrames = 0;
   let lastFrame: RenderCommandBuffer | undefined;
-  let offlineCatchupDrainBudgetMs = 0;
 
   const captureFrame = (frame: RenderCommandBuffer): void => {
     lastFrame = frame;
@@ -551,28 +424,6 @@ export function createSimRuntime(options: SimRuntimeOptions = {}): SimRuntime {
     SHELL_CONTROL_EVENT_COMMAND_TYPE,
     (_payload: ShellControlEventCommandPayload) => undefined,
   );
-
-  const offlineCatchupHandler = dispatcher.getHandler(RUNTIME_COMMAND_TYPES.OFFLINE_CATCHUP);
-  if (offlineCatchupHandler) {
-    dispatcher.register(RUNTIME_COMMAND_TYPES.OFFLINE_CATCHUP, (payload: OfflineCatchupPayload, context) => {
-      let creditedOfflineMs = 0;
-      const stepSizeMs = isBudgetableOfflineCatchupPayload(payload)
-        ? runtime.getStepSizeMs()
-        : 0;
-      if (Number.isFinite(stepSizeMs) && stepSizeMs > 0) {
-        creditedOfflineMs = Math.max(
-          0,
-          resolveOfflineCatchupTotalMs(payload, stepSizeMs) - stepSizeMs,
-        );
-      }
-
-      const result = offlineCatchupHandler(payload, context);
-      if (creditedOfflineMs > 0) {
-        offlineCatchupDrainBudgetMs += creditedOfflineMs;
-      }
-      return result;
-    });
-  }
 
   dispatcher.register(RUNTIME_COMMAND_TYPES.INPUT_EVENT, (payload: InputEventCommandPayload) => {
     if (payload.schemaVersion !== 1) {
@@ -605,15 +456,14 @@ export function createSimRuntime(options: SimRuntimeOptions = {}): SimRuntime {
     game.hydrate(initialSerializedState.gameState);
   }
 
-  const normalizedInitialAccumulatorBacklogMs = normalizeAccumulatorBacklogMs(
-    initialAccumulatorBacklogMs,
+  const initialHostFrameBacklogMs = normalizeAccumulatorBacklogMs(
+    options.initialHostFrameBacklogMs,
   );
-  offlineCatchupDrainBudgetMs = normalizeOfflineCatchupDrainBudgetMs(
-    initialSerializedState?.offlineCatchupDrainBudgetMs,
-    normalizedInitialAccumulatorBacklogMs,
-  );
-  if (normalizedInitialAccumulatorBacklogMs > 0) {
-    runtime.creditTime(normalizedInitialAccumulatorBacklogMs);
+  if (!initialSerializedState && initialHostFrameBacklogMs > 0) {
+    runtime.restoreAccumulatorBacklog({
+      hostFrameMs: initialHostFrameBacklogMs,
+      creditedMs: 0,
+    });
   }
 
   const getCapabilities = (): SimRuntimeCapabilities => ({
@@ -626,25 +476,11 @@ export function createSimRuntime(options: SimRuntimeOptions = {}): SimRuntime {
     contentHash: sampleContentArtifactHash,
     contentVersion: sampleContentSummary.version,
   });
-  const clampOfflineCatchupDrainBudgetToBacklog = (): number => {
-    const accumulatorBacklogMs = normalizeAccumulatorBacklogMs(
-      runtime.getAccumulatorBacklogMs(),
-    );
-    offlineCatchupDrainBudgetMs = normalizeOfflineCatchupDrainBudgetMs(
-      offlineCatchupDrainBudgetMs,
-      accumulatorBacklogMs,
-    );
-    return accumulatorBacklogMs;
-  };
-
   const serialize = (): SerializedSimRuntimeState => {
-    const accumulatorBacklogMs = clampOfflineCatchupDrainBudgetToBacklog();
     return {
       schemaVersion: SIM_RUNTIME_SAVE_SCHEMA_VERSION,
       nextStep: runtime.getNextExecutableStep(),
       gameState: game.serialize(),
-      accumulatorBacklogMs,
-      offlineCatchupDrainBudgetMs,
     };
   };
 
@@ -671,66 +507,19 @@ export function createSimRuntime(options: SimRuntimeOptions = {}): SimRuntime {
     }
   };
 
-  const recordProcessedSteps = (processedSteps: number): void => {
-    if (processedSteps > 0) {
-      const processedMs = processedSteps * runtime.getStepSizeMs();
-      offlineCatchupDrainBudgetMs = Math.max(0, offlineCatchupDrainBudgetMs - processedMs);
-    }
-    clampOfflineCatchupDrainBudgetToBacklog();
-  };
-
   const processTickBudget = (deltaMs: number): number => {
-    clampOfflineCatchupDrainBudgetToBacklog();
-    const stepSizeMs = runtime.getStepSizeMs();
-    const positiveDeltaMs =
-      Number.isFinite(deltaMs) && deltaMs > 0 ? deltaMs : 0;
-    const accumulatorBacklogBeforeTick = runtime.getAccumulatorBacklogMs();
-    const offlineCatchupDrainBudgetBeforeTick = offlineCatchupDrainBudgetMs;
     const nextStepBeforeTick = runtime.getNextExecutableStep();
     game.tick(deltaMs);
     rethrowFatalCommandFailures();
-
-    const processedSteps = Math.max(0, runtime.getNextExecutableStep() - nextStepBeforeTick);
-    // The core accumulator merges live time and credited offline time, so keep
-    // this shell-side drain budget conservative after positive frame ticks.
-    const addedOfflineCatchupDrainBudgetMs = Math.max(
-      0,
-      offlineCatchupDrainBudgetMs - offlineCatchupDrainBudgetBeforeTick,
-    );
-    const processedMs = processedSteps * stepSizeMs;
-    const processedExistingBudgetMs = Math.min(
-      offlineCatchupDrainBudgetBeforeTick,
-      processedMs,
-    );
-    const stepsFundedBeforeNewOfflineCredit = Math.floor(
-      (accumulatorBacklogBeforeTick + positiveDeltaMs) / stepSizeMs,
-    );
-    const processedNewOfflineSteps = Math.max(
-      0,
-      processedSteps - stepsFundedBeforeNewOfflineCredit,
-    );
-    const processedNewOfflineBudgetMs =
-      processedNewOfflineSteps * stepSizeMs;
-    offlineCatchupDrainBudgetMs =
-      offlineCatchupDrainBudgetBeforeTick -
-      processedExistingBudgetMs +
-      Math.max(0, addedOfflineCatchupDrainBudgetMs - processedNewOfflineBudgetMs);
-    clampOfflineCatchupDrainBudgetToBacklog();
-
-    return processedSteps;
+    return Math.max(0, runtime.getNextExecutableStep() - nextStepBeforeTick);
   };
 
   const drainOfflineCatchupBacklog = (): number => {
     const nextStepBeforeDrain = runtime.getNextExecutableStep();
-    runtime.drainCreditedBacklog({
-      maxSteps: Math.floor(offlineCatchupDrainBudgetMs / runtime.getStepSizeMs()),
-    });
+    runtime.drainCreditedBacklog();
     rethrowFatalCommandFailures();
 
-    const processedSteps = Math.max(0, runtime.getNextExecutableStep() - nextStepBeforeDrain);
-    recordProcessedSteps(processedSteps);
-
-    return processedSteps;
+    return Math.max(0, runtime.getNextExecutableStep() - nextStepBeforeDrain);
   };
 
   const tick = (deltaMs: number): SimTickResult => {
@@ -740,7 +529,7 @@ export function createSimRuntime(options: SimRuntimeOptions = {}): SimRuntime {
 
     processTickBudget(deltaMs);
 
-    if (offlineCatchupDrainBudgetMs >= runtime.getStepSizeMs()) {
+    if (runtime.getCreditedBacklogMs() >= runtime.getStepSizeMs()) {
       drainOfflineCatchupBacklog();
     }
 

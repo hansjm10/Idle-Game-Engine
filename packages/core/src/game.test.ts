@@ -438,6 +438,44 @@ describe('createGame', () => {
     vi.useRealTimers();
   });
 
+  it('serializes and restores source-aware runtime backlog', () => {
+    const content = createTestContent();
+    const source = createGame(content, {
+      stepSizeMs: 100,
+      maxStepsPerFrame: 2,
+    });
+    source.internals.runtime.restoreAccumulatorBacklog({
+      hostFrameMs: 50,
+      creditedMs: 250,
+    });
+
+    const save = source.serialize();
+    expect(save.runtime.accumulatorBacklogMs).toBe(300);
+    expect(save.runtime.hostFrameBacklogMs).toBe(50);
+    expect(save.runtime.creditedBacklogMs).toBe(250);
+
+    const restored = createGame(content, {
+      stepSizeMs: 100,
+      maxStepsPerFrame: 2,
+    });
+    restored.hydrate(save);
+
+    expect(restored.internals.runtime.getAccumulatorBacklogState()).toEqual({
+      totalMs: 300,
+      hostFrameMs: 50,
+      creditedMs: 250,
+    });
+    expect(restored.internals.runtime.drainCreditedBacklog()).toBe(2);
+    expect(restored.internals.runtime.getAccumulatorBacklogState()).toEqual({
+      totalMs: 100,
+      hostFrameMs: 50,
+      creditedMs: 50,
+    });
+
+    restored.stop();
+    source.stop();
+  });
+
   it('restarts the scheduler after hydrate when it was running', () => {
     vi.useFakeTimers();
     resetRNG();

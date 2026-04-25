@@ -126,6 +126,7 @@ export interface IdleEngineRuntimeOptions
   readonly eventBusOptions?: EventBusOptions;
   readonly diagnostics?: IdleEngineRuntimeDiagnosticsOptions;
   readonly initialStep?: number;
+  readonly initialAccumulatorBacklog?: RuntimeAccumulatorBacklogSourceState;
 }
 
 /**
@@ -141,8 +142,20 @@ export type DrainCreditedBacklogOptions = Readonly<{
   readonly maxSteps?: number;
 }>;
 
+export type RuntimeAccumulatorBacklogSourceState = Readonly<{
+  readonly hostFrameMs?: number;
+  readonly creditedMs?: number;
+}>;
+
+export type RuntimeAccumulatorBacklogState = Readonly<{
+  readonly totalMs: number;
+  readonly hostFrameMs: number;
+  readonly creditedMs: number;
+}>;
+
 const DEFAULT_STEP_MS = 100;
 const DEFAULT_MAX_STEPS = 50;
+const ACCUMULATOR_EPSILON_MS = 1e-9;
 
 interface RegisteredSystem {
   readonly system: System;
@@ -186,6 +199,14 @@ function resolveDrainStepBudget(
   return Math.min(Math.floor(maxSteps), frameBudget);
 }
 
+function normalizeBacklogMs(value: unknown): number {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    return 0;
+  }
+
+  return value > ACCUMULATOR_EPSILON_MS ? value : 0;
+}
+
 /**
  * Runtime implementation that integrates the command queue and dispatcher with
  * the deterministic fixed-step tick loop described in
@@ -193,7 +214,8 @@ function resolveDrainStepBudget(
  */
 export class IdleEngineRuntime {
   private readonly systems: RegisteredSystem[] = [];
-  private accumulator = 0;
+  private hostFrameAccumulator = 0;
+  private creditedAccumulator = 0;
   private readonly stepSizeMs: number;
   private readonly maxStepsPerFrame: number;
   private readonly commandQueue: CommandQueue;
@@ -245,6 +267,8 @@ export class IdleEngineRuntime {
       this.currentStep = initialStep;
       this.nextExecutableStep = initialStep;
     }
+
+    this.restoreAccumulatorBacklog(options.initialAccumulatorBacklog);
   }
 
   addSystem(system: System): void {
@@ -330,14 +354,37 @@ export class IdleEngineRuntime {
   }
 
   getAccumulatorBacklogMs(): number {
-    return this.accumulator;
+    return this.getAccumulatorBacklogState().totalMs;
+  }
+
+  getCreditedBacklogMs(): number {
+    return this.getAccumulatorBacklogState().creditedMs;
+  }
+
+  getAccumulatorBacklogState(): RuntimeAccumulatorBacklogState {
+    const hostFrameMs = normalizeBacklogMs(this.hostFrameAccumulator);
+    const creditedMs = normalizeBacklogMs(this.creditedAccumulator);
+    return {
+      totalMs: normalizeBacklogMs(hostFrameMs + creditedMs),
+      hostFrameMs,
+      creditedMs,
+    };
+  }
+
+  restoreAccumulatorBacklog(
+    state: RuntimeAccumulatorBacklogSourceState | undefined,
+  ): void {
+    this.hostFrameAccumulator = normalizeBacklogMs(state?.hostFrameMs);
+    this.creditedAccumulator = normalizeBacklogMs(state?.creditedMs);
   }
 
   creditTime(deltaMs: number): void {
     if (!isFiniteNumber(deltaMs) || deltaMs <= 0) {
       return;
     }
-    this.accumulator += deltaMs;
+    this.creditedAccumulator = normalizeBacklogMs(
+      this.creditedAccumulator + deltaMs,
+    );
   }
 
   /**
@@ -350,7 +397,7 @@ export class IdleEngineRuntime {
       this.maxStepsPerFrame,
       options.maxSteps,
     );
-    return this.drainAccumulator(stepBudget);
+    return this.drainAccumulator(stepBudget, 'credited');
   }
 
   fastForward(deltaMs: number): number {
@@ -358,13 +405,15 @@ export class IdleEngineRuntime {
       return 0;
     }
 
-    this.accumulator += deltaMs;
-    const steps = Math.floor(this.accumulator / this.stepSizeMs);
+    this.hostFrameAccumulator = normalizeBacklogMs(
+      this.hostFrameAccumulator + deltaMs,
+    );
+    const steps = Math.floor(this.getAccumulatorBacklogMs() / this.stepSizeMs);
     if (steps <= 0) {
       return 0;
     }
 
-    this.accumulator -= steps * this.stepSizeMs;
+    this.consumeAccumulatorBacklog(steps * this.stepSizeMs, 'any');
     this.currentStep += steps;
     this.nextExecutableStep = this.currentStep;
     return steps;
@@ -396,7 +445,10 @@ export class IdleEngineRuntime {
     this.diagnostics.enable(options);
   }
 
-  private drainAccumulator(stepBudget: number): number {
+  private drainAccumulator(
+    stepBudget: number,
+    source: 'any' | 'credited' = 'any',
+  ): number {
     if (stepBudget <= 0 || this.stepSizeMs <= 0) {
       return 0;
     }
@@ -405,19 +457,50 @@ export class IdleEngineRuntime {
     let remainingStepBudget = Math.floor(stepBudget);
 
     while (remainingStepBudget > 0) {
-      const availableSteps = Math.floor(this.accumulator / this.stepSizeMs);
+      const availableMs =
+        source === 'credited'
+          ? this.getCreditedBacklogMs()
+          : this.getAccumulatorBacklogMs();
+      const availableSteps = Math.floor(availableMs / this.stepSizeMs);
       const steps = Math.min(availableSteps, remainingStepBudget);
 
       if (steps <= 0) {
         break;
       }
 
-      this.accumulator -= steps * this.stepSizeMs;
+      this.consumeAccumulatorBacklog(steps * this.stepSizeMs, source);
       processedSteps += this.runTickBatch(steps);
       remainingStepBudget -= steps;
     }
 
     return processedSteps;
+  }
+
+  private consumeAccumulatorBacklog(
+    amountMs: number,
+    source: 'any' | 'credited',
+  ): void {
+    if (!isFiniteNumber(amountMs) || amountMs <= 0) {
+      return;
+    }
+
+    if (source === 'credited') {
+      this.creditedAccumulator = normalizeBacklogMs(
+        this.creditedAccumulator - amountMs,
+      );
+      return;
+    }
+
+    const hostFrameConsumedMs = Math.min(this.hostFrameAccumulator, amountMs);
+    this.hostFrameAccumulator = normalizeBacklogMs(
+      this.hostFrameAccumulator - hostFrameConsumedMs,
+    );
+    const remainingMs = amountMs - hostFrameConsumedMs;
+    if (remainingMs > 0) {
+      this.creditedAccumulator = normalizeBacklogMs(
+        this.creditedAccumulator - remainingMs,
+      );
+    }
   }
 
   private runTickBatch(stepCount: number): number {
@@ -483,7 +566,7 @@ export class IdleEngineRuntime {
         executed: executedCommands,
         skipped: skippedCommands,
       });
-      tickDiagnostics.setAccumulatorBacklogMs(this.accumulator);
+      tickDiagnostics.setAccumulatorBacklogMs(this.getAccumulatorBacklogMs());
 
       recordBackPressureTelemetry(backPressure);
 
@@ -623,7 +706,9 @@ export class IdleEngineRuntime {
       return 0;
     }
 
-    this.accumulator += deltaMs;
+    this.hostFrameAccumulator = normalizeBacklogMs(
+      this.hostFrameAccumulator + deltaMs,
+    );
     return this.drainAccumulator(this.maxStepsPerFrame);
   }
 }

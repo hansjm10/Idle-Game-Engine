@@ -77,6 +77,7 @@ export function captureGameStateSnapshot(
   const transformState = getTransformState();
   const entityState = getEntityState();
   const prdState = getPrdState();
+  const accumulatorBacklog = runtime.getAccumulatorBacklogState();
 
   return {
     version: 1,
@@ -84,6 +85,9 @@ export function captureGameStateSnapshot(
     runtime: {
       step: runtime.getCurrentStep(),
       stepSizeMs: runtime.getStepSizeMs(),
+      accumulatorBacklogMs: accumulatorBacklog.totalMs,
+      hostFrameBacklogMs: accumulatorBacklog.hostFrameMs,
+      creditedBacklogMs: accumulatorBacklog.creditedMs,
       rngSeed: getCurrentRNGSeed(),
       rngState: getRNGState(),
     },

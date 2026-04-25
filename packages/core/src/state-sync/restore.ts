@@ -222,6 +222,11 @@ export function restoreFromSnapshot(
     commandQueue,
     stepSizeMs: runtimeOptions?.stepSizeMs ?? snapshot.runtime.stepSizeMs,
     initialStep: runtimeOptions?.initialStep ?? snapshot.runtime.step,
+    initialAccumulatorBacklog:
+      runtimeOptions?.initialAccumulatorBacklog ?? {
+        hostFrameMs: snapshot.runtime.hostFrameBacklogMs,
+        creditedMs: snapshot.runtime.creditedBacklogMs,
+      },
   });
 
   if (applyRngSeed && snapshot.runtime.rngSeed !== undefined) {

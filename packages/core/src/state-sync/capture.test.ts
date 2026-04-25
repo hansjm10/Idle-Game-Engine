@@ -224,6 +224,9 @@ describe('captureGameStateSnapshot', () => {
       runtime: {
         step: INITIAL_STEP,
         stepSizeMs: STEP_SIZE_MS,
+        accumulatorBacklogMs: 0,
+        hostFrameBacklogMs: 0,
+        creditedBacklogMs: 0,
         rngSeed: 4242,
         rngState: 4242,
       },

@@ -25,6 +25,9 @@ export const GAME_STATE_SAVE_SCHEMA_VERSION = 1;
 
 export type GameStateSaveRuntime = Readonly<{
   step: number;
+  accumulatorBacklogMs?: number;
+  hostFrameBacklogMs?: number;
+  creditedBacklogMs?: number;
   rngSeed?: number;
   rngState?: number;
 }>;
@@ -81,6 +84,14 @@ function readNonNegativeInt(value: unknown): number | undefined {
   return Math.floor(numberValue);
 }
 
+function readNonNegativeNumber(value: unknown): number | undefined {
+  const numberValue = readFiniteNumber(value);
+  if (numberValue === undefined || numberValue < 0) {
+    return undefined;
+  }
+  return numberValue;
+}
+
 function getSaveVersion(value: unknown): number | undefined {
   if (!isRecord(value)) {
     return undefined;
@@ -121,15 +132,31 @@ function stripEmbeddedAutomation(
 
 function normalizeRuntime(value: unknown): GameStateSaveRuntime {
   if (!isRecord(value)) {
-    return { step: 0 };
+    return {
+      step: 0,
+      accumulatorBacklogMs: 0,
+      hostFrameBacklogMs: 0,
+      creditedBacklogMs: 0,
+    };
   }
 
   const step = readNonNegativeInt(value.step) ?? 0;
+  const explicitAccumulatorBacklogMs = readNonNegativeNumber(
+    value.accumulatorBacklogMs,
+  );
+  const creditedBacklogMs = readNonNegativeNumber(value.creditedBacklogMs) ?? 0;
+  const hostFrameBacklogMs =
+    readNonNegativeNumber(value.hostFrameBacklogMs) ??
+    Math.max(0, (explicitAccumulatorBacklogMs ?? 0) - creditedBacklogMs);
+  const accumulatorBacklogMs = hostFrameBacklogMs + creditedBacklogMs;
   const rngSeed = readFiniteNumber(value.rngSeed);
   const rngState = readFiniteNumber(value.rngState);
 
   return {
     step,
+    accumulatorBacklogMs,
+    hostFrameBacklogMs,
+    creditedBacklogMs,
     ...(rngSeed === undefined ? {} : { rngSeed }),
     ...(rngState === undefined ? {} : { rngState }),
   };
@@ -379,6 +406,10 @@ export function loadGameStateSaveFormat(
 
 export interface SerializeGameStateSaveFormatOptions {
   readonly runtimeStep: number;
+  readonly runtimeBacklog?: Readonly<{
+    readonly hostFrameMs?: number;
+    readonly creditedMs?: number;
+  }>;
   readonly savedAt?: number;
   readonly rngSeed?: number;
   readonly coordinator: ProgressionCoordinator;
@@ -397,6 +428,11 @@ export function serializeGameStateSaveFormat(
 ): GameStateSaveFormatV1 {
   const savedAt = readFiniteNumber(options.savedAt) ?? Date.now();
   const runtimeStep = readNonNegativeInt(options.runtimeStep) ?? 0;
+  const hostFrameBacklogMs =
+    readNonNegativeNumber(options.runtimeBacklog?.hostFrameMs) ?? 0;
+  const creditedBacklogMs =
+    readNonNegativeNumber(options.runtimeBacklog?.creditedMs) ?? 0;
+  const accumulatorBacklogMs = hostFrameBacklogMs + creditedBacklogMs;
   const currentSeed = getCurrentRNGSeed();
   const rngSeed = options.rngSeed ?? currentSeed;
   const rngState = rngSeed === currentSeed ? getRNGState() : undefined;
@@ -422,6 +458,9 @@ export function serializeGameStateSaveFormat(
     commandQueue: options.commandQueue.exportForSave(),
     runtime: {
       step: runtimeStep,
+      accumulatorBacklogMs,
+      hostFrameBacklogMs,
+      creditedBacklogMs,
       ...(rngSeed === undefined ? {} : { rngSeed }),
       ...(rngState === undefined ? {} : { rngState }),
     },

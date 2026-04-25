@@ -86,6 +86,9 @@ export interface StateDiff {
 export interface RuntimeDiff {
   readonly step?: ValueDiff<number>;
   readonly stepSizeMs?: ValueDiff<number>;
+  readonly accumulatorBacklogMs?: ValueDiff<number | undefined>;
+  readonly hostFrameBacklogMs?: ValueDiff<number | undefined>;
+  readonly creditedBacklogMs?: ValueDiff<number | undefined>;
   readonly rngSeed?: ValueDiff<number | undefined>;
   readonly rngState?: ValueDiff<number | undefined>;
 }
@@ -355,6 +358,27 @@ const compareRuntime = (
   hasDiff =
     recordValueDiff(diff, 'stepSizeMs', local.stepSizeMs, remote.stepSizeMs) ||
     hasDiff;
+  hasDiff =
+    recordValueDiff(
+      diff,
+      'accumulatorBacklogMs',
+      local.accumulatorBacklogMs,
+      remote.accumulatorBacklogMs,
+    ) || hasDiff;
+  hasDiff =
+    recordValueDiff(
+      diff,
+      'hostFrameBacklogMs',
+      local.hostFrameBacklogMs,
+      remote.hostFrameBacklogMs,
+    ) || hasDiff;
+  hasDiff =
+    recordValueDiff(
+      diff,
+      'creditedBacklogMs',
+      local.creditedBacklogMs,
+      remote.creditedBacklogMs,
+    ) || hasDiff;
   hasDiff =
     recordValueDiff(diff, 'rngSeed', local.rngSeed, remote.rngSeed) || hasDiff;
   hasDiff =

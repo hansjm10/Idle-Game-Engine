@@ -1170,6 +1170,20 @@ describe('IdleEngineRuntime', () => {
     expect(runtime.getAccumulatorBacklogMs()).toBe(5);
   });
 
+  it('does not drain host-frame backlog through the credited backlog API', () => {
+    const { runtime } = createRuntime({ stepSizeMs: 10, maxStepsPerFrame: 2 });
+
+    runtime.tick(25);
+
+    expect(runtime.getAccumulatorBacklogState()).toEqual({
+      totalMs: 5,
+      hostFrameMs: 5,
+      creditedMs: 0,
+    });
+    expect(runtime.drainCreditedBacklog()).toBe(0);
+    expect(runtime.getAccumulatorBacklogMs()).toBe(5);
+  });
+
   it('caps credited backlog drains to maxStepsPerFrame', () => {
     const { runtime } = createRuntime({ stepSizeMs: 10, maxStepsPerFrame: 2 });
 
@@ -1188,6 +1202,53 @@ describe('IdleEngineRuntime', () => {
     expect(runtime.drainCreditedBacklog({ maxSteps: 3 })).toBe(3);
     expect(runtime.getCurrentStep()).toBe(3);
     expect(runtime.getAccumulatorBacklogMs()).toBe(20);
+  });
+
+  it('tracks credited backlog when commands run during multi-step positive ticks', () => {
+    const { runtime, queue, dispatcher } = createRuntime({
+      stepSizeMs: 10,
+      maxStepsPerFrame: 2,
+    });
+
+    dispatcher.register('CREDIT_OFFLINE', () => {
+      runtime.creditTime(50);
+    });
+    queue.enqueue({
+      type: 'CREDIT_OFFLINE',
+      priority: CommandPriority.SYSTEM,
+      payload: {},
+      timestamp: 0,
+      step: 0,
+    });
+
+    expect(runtime.tick(30)).toBe(2);
+    expect(runtime.getAccumulatorBacklogState()).toEqual({
+      totalMs: 60,
+      hostFrameMs: 10,
+      creditedMs: 50,
+    });
+
+    expect(runtime.drainCreditedBacklog()).toBe(2);
+    expect(runtime.getAccumulatorBacklogState()).toEqual({
+      totalMs: 40,
+      hostFrameMs: 10,
+      creditedMs: 30,
+    });
+
+    expect(runtime.tick(0)).toBe(0);
+    expect(runtime.drainCreditedBacklog()).toBe(2);
+    expect(runtime.getAccumulatorBacklogState()).toEqual({
+      totalMs: 20,
+      hostFrameMs: 10,
+      creditedMs: 10,
+    });
+
+    expect(runtime.drainCreditedBacklog()).toBe(1);
+    expect(runtime.getAccumulatorBacklogState()).toEqual({
+      totalMs: 10,
+      hostFrameMs: 10,
+      creditedMs: 0,
+    });
   });
 
   it('does not emit diagnostics entries for zero/negative deltaMs', () => {

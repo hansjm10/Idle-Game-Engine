@@ -26,6 +26,8 @@ export type {
   DrainCreditedBacklogOptions,
   GameRuntimeWiring,
   IdleEngineRuntimeOptions,
+  RuntimeAccumulatorBacklogSourceState,
+  RuntimeAccumulatorBacklogState,
   System,
   SystemRegistrationContext,
   TickContext,
