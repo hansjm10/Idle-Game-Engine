@@ -398,7 +398,21 @@ describe('restoreFromSnapshot', () => {
     expect(getRNGState()).toBe(9001);
   });
 
-  it('restores total accumulator backlog when source-specific fields are absent', () => {
+  it.each([
+    {
+      name: 'legacy total-only backlog',
+      runtimeBacklog: { accumulatorBacklogMs: 75 },
+      expected: { totalMs: 75, hostFrameMs: 75, creditedMs: 0 },
+    },
+    {
+      name: 'mixed total and credited backlog',
+      runtimeBacklog: { accumulatorBacklogMs: 75, creditedBacklogMs: 25 },
+      expected: { totalMs: 75, hostFrameMs: 50, creditedMs: 25 },
+    },
+  ])('restores $name from snapshot runtime metadata', ({
+    runtimeBacklog,
+    expected,
+  }) => {
     const resources = {
       ids: ['resource.energy'],
       amounts: [10],
@@ -414,7 +428,7 @@ describe('restoreFromSnapshot', () => {
       runtime: {
         step: 3,
         stepSizeMs: STEP_SIZE_MS,
-        accumulatorBacklogMs: 75,
+        ...runtimeBacklog,
         rngSeed: undefined,
       },
       resources,
@@ -452,11 +466,7 @@ describe('restoreFromSnapshot', () => {
 
     expect(
       (restored.runtime as IdleEngineRuntime).getAccumulatorBacklogState(),
-    ).toEqual({
-      totalMs: 75,
-      hostFrameMs: 75,
-      creditedMs: 0,
-    });
+    ).toEqual(expected);
   });
 
   it('reports added resource ids during reconciliation', () => {

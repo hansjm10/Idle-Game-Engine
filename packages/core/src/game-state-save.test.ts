@@ -354,6 +354,39 @@ describe('game-state-save', () => {
     expect(loaded.prd).toEqual(prdState);
   });
 
+  it.each([
+    {
+      name: 'legacy total-only backlog',
+      runtimeBacklog: { accumulatorBacklogMs: 275 },
+      expected: {
+        accumulatorBacklogMs: 275,
+        hostFrameBacklogMs: 275,
+        creditedBacklogMs: 0,
+      },
+    },
+    {
+      name: 'mixed total and credited backlog',
+      runtimeBacklog: { accumulatorBacklogMs: 275, creditedBacklogMs: 125 },
+      expected: {
+        accumulatorBacklogMs: 275,
+        hostFrameBacklogMs: 150,
+        creditedBacklogMs: 125,
+      },
+    },
+  ])('loads $name through save normalization', ({ runtimeBacklog, expected }) => {
+    const save = createSerializedSave(123);
+
+    const loaded = loadGameStateSaveFormat({
+      ...save,
+      runtime: {
+        step: save.runtime.step,
+        ...runtimeBacklog,
+      },
+    });
+
+    expect(loaded.runtime).toMatchObject(expected);
+  });
+
   it('loads legacy v0 saves via migration', () => {
     const harness = createHarness(0);
     setRNGSeed(123);
