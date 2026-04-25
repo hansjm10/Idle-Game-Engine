@@ -128,6 +128,19 @@ export interface IdleEngineRuntimeOptions
   readonly initialStep?: number;
 }
 
+/**
+ * Options for draining time that was previously credited into the runtime
+ * accumulator without adding new frame delta time.
+ */
+export type DrainCreditedBacklogOptions = Readonly<{
+  /**
+   * Caller-provided upper bound for this drain. The runtime also caps this by
+   * `maxStepsPerFrame`, so one call cannot process more than the configured
+   * frame budget.
+   */
+  readonly maxSteps?: number;
+}>;
+
 const DEFAULT_STEP_MS = 100;
 const DEFAULT_MAX_STEPS = 50;
 
@@ -148,6 +161,29 @@ class DeterministicTickClock implements Clock {
   now(): number {
     return this.tick * this.stepSizeMs;
   }
+}
+
+function resolveDrainStepBudget(
+  maxStepsPerFrame: number,
+  maxSteps: number | undefined,
+): number {
+  const frameBudget =
+    isFiniteNumber(maxStepsPerFrame) && maxStepsPerFrame > 0
+      ? Math.floor(maxStepsPerFrame)
+      : 0;
+  if (frameBudget <= 0) {
+    return 0;
+  }
+
+  if (maxSteps === undefined) {
+    return frameBudget;
+  }
+
+  if (!isFiniteNumber(maxSteps) || maxSteps <= 0) {
+    return 0;
+  }
+
+  return Math.min(Math.floor(maxSteps), frameBudget);
 }
 
 /**
@@ -293,11 +329,28 @@ export class IdleEngineRuntime {
     return this.maxStepsPerFrame;
   }
 
+  getAccumulatorBacklogMs(): number {
+    return this.accumulator;
+  }
+
   creditTime(deltaMs: number): void {
     if (!isFiniteNumber(deltaMs) || deltaMs <= 0) {
       return;
     }
     this.accumulator += deltaMs;
+  }
+
+  /**
+   * Drain time already credited into the accumulator without adding new frame
+   * delta time. This is intended for bounded catch-up work such as offline
+   * backlog processing.
+   */
+  drainCreditedBacklog(options: DrainCreditedBacklogOptions = {}): number {
+    const stepBudget = resolveDrainStepBudget(
+      this.maxStepsPerFrame,
+      options.maxSteps,
+    );
+    return this.drainAccumulator(stepBudget);
   }
 
   fastForward(deltaMs: number): number {
@@ -341,6 +394,30 @@ export class IdleEngineRuntime {
       return;
     }
     this.diagnostics.enable(options);
+  }
+
+  private drainAccumulator(stepBudget: number): number {
+    if (stepBudget <= 0 || this.stepSizeMs <= 0) {
+      return 0;
+    }
+
+    let processedSteps = 0;
+    let remainingStepBudget = Math.floor(stepBudget);
+
+    while (remainingStepBudget > 0) {
+      const availableSteps = Math.floor(this.accumulator / this.stepSizeMs);
+      const steps = Math.min(availableSteps, remainingStepBudget);
+
+      if (steps <= 0) {
+        break;
+      }
+
+      this.accumulator -= steps * this.stepSizeMs;
+      processedSteps += this.runTickBatch(steps);
+      remainingStepBudget -= steps;
+    }
+
+    return processedSteps;
   }
 
   private runTickBatch(stepCount: number): number {
@@ -542,30 +619,12 @@ export class IdleEngineRuntime {
    * steps to avoid spiral of death scenarios.
    */
   tick(deltaMs: number): number {
-    if (!isFiniteNumber(deltaMs) || deltaMs < 0) {
+    if (!isFiniteNumber(deltaMs) || deltaMs <= 0) {
       return 0;
     }
 
-    if (deltaMs > 0) {
-      this.accumulator += deltaMs;
-    }
-    let processedSteps = 0;
-    let remainingStepBudget = this.maxStepsPerFrame;
-
-    while (remainingStepBudget > 0) {
-      const availableSteps = Math.floor(this.accumulator / this.stepSizeMs);
-      const steps = Math.min(availableSteps, remainingStepBudget);
-
-      if (steps <= 0) {
-        break;
-      }
-
-      this.accumulator -= steps * this.stepSizeMs;
-      processedSteps += this.runTickBatch(steps);
-      remainingStepBudget -= steps;
-    }
-
-    return processedSteps;
+    this.accumulator += deltaMs;
+    return this.drainAccumulator(this.maxStepsPerFrame);
   }
 }
 

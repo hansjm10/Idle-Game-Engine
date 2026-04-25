@@ -23,6 +23,7 @@ export {
 } from './internals.browser.js';
 export type {
   CreateGameRuntimeOptions,
+  DrainCreditedBacklogOptions,
   GameRuntimeWiring,
   IdleEngineRuntimeOptions,
   System,
