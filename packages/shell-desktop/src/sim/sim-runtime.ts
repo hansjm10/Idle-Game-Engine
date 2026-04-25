@@ -34,6 +34,7 @@ export type SerializedSimRuntimeState = Readonly<{
   nextStep: number;
   gameState: SerializedGameState;
   accumulatorBacklogMs: number;
+  offlineCatchupDrainBudgetMs: number;
 }>;
 
 export type SimRuntimeOptions = Readonly<{
@@ -354,14 +355,25 @@ function normalizeAccumulatorBacklogMs(value: unknown): number {
   return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : 0;
 }
 
-function parseSerializedAccumulatorBacklogMs(value: unknown): number {
+function normalizeOfflineCatchupDrainBudgetMs(
+  value: unknown,
+  accumulatorBacklogMs: number,
+): number {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) {
+    return 0;
+  }
+
+  return Math.min(value, accumulatorBacklogMs);
+}
+
+function parseSerializedNonNegativeMs(value: unknown, fieldName: string): number {
   if (value === undefined) {
     return 0;
   }
 
   if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) {
     throw new TypeError(
-      'Invalid sim runtime save: expected accumulatorBacklogMs non-negative number.',
+      `Invalid sim runtime save: expected ${fieldName} non-negative number.`,
     );
   }
 
@@ -483,11 +495,26 @@ export function loadSerializedSimRuntimeState(value: unknown): SerializedSimRunt
   ) as SerializedGameState;
   readSavedGameRuntimeStep(gameState);
 
+  const accumulatorBacklogMs = parseSerializedNonNegativeMs(
+    record['accumulatorBacklogMs'],
+    'accumulatorBacklogMs',
+  );
+  const offlineCatchupDrainBudgetMs = parseSerializedNonNegativeMs(
+    record['offlineCatchupDrainBudgetMs'],
+    'offlineCatchupDrainBudgetMs',
+  );
+  if (offlineCatchupDrainBudgetMs > accumulatorBacklogMs) {
+    throw new TypeError(
+      'Invalid sim runtime save: expected offlineCatchupDrainBudgetMs to be less than or equal to accumulatorBacklogMs.',
+    );
+  }
+
   return {
     schemaVersion: SIM_RUNTIME_SAVE_SCHEMA_VERSION,
     nextStep: Math.floor(nextStep),
     gameState,
-    accumulatorBacklogMs: parseSerializedAccumulatorBacklogMs(record['accumulatorBacklogMs']),
+    accumulatorBacklogMs,
+    offlineCatchupDrainBudgetMs,
   };
 }
 
@@ -578,6 +605,10 @@ export function createSimRuntime(options: SimRuntimeOptions = {}): SimRuntime {
   const normalizedInitialAccumulatorBacklogMs = normalizeAccumulatorBacklogMs(
     initialAccumulatorBacklogMs,
   );
+  offlineCatchupDrainBudgetMs = normalizeOfflineCatchupDrainBudgetMs(
+    initialSerializedState?.offlineCatchupDrainBudgetMs,
+    normalizedInitialAccumulatorBacklogMs,
+  );
   if (normalizedInitialAccumulatorBacklogMs > 0) {
     runtime.creditTime(normalizedInitialAccumulatorBacklogMs);
   }
@@ -592,12 +623,19 @@ export function createSimRuntime(options: SimRuntimeOptions = {}): SimRuntime {
     contentHash: sampleContentArtifactHash,
     contentVersion: sampleContentSummary.version,
   });
-  const serialize = (): SerializedSimRuntimeState => ({
-    schemaVersion: SIM_RUNTIME_SAVE_SCHEMA_VERSION,
-    nextStep: runtime.getNextExecutableStep(),
-    gameState: game.serialize(),
-    accumulatorBacklogMs: runtime.getAccumulatorBacklogMs(),
-  });
+  const serialize = (): SerializedSimRuntimeState => {
+    const accumulatorBacklogMs = runtime.getAccumulatorBacklogMs();
+    return {
+      schemaVersion: SIM_RUNTIME_SAVE_SCHEMA_VERSION,
+      nextStep: runtime.getNextExecutableStep(),
+      gameState: game.serialize(),
+      accumulatorBacklogMs,
+      offlineCatchupDrainBudgetMs: Math.min(
+        offlineCatchupDrainBudgetMs,
+        accumulatorBacklogMs,
+      ),
+    };
+  };
 
   runtime.addSystem({
     id: 'sample-pack-frame-producer',
