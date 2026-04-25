@@ -97,7 +97,7 @@ export function renderMarkdown({packages, totals}: RenderMarkdownParams): string
     '',
     '# Coverage Report',
     '',
-    'Run `pnpm coverage:md` from the repository root to regenerate this page after modifying tests.',
+    'Use the manual **Coverage Report** GitHub Actions workflow to regenerate this page after coverage-affecting changes, or run `pnpm coverage:md` locally when explicitly preparing a coverage refresh.',
     '',
     '## Overall Coverage',
     '| Metric | Covered | Total | % |',

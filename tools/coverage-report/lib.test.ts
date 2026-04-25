@@ -25,6 +25,7 @@ test('renderMarkdown produces deterministic tables', async () => {
   });
 
   assert.match(markdown, /---\ntitle: Coverage Report\nsidebar_label: Coverage Report\n---/);
+  assert.match(markdown, /manual \*\*Coverage Report\*\* GitHub Actions workflow/);
   assert.match(markdown, /\| Metric \| Covered \| Total \| % \|/);
   assert.match(markdown, /\| Statements \| 80 \| 100 \| 80\.00% \|/);
   assert.match(markdown, /\| @idle-engine\/core \| 80 \/ 100 \(80\.00%\)/);
