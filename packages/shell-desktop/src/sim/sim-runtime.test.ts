@@ -493,7 +493,7 @@ describe('shell-desktop sim runtime', () => {
     }
   });
 
-  it('preserves offline drain budget across multi-step positive frame ticks', () => {
+  it('keeps live backlog out of offline drains after multi-step positive frame ticks', () => {
     const sim = createSimRuntime({ stepSizeMs: 10, maxStepsPerFrame: 2 });
 
     sim.enqueueCommands([
@@ -512,7 +512,7 @@ describe('shell-desktop sim runtime', () => {
 
     const stateAfterFirstTick = loadSerializedSimRuntimeState(sim.serialize?.());
     expect(stateAfterFirstTick.accumulatorBacklogMs).toBe(40);
-    expect(stateAfterFirstTick.offlineCatchupDrainBudgetMs).toBe(40);
+    expect(stateAfterFirstTick.offlineCatchupDrainBudgetMs).toBe(30);
 
     const secondTick = sim.tick(0);
     expect(secondTick.frames).toHaveLength(2);
@@ -520,14 +520,14 @@ describe('shell-desktop sim runtime', () => {
 
     const stateAfterSecondTick = loadSerializedSimRuntimeState(sim.serialize?.());
     expect(stateAfterSecondTick.accumulatorBacklogMs).toBe(20);
-    expect(stateAfterSecondTick.offlineCatchupDrainBudgetMs).toBe(20);
+    expect(stateAfterSecondTick.offlineCatchupDrainBudgetMs).toBe(10);
 
     const thirdTick = sim.tick(0);
-    expect(thirdTick.frames).toHaveLength(2);
-    expect(thirdTick.nextStep).toBe(8);
+    expect(thirdTick.frames).toHaveLength(1);
+    expect(thirdTick.nextStep).toBe(7);
 
     const drainedState = loadSerializedSimRuntimeState(sim.serialize?.());
-    expect(drainedState.accumulatorBacklogMs).toBe(0);
+    expect(drainedState.accumulatorBacklogMs).toBe(10);
     expect(drainedState.offlineCatchupDrainBudgetMs).toBe(0);
   });
 
@@ -587,6 +587,66 @@ describe('shell-desktop sim runtime', () => {
     const restoredState = loadSerializedSimRuntimeState(restored.serialize?.());
     expect(restoredState.accumulatorBacklogMs).toBe(5);
     expect(restoredState.offlineCatchupDrainBudgetMs).toBe(0);
+  });
+
+  it('limits zero-delta offline drains to the remaining restored catch-up budget', () => {
+    const source = createSimRuntime({ stepSizeMs: 10, maxStepsPerFrame: 2 });
+    const savedState = loadSerializedSimRuntimeState(source.serialize?.());
+    const restored = createSimRuntime({
+      stepSizeMs: 10,
+      maxStepsPerFrame: 2,
+      initialSerializedState: {
+        ...savedState,
+        accumulatorBacklogMs: 100,
+        offlineCatchupDrainBudgetMs: 10,
+      },
+    });
+
+    const firstTick = restored.tick(0);
+    expect(firstTick.frames).toHaveLength(1);
+    expect(firstTick.nextStep).toBe(1);
+
+    const stateAfterFirstTick = loadSerializedSimRuntimeState(restored.serialize?.());
+    expect(stateAfterFirstTick.accumulatorBacklogMs).toBe(90);
+    expect(stateAfterFirstTick.offlineCatchupDrainBudgetMs).toBe(0);
+
+    const secondTick = restored.tick(0);
+    expect(secondTick.frames).toHaveLength(0);
+    expect(secondTick.nextStep).toBe(1);
+
+    const stateAfterSecondTick = loadSerializedSimRuntimeState(restored.serialize?.());
+    expect(stateAfterSecondTick.accumulatorBacklogMs).toBe(90);
+    expect(stateAfterSecondTick.offlineCatchupDrainBudgetMs).toBe(0);
+  });
+
+  it('clears offline drain budget consumed by positive frame ticks', () => {
+    const source = createSimRuntime({ stepSizeMs: 10, maxStepsPerFrame: 2 });
+    const savedState = loadSerializedSimRuntimeState(source.serialize?.());
+    const restored = createSimRuntime({
+      stepSizeMs: 10,
+      maxStepsPerFrame: 2,
+      initialSerializedState: {
+        ...savedState,
+        accumulatorBacklogMs: 100,
+        offlineCatchupDrainBudgetMs: 10,
+      },
+    });
+
+    const positiveTick = restored.tick(10);
+    expect(positiveTick.frames).toHaveLength(2);
+    expect(positiveTick.nextStep).toBe(2);
+
+    const stateAfterPositiveTick = loadSerializedSimRuntimeState(restored.serialize?.());
+    expect(stateAfterPositiveTick.accumulatorBacklogMs).toBe(90);
+    expect(stateAfterPositiveTick.offlineCatchupDrainBudgetMs).toBe(0);
+
+    const zeroDeltaTick = restored.tick(0);
+    expect(zeroDeltaTick.frames).toHaveLength(0);
+    expect(zeroDeltaTick.nextStep).toBe(2);
+
+    const stateAfterZeroDeltaTick = loadSerializedSimRuntimeState(restored.serialize?.());
+    expect(stateAfterZeroDeltaTick.accumulatorBacklogMs).toBe(90);
+    expect(stateAfterZeroDeltaTick.offlineCatchupDrainBudgetMs).toBe(0);
   });
 
   it('does not drain a one-hour offline catch-up payload in one tick', () => {
