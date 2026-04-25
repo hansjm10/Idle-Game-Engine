@@ -2,7 +2,6 @@ import {
   createGame,
   RUNTIME_COMMAND_TYPES,
   type Command,
-  type Game,
   type GameSnapshot,
   type InputEventCommandPayload,
   type SerializedGameState,
@@ -14,6 +13,11 @@ import {
 } from '@idle-engine/content-sample';
 import { RENDERER_CONTRACT_SCHEMA_VERSION } from '@idle-engine/renderer-contract';
 import { SHELL_CONTROL_EVENT_COMMAND_TYPE, type ShellControlEvent } from '../ipc.js';
+import {
+  buildLastCompletedRenderFrameMetadata,
+  buildRenderFrameMetadata,
+  type RenderFrameMetadata,
+} from './render-frame-metadata.js';
 import {
   DEFAULT_SIM_RUNTIME_CAPABILITIES,
   type SimRuntimeCapabilities,
@@ -185,12 +189,10 @@ const buildGeneratorLabel = (
 };
 
 const buildSamplePackFrame = (
-  game: Game,
-  step: number,
+  frameMetadata: RenderFrameMetadata,
   snapshot: GameSnapshot,
 ): RenderCommandBuffer => {
-  const stepSizeMs = game.internals.runtime.getStepSizeMs();
-  const simTimeMs = step * stepSizeMs;
+  const { step, simTimeMs } = frameMetadata;
   const wave = step % 120;
   const clearColor = rgba(0x16, 0x24 + Math.floor(wave / 4), 0x31, 0xff);
   const draws: RenderDraw[] = [
@@ -487,7 +489,10 @@ export function createSimRuntime(options: SimRuntimeOptions = {}): SimRuntime {
   runtime.addSystem({
     id: 'sample-pack-frame-producer',
     tick: (context) => {
-      captureFrame(buildSamplePackFrame(game, context.step, game.getSnapshot()));
+      captureFrame(buildSamplePackFrame(
+        buildRenderFrameMetadata(context.step, runtime.getStepSizeMs()),
+        game.getSnapshot(),
+      ));
     },
   });
 
@@ -556,8 +561,13 @@ export function createSimRuntime(options: SimRuntimeOptions = {}): SimRuntime {
   };
 
   const renderCurrentFrame = (): RenderCommandBuffer | undefined => {
-    const nextStep = runtime.getNextExecutableStep();
-    return buildSamplePackFrame(game, Math.max(0, nextStep - 1), game.getSnapshot());
+    return buildSamplePackFrame(
+      buildLastCompletedRenderFrameMetadata(
+        runtime.getNextExecutableStep(),
+        runtime.getStepSizeMs(),
+      ),
+      game.getSnapshot(),
+    );
   };
 
   return {

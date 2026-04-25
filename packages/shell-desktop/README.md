@@ -69,6 +69,10 @@ const a = await navigator.gpu.requestAdapter(); a?.name
 - Packaged runs require an explicit override: set `IDLE_ENGINE_ENABLE_UNSAFE_WEBGPU=1` before launching.
 - The current renderer entrypoint presents a stable clear color and prints status lines (IPC + WebGPU) to the on-screen overlay.
 
+## Render Frame Metadata
+
+Renderer frames are stamped with the completed deterministic runtime step. During an `IdleEngineRuntime` system tick, `TickContext.step` is the frame `step`, and `simTimeMs` is `step * stepSizeMs`. When rendering the current paused or hydrated state, `nextStep` points at the next unprocessed step, so the frame uses `max(0, nextStep - 1)`. Frame builders should not advance to `step + 1`.
+
 ## Notes
 - The renderer process runs with `contextIsolation: true` and `nodeIntegration: false`; the preload exposes a minimal, typed API on `window.idleEngine`.
 - The build bundles `src/renderer/index.ts` into `dist/renderer/index.js` (so the renderer does not rely on `../../../*/dist/*` imports) and copies static assets via `tools/scripts/copy-renderer-assets.mjs`.
