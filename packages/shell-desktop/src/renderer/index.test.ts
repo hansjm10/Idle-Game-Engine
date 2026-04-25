@@ -373,6 +373,44 @@ describe('shell-desktop renderer entrypoint', () => {
     });
   });
 
+  it('ignores HiDPI backing-store size when the CSS canvas size already matches the bounding rect', async () => {
+    const idleEngine = (
+      globalThis as unknown as { idleEngine: { sendInputEvent: ReturnType<typeof vi.fn> } }
+    ).idleEngine;
+    canvasRect = { left: 10, top: 20, width: 400, height: 300 };
+    canvasSize = { width: 800, height: 600, clientWidth: 400, clientHeight: 300 };
+
+    await import('./index.js');
+    await flushMicrotasks();
+
+    pointerDownHandler?.({
+      clientX: 120,
+      clientY: 100,
+      button: 0,
+      buttons: 1,
+      pointerType: 'mouse',
+      altKey: false,
+      ctrlKey: false,
+      metaKey: false,
+      shiftKey: false,
+    } as PointerEvent);
+
+    expect(idleEngine.sendInputEvent).toHaveBeenCalledWith({
+      schemaVersion: 1,
+      event: {
+        kind: 'pointer',
+        intent: 'mouse-down',
+        phase: 'start',
+        x: 110,
+        y: 80,
+        button: 0,
+        buttons: 1,
+        pointerType: 'mouse',
+        modifiers: { alt: false, ctrl: false, meta: false, shift: false },
+      },
+    });
+  });
+
   it('sends typed input events for wheel with schemaVersion 1 and finite deltas', async () => {
     const idleEngine = (
       globalThis as unknown as { idleEngine: { sendInputEvent: ReturnType<typeof vi.fn> } }
