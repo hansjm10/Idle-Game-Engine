@@ -623,17 +623,22 @@ export function createSimRuntime(options: SimRuntimeOptions = {}): SimRuntime {
     contentHash: sampleContentArtifactHash,
     contentVersion: sampleContentSummary.version,
   });
+  const clampOfflineCatchupDrainBudgetToBacklog = (): void => {
+    offlineCatchupDrainBudgetMs = Math.min(
+      offlineCatchupDrainBudgetMs,
+      runtime.getAccumulatorBacklogMs(),
+    );
+  };
+
   const serialize = (): SerializedSimRuntimeState => {
+    clampOfflineCatchupDrainBudgetToBacklog();
     const accumulatorBacklogMs = runtime.getAccumulatorBacklogMs();
     return {
       schemaVersion: SIM_RUNTIME_SAVE_SCHEMA_VERSION,
       nextStep: runtime.getNextExecutableStep(),
       gameState: game.serialize(),
       accumulatorBacklogMs,
-      offlineCatchupDrainBudgetMs: Math.min(
-        offlineCatchupDrainBudgetMs,
-        accumulatorBacklogMs,
-      ),
+      offlineCatchupDrainBudgetMs,
     };
   };
 
@@ -665,6 +670,7 @@ export function createSimRuntime(options: SimRuntimeOptions = {}): SimRuntime {
       const processedMs = processedSteps * runtime.getStepSizeMs();
       offlineCatchupDrainBudgetMs = Math.max(0, offlineCatchupDrainBudgetMs - processedMs);
     }
+    clampOfflineCatchupDrainBudgetToBacklog();
   };
 
   const processTickBudget = (deltaMs: number): number => {
@@ -673,7 +679,7 @@ export function createSimRuntime(options: SimRuntimeOptions = {}): SimRuntime {
     rethrowFatalCommandFailures();
 
     const processedSteps = Math.max(0, runtime.getNextExecutableStep() - nextStepBeforeTick);
-    recordProcessedSteps(processedSteps);
+    clampOfflineCatchupDrainBudgetToBacklog();
 
     return processedSteps;
   };

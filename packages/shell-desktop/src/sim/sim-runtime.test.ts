@@ -493,6 +493,44 @@ describe('shell-desktop sim runtime', () => {
     }
   });
 
+  it('preserves offline drain budget across multi-step positive frame ticks', () => {
+    const sim = createSimRuntime({ stepSizeMs: 10, maxStepsPerFrame: 2 });
+
+    sim.enqueueCommands([
+      {
+        type: RUNTIME_COMMAND_TYPES.OFFLINE_CATCHUP,
+        priority: CommandPriority.SYSTEM,
+        payload: { elapsedMs: 60 },
+        timestamp: 0,
+        step: sim.getNextStep(),
+      },
+    ]);
+
+    const firstTick = sim.tick(30);
+    expect(firstTick.frames).toHaveLength(4);
+    expect(firstTick.nextStep).toBe(4);
+
+    const stateAfterFirstTick = loadSerializedSimRuntimeState(sim.serialize?.());
+    expect(stateAfterFirstTick.accumulatorBacklogMs).toBe(40);
+    expect(stateAfterFirstTick.offlineCatchupDrainBudgetMs).toBe(40);
+
+    const secondTick = sim.tick(0);
+    expect(secondTick.frames).toHaveLength(2);
+    expect(secondTick.nextStep).toBe(6);
+
+    const stateAfterSecondTick = loadSerializedSimRuntimeState(sim.serialize?.());
+    expect(stateAfterSecondTick.accumulatorBacklogMs).toBe(20);
+    expect(stateAfterSecondTick.offlineCatchupDrainBudgetMs).toBe(20);
+
+    const thirdTick = sim.tick(0);
+    expect(thirdTick.frames).toHaveLength(2);
+    expect(thirdTick.nextStep).toBe(8);
+
+    const drainedState = loadSerializedSimRuntimeState(sim.serialize?.());
+    expect(drainedState.accumulatorBacklogMs).toBe(0);
+    expect(drainedState.offlineCatchupDrainBudgetMs).toBe(0);
+  });
+
   it('restores offline catch-up drain budget for zero-delta backlog drains', () => {
     const sim = createSimRuntime({ stepSizeMs: 10, maxStepsPerFrame: 2 });
 
