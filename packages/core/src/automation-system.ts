@@ -555,7 +555,10 @@ export function createAutomationSystem(
         }
         // Normalize fields that may not round-trip through JSON (e.g. -Infinity -> null)
         // SerializedAutomationState.lastFiredStep is number | null, convert null to -Infinity
+        const hasRestoredLastFired =
+          restored.lastFiredStep === null || typeof restored.lastFiredStep === 'number';
         const normalizedLastFired =
+          hasRestoredLastFired &&
           restored.lastFiredStep !== null &&
           typeof restored.lastFiredStep === 'number' &&
           Number.isFinite(restored.lastFiredStep)
@@ -576,18 +579,28 @@ export function createAutomationSystem(
           ? targetCurrentStep - (savedWorkerStep)
           : 0;
 
-        const rebasedLastFired =
-          normalizedLastFired === -Infinity
+        const rebasedLastFired = hasRestoredLastFired
+          ? normalizedLastFired === -Infinity
             ? -Infinity
-            : normalizedLastFired + rebaseDelta;
+            : normalizedLastFired + rebaseDelta
+          : existing.lastFiredStep;
 
         const originalCooldownExpires = restored.cooldownExpiresStep;
-        const rebasedCooldownExpires = hasValidSavedStep
-          ? originalCooldownExpires + rebaseDelta
-          : originalCooldownExpires;
+        const hasRestoredCooldownExpires =
+          typeof originalCooldownExpires === 'number' &&
+          Number.isFinite(originalCooldownExpires);
+        const rebasedCooldownExpires = hasRestoredCooldownExpires
+          ? hasValidSavedStep
+            ? originalCooldownExpires + rebaseDelta
+            : originalCooldownExpires
+          : existing.cooldownExpiresStep;
 
-        existing.enabled = restored.enabled;
-        existing.unlocked = restored.unlocked;
+        if (typeof restored.enabled === 'boolean') {
+          existing.enabled = restored.enabled;
+        }
+        if (typeof restored.unlocked === 'boolean') {
+          existing.unlocked = restored.unlocked;
+        }
         existing.lastFiredStep = rebasedLastFired;
         existing.cooldownExpiresStep = rebasedCooldownExpires;
         if ('lastThresholdSatisfied' in restored) {

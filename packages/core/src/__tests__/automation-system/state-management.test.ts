@@ -512,6 +512,53 @@ describe('AutomationSystem', () => {
       expect(after?.unlocked).toBe(before?.unlocked);
     });
 
+    it('preserves existing flags when restored entries omit them', () => {
+      const automations: AutomationDefinition[] = [
+        {
+          id: 'auto:legacy' as any,
+          name: { default: 'Legacy', variants: {} },
+          description: { default: 'Legacy desc', variants: {} },
+          targetType: 'generator',
+          targetId: 'gen:legacy' as any,
+          trigger: { kind: 'interval', interval: { kind: 'constant', value: 1000 } },
+          unlockCondition: { kind: 'always' },
+          enabledByDefault: true,
+          order: 0,
+        },
+      ];
+
+      const system = createAutomationSystem({
+        automations,
+        stepDurationMs,
+        commandQueue: new CommandQueue(),
+        resourceState: { getAmount: () => 0 },
+      });
+
+      system.restoreState([
+        {
+          id: 'auto:legacy',
+          enabled: true,
+          lastFiredStep: 3,
+          cooldownExpiresStep: 4,
+          unlocked: true,
+        },
+      ]);
+
+      system.restoreState([
+        {
+          id: 'auto:legacy',
+          lastFiredStep: 5,
+          cooldownExpiresStep: 6,
+        } as unknown as SerializedAutomationState,
+      ]);
+
+      const after = getAutomationState(system).get('auto:legacy');
+      expect(after?.enabled).toBe(true);
+      expect(after?.unlocked).toBe(true);
+      expect(after?.lastFiredStep).toBe(5);
+      expect(after?.cooldownExpiresStep).toBe(6);
+    });
+
     it('normalizes non-finite lastFiredStep to -Infinity on restore', () => {
       const automations: AutomationDefinition[] = [
         {
