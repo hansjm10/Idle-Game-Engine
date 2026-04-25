@@ -26,6 +26,47 @@ The stable surface of `@idle-engine/core` intentionally stays small:
 - Events: `EventBus`, `buildRuntimeEventFrame`, `EventBroadcastBatcher`, `EventBroadcastDeduper`, `applyEventBroadcastFrame`, `applyEventBroadcastBatch`, `createEventBroadcastFrame`, `createEventTypeFilter`, `GENERATED_RUNTIME_EVENT_DEFINITIONS`
 - Versioning: `RUNTIME_VERSION`
 
+## Game save/load API
+
+`createGame(...)` returns a `Game` facade for browser and host integrations. The
+facade uses `serialize()` and `hydrate()` as its save/load API, matching common
+state-management terminology:
+
+- `game.serialize()` returns a `SerializedGameState`, a JSON-friendly object
+  suitable for host-managed persistence.
+- `game.hydrate(save)` accepts a parsed save object, validates and migrates
+  supported save formats, and restores the runtime state.
+
+Basic browser persistence can be implemented with `localStorage`:
+
+```ts
+import type { Game } from '@idle-engine/core';
+
+const SAVE_KEY = 'idle-game-save';
+
+export function saveGame(game: Game): void {
+  const save = game.serialize();
+  localStorage.setItem(SAVE_KEY, JSON.stringify(save));
+}
+
+export function loadGame(game: Game): boolean {
+  const raw = localStorage.getItem(SAVE_KEY);
+  if (!raw) {
+    return false;
+  }
+
+  const save: unknown = JSON.parse(raw);
+  game.hydrate(save);
+  return true;
+}
+```
+
+`hydrate()` preserves the scheduler state around restoration. If the game was
+running, hydration pauses the scheduler and restarts it afterward; if the game
+was stopped, it remains stopped. Loading an older save into a runtime that has
+already advanced is rejected, so create a new `Game` instance before hydrating
+older save data.
+
 ## Avoiding accidental internals usage
 
 For game code, prefer importing from `@idle-engine/core` and avoid depending on `@idle-engine/core/internals` unless you are intentionally integrating with engine internals.

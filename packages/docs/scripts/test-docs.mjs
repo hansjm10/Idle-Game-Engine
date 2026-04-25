@@ -53,6 +53,24 @@ await assertFileContains('docs/shell-desktop-mcp.md', [
 
 await assertFileContains('packages/docs/sidebars.ts', ['shell-desktop-mcp']);
 
+await assertFileContains('docs/index.md', [
+  'The high-level `Game` facade uses `serialize()` and `hydrate()` for save/load',
+  'export function saveGame(game: Game): void',
+  'export function loadGame(game: Game): boolean',
+  'game was running because `start()` had been called',
+  'it starts ticking again',
+  'step than the current runtime is rejected',
+]);
+
+await assertFileContains('packages/core/README.md', [
+  '## Game save/load API',
+  '`game.serialize()` returns a `SerializedGameState`',
+  '`game.hydrate(save)` accepts a parsed save object',
+  'export function saveGame(game: Game): void',
+  'export function loadGame(game: Game): boolean',
+  '`hydrate()` preserves the scheduler state around restoration',
+]);
+
 await assertFileContains('docs/issue-857-design.md', [
   'IDLE_ENGINE_ENABLE_MCP_SERVER',
   'IDLE_ENGINE_MCP_PORT',
