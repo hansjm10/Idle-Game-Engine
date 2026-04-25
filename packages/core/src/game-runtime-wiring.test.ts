@@ -346,6 +346,15 @@ describe('createGameRuntime', () => {
       runtimeBacklog: { accumulatorBacklogMs: 275, creditedBacklogMs: 125 },
       expected: { totalMs: 275, hostFrameMs: 150, creditedMs: 125 },
     },
+    {
+      name: 'invalid backlog fields',
+      runtimeBacklog: {
+        accumulatorBacklogMs: Number.NaN,
+        hostFrameBacklogMs: -1,
+        creditedBacklogMs: Number.POSITIVE_INFINITY,
+      },
+      expected: { totalMs: 0, hostFrameMs: 0, creditedMs: 0 },
+    },
   ])('hydrates $name through direct wiring hydrate', ({ runtimeBacklog, expected }) => {
     const content = createContentPack({
       resources: [

@@ -85,14 +85,6 @@ function readNonNegativeInt(value: unknown): number | undefined {
   return Math.floor(numberValue);
 }
 
-function readNonNegativeNumber(value: unknown): number | undefined {
-  const numberValue = readFiniteNumber(value);
-  if (numberValue === undefined || numberValue < 0) {
-    return undefined;
-  }
-  return numberValue;
-}
-
 function getSaveVersion(value: unknown): number | undefined {
   if (!isRecord(value)) {
     return undefined;
@@ -143,9 +135,9 @@ function normalizeRuntime(value: unknown): GameStateSaveRuntime {
 
   const step = readNonNegativeInt(value.step) ?? 0;
   const backlog = normalizeRuntimeBacklogFields({
-    accumulatorBacklogMs: readNonNegativeNumber(value.accumulatorBacklogMs),
-    hostFrameBacklogMs: readNonNegativeNumber(value.hostFrameBacklogMs),
-    creditedBacklogMs: readNonNegativeNumber(value.creditedBacklogMs),
+    accumulatorBacklogMs: value.accumulatorBacklogMs,
+    hostFrameBacklogMs: value.hostFrameBacklogMs,
+    creditedBacklogMs: value.creditedBacklogMs,
   });
   const rngSeed = readFiniteNumber(value.rngSeed);
   const rngState = readFiniteNumber(value.rngState);
@@ -427,12 +419,8 @@ export function serializeGameStateSaveFormat(
   const savedAt = readFiniteNumber(options.savedAt) ?? Date.now();
   const runtimeStep = readNonNegativeInt(options.runtimeStep) ?? 0;
   const backlog = normalizeRuntimeBacklogFields({
-    hostFrameBacklogMs: readNonNegativeNumber(
-      options.runtimeBacklog?.hostFrameMs,
-    ),
-    creditedBacklogMs: readNonNegativeNumber(
-      options.runtimeBacklog?.creditedMs,
-    ),
+    hostFrameBacklogMs: options.runtimeBacklog?.hostFrameMs,
+    creditedBacklogMs: options.runtimeBacklog?.creditedMs,
   });
   const currentSeed = getCurrentRNGSeed();
   const rngSeed = options.rngSeed ?? currentSeed;

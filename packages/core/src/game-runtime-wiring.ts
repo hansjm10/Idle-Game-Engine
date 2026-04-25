@@ -17,7 +17,7 @@ import { createResourceStateAdapter } from './automation-resource-state-adapter.
 import { hydrateGameStateSaveFormat, serializeGameStateSaveFormat } from './game-state-save.js';
 import { registerOfflineCatchupCommandHandler } from './offline-catchup-command-handlers.js';
 import { createProductionSystem } from './production-system.js';
-import { normalizeRuntimeBacklogFields } from './runtime-backlog.js';
+import { normalizeRuntimeBacklogSourceState } from './runtime-backlog.js';
 import { createTransformSystem } from './transform-system.js';
 import { registerTransformCommandHandlers } from './transform-command-handlers.js';
 import { registerResourceCommandHandlers } from './resource-command-handlers.js';
@@ -218,11 +218,9 @@ export function wireGameRuntime<
       currentStep: hydrateOptions?.currentStep,
       applyRngSeed: hydrateOptions?.applyRngSeed,
     });
-    const backlog = normalizeRuntimeBacklogFields(save.runtime);
-    runtime.restoreAccumulatorBacklog({
-      hostFrameMs: backlog.hostFrameBacklogMs,
-      creditedMs: backlog.creditedBacklogMs,
-    });
+    runtime.restoreAccumulatorBacklog(
+      normalizeRuntimeBacklogSourceState(save.runtime),
+    );
   };
 
   return {
