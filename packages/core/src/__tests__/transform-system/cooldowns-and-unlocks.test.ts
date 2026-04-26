@@ -3,6 +3,7 @@ import type { TransformDefinition } from '@idle-engine/content-schema';
 
 import type { TransformState } from '../../transform-system.js';
 import {
+  buildTransformSnapshot,
   createTransformSystem,
   getTransformState,
   isTransformCooldownActive,
@@ -105,7 +106,6 @@ describe('TransformSystem', () => {
       const state: TransformState = {
         id: 'test',
         unlocked: true,
-        visible: true,
         cooldownExpiresStep: 10,
         runsThisTick: 0,
       };
@@ -140,17 +140,24 @@ describe('TransformSystem', () => {
         ]),
       );
 
+      const conditionContext = createMockConditionContext(new Map());
       const system = createTransformSystem({
         transforms,
         stepDurationMs,
         resourceState,
-        conditionContext: createMockConditionContext(new Map()),
+        conditionContext,
       });
 
       system.tick({ deltaMs: stepDurationMs, step: 0, events: { publish: vi.fn() } });
 
-      const state = getTransformState(system);
-      expect(state.get('transform:invisible')?.visible).toBe(false);
+      const snapshot = buildTransformSnapshot(0, 0, {
+        transforms,
+        state: system.getState(),
+        stepDurationMs,
+        resourceState,
+        conditionContext,
+      });
+      expect(snapshot.transforms[0]?.visible).toBe(false);
 
       const result = system.executeTransform('transform:invisible', 0);
       expect(result.success).toBe(true);

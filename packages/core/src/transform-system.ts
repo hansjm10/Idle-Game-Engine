@@ -76,7 +76,6 @@ const compareStableStrings = (left: string, right: string): number => {
 export interface TransformState {
   readonly id: string;
   unlocked: boolean;
-  visible: boolean;
   cooldownExpiresStep: number;
   runsThisTick: number;
   batches?: TransformBatchState[];
@@ -2684,7 +2683,6 @@ export function createTransformSystem(
     transformStates.set(transform.id, {
       id: transform.id,
       unlocked: !transform.unlockCondition,
-      visible: true,
       cooldownExpiresStep: 0,
       runsThisTick: 0,
       ...(transform.mode === 'batch' || transform.mode === 'mission'
@@ -3449,14 +3447,10 @@ export function createTransformSystem(
     return executeNonMissionTransformRun(transform, state, step, formulaContext);
   };
 
-  const refreshTransformViewState = (
+  const refreshTransformUnlockState = (
     transform: TransformDefinition,
     state: TransformState,
   ): void => {
-    state.visible = conditionContext
-      ? evaluateCondition(transform.visibilityCondition, conditionContext)
-      : true;
-
     updateTransformUnlockStatus(transform, state, conditionContext);
   };
 
@@ -3466,7 +3460,7 @@ export function createTransformSystem(
       if (!state) {
         continue;
       }
-      refreshTransformViewState(transform, state);
+      refreshTransformUnlockState(transform, state);
     }
   };
 
@@ -3482,7 +3476,7 @@ export function createTransformSystem(
       return;
     }
 
-    refreshTransformViewState(transform, state);
+    refreshTransformUnlockState(transform, state);
 
     const isEventBased = isEventBasedTrigger(transform);
     const isEventPending = isEventBased && pendingEventTriggers.has(transform.id);
@@ -4197,11 +4191,16 @@ export function buildTransformSnapshot(
     }));
   };
 
+  const resolveVisible = (transform: TransformDefinition): boolean =>
+    options.conditionContext
+      ? evaluateCondition(transform.visibilityCondition, options.conditionContext)
+      : true;
+
   const views: TransformView[] = [];
   for (const transform of sortedTransforms) {
     const state = options.state.get(transform.id);
     const unlocked = state?.unlocked ?? false;
-    const visible = state?.visible ?? true;
+    const visible = resolveVisible(transform);
     const cooldownExpiresStep = state?.cooldownExpiresStep ?? 0;
     const cooldownRemainingMs = Math.max(
       0,

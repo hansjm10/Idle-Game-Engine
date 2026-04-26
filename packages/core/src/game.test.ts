@@ -171,6 +171,39 @@ function createInitialSnapshotViewContent() {
   });
 }
 
+function createTransformVisibilityMutationContent() {
+  return createContentPack({
+    resources: [
+      createResourceDefinition('resource.energy', { startAmount: 10 }),
+      createResourceDefinition('resource.gold', { startAmount: 0 }),
+    ],
+    transforms: [
+      createTransform({
+        id: 'transform.spend-visible-resource',
+        name: { default: 'Spend Visible Resource' },
+        description: { default: 'Consumes the resource that controls visibility' },
+        mode: 'instant',
+        trigger: {
+          kind: 'condition',
+          condition: { kind: 'always' },
+        },
+        inputs: [
+          { resourceId: 'resource.energy', amount: { kind: 'constant', value: 10 } },
+        ],
+        outputs: [
+          { resourceId: 'resource.gold', amount: { kind: 'constant', value: 1 } },
+        ],
+        visibilityCondition: {
+          kind: 'resourceThreshold',
+          resourceId: 'resource.energy',
+          comparator: 'gte',
+          amount: { kind: 'constant', value: 10 },
+        },
+      }),
+    ],
+  });
+}
+
 function createTestContent() {
   return createContentPack({
     resources: [
@@ -360,6 +393,28 @@ describe('createGame', () => {
       game.stop();
       vi.useRealTimers();
     }
+  });
+
+  it('derives transform visibility from resources mutated earlier in the tick', () => {
+    const game = createGame(createTransformVisibilityMutationContent(), {
+      stepSizeMs: 100,
+    });
+
+    game.tick(game.internals.runtime.getStepSizeMs());
+
+    const snapshot = game.getSnapshot();
+    const energy = snapshot.resources.find(
+      (resource) => resource.id === 'resource.energy',
+    );
+    const transform = snapshot.transforms.find(
+      (view) => view.id === 'transform.spend-visible-resource',
+    );
+
+    expect(energy?.amount).toBe(0);
+    expect(transform).toMatchObject({
+      visible: false,
+      canAfford: false,
+    });
   });
 
   it('enqueues player commands via facade actions', () => {

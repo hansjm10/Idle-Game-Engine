@@ -434,7 +434,6 @@ describe('buildProgressionSnapshot', () => {
     const transformState: TransformState = {
       id: 'transform:test',
       unlocked: true,
-      visible: true,
       cooldownExpiresStep: 7,
       runsThisTick: 0,
     };
