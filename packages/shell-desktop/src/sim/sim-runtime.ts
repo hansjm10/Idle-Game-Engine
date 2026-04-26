@@ -24,6 +24,7 @@ import {
 } from './worker-protocol.js';
 import type {
   AssetId,
+  RenderActionRegion,
   RenderCommandBuffer,
   RenderDraw,
   RenderPassId,
@@ -68,8 +69,7 @@ type ShellControlEventCommandPayload = Readonly<{
   event: ShellControlEvent;
 }>;
 
-const SAMPLE_ENERGY_RESOURCE_ID = 'sample-pack.energy';
-const SAMPLE_COLLECT_AMOUNT = 1;
+const SAMPLE_COLLECT_ACTION_ID = 'collect';
 const SAMPLE_FONT_ASSET_ID = 'sample-pack.ui-font' as AssetId;
 const SIM_RUNTIME_SAVE_FILE_STEM = 'sample-pack';
 const MAX_RETAINED_TICK_FRAMES = 128;
@@ -80,6 +80,16 @@ const SAMPLE_UI_PANEL = {
   width: 440,
   height: 236,
 } as const;
+
+const SAMPLE_COLLECT_ACTION_REGION: RenderActionRegion = {
+  id: 'sample-panel.collect',
+  actionId: SAMPLE_COLLECT_ACTION_ID,
+  actionType: 'button',
+  ...SAMPLE_UI_PANEL,
+  enabled: true,
+  label: 'Collect energy',
+  tooltip: 'Click panel or press Space: +1 Energy',
+};
 
 const clampByte = (value: number): number => Math.min(255, Math.max(0, Math.floor(value)));
 
@@ -306,6 +316,7 @@ const buildSamplePackFrame = (
     },
     passes: [{ id: 'world' }, { id: 'ui' }],
     draws,
+    actionRegions: [SAMPLE_COLLECT_ACTION_REGION],
   };
 };
 
@@ -431,25 +442,6 @@ export function createSimRuntime(options: SimRuntimeOptions = {}): SimRuntime {
     if (payload.schemaVersion !== 1) {
       throw new Error(`Unsupported InputEventCommandPayload schemaVersion: ${payload.schemaVersion}`);
     }
-
-    const { event } = payload;
-
-    if (event.kind !== 'pointer' || event.intent !== 'mouse-down') {
-      return;
-    }
-
-    const { x, y } = event;
-    const inBounds =
-      x >= SAMPLE_UI_PANEL.x &&
-      x < SAMPLE_UI_PANEL.x + SAMPLE_UI_PANEL.width &&
-      y >= SAMPLE_UI_PANEL.y &&
-      y < SAMPLE_UI_PANEL.y + SAMPLE_UI_PANEL.height;
-
-    if (!inBounds) {
-      return;
-    }
-
-    game.collectResource(SAMPLE_ENERGY_RESOURCE_ID, SAMPLE_COLLECT_AMOUNT);
   });
 
   const hasCommandHandler = (type: string): boolean => dispatcher.getHandler(type) !== undefined;

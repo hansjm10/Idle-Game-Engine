@@ -281,6 +281,74 @@ function validateScissorPushDraw(
   validateRectGeometry(errors, path, draw, passId);
 }
 
+function validateOptionalString(
+  errors: string[],
+  path: string,
+  field: 'label' | 'tooltip',
+  value: unknown,
+): void {
+  if (value !== undefined && typeof value !== 'string') {
+    errors.push(`${path}.${field} must be a string when provided`);
+  }
+}
+
+function validateActionRegion(
+  errors: string[],
+  path: string,
+  region: Record<string, unknown>,
+): void {
+  const id = region['id'];
+  if (typeof id !== 'string' || id.length === 0) {
+    errors.push(`${path}.id must be non-empty`);
+  }
+
+  const actionId = region['actionId'];
+  if (typeof actionId !== 'string' || actionId.length === 0) {
+    errors.push(`${path}.actionId must be non-empty`);
+  }
+
+  const actionType = region['actionType'];
+  if (typeof actionType !== 'string' || actionType.length === 0) {
+    errors.push(`${path}.actionType must be non-empty`);
+  }
+
+  validateFiniteCoordinate(errors, path, 'x', region['x'], true);
+  validateFiniteCoordinate(errors, path, 'y', region['y'], true);
+  validateFiniteNonNegativeDimension(errors, path, 'width', region['width'], true);
+  validateFiniteNonNegativeDimension(errors, path, 'height', region['height'], true);
+
+  if (typeof region['enabled'] !== 'boolean') {
+    errors.push(`${path}.enabled must be a boolean`);
+  }
+
+  validateOptionalString(errors, path, 'label', region['label']);
+  validateOptionalString(errors, path, 'tooltip', region['tooltip']);
+}
+
+function validateActionRegions(
+  errors: string[],
+  value: unknown,
+): void {
+  if (value === undefined) {
+    return;
+  }
+
+  if (!Array.isArray(value)) {
+    errors.push('actionRegions must be an array when provided');
+    return;
+  }
+
+  for (let index = 0; index < value.length; index++) {
+    const path = `actionRegions[${index}]`;
+    const region = value[index];
+    if (!isRecord(region)) {
+      errors.push(`${path} must be an object`);
+      continue;
+    }
+    validateActionRegion(errors, path, region);
+  }
+}
+
 export function validateRenderCommandBuffer(
   rcb: RenderCommandBuffer,
 ): RenderCommandBufferValidationResult {
@@ -331,6 +399,7 @@ export function validateRenderCommandBuffer(
 
   const passesValue = rcbValue['passes'];
   const drawsValue = rcbValue['draws'];
+  const actionRegionsValue = rcbValue['actionRegions'];
 
   if (!Array.isArray(passesValue)) {
     errors.push('passes must be an array');
@@ -338,6 +407,7 @@ export function validateRenderCommandBuffer(
   if (!Array.isArray(drawsValue)) {
     errors.push('draws must be an array');
   }
+  validateActionRegions(errors, actionRegionsValue);
 
   const passes = Array.isArray(passesValue) ? passesValue : [];
   const draws = Array.isArray(drawsValue) ? drawsValue : [];

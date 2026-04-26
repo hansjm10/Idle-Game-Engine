@@ -384,4 +384,45 @@ describe('hashing', () => {
 
     expect(hashA).not.toEqual(hashB);
   });
+
+  it('includes actionRegions in RenderCommandBuffer hashes', async () => {
+    const actionRegion = {
+      id: 'collect',
+      actionId: 'collect',
+      actionType: 'button',
+      x: 10,
+      y: 20,
+      width: 30,
+      height: 40,
+      enabled: true,
+    } as const;
+
+    const base: RenderCommandBuffer = {
+      frame: {
+        schemaVersion: RENDERER_CONTRACT_SCHEMA_VERSION,
+        step: 1,
+        simTimeMs: 16,
+        contentHash: 'content:test',
+      },
+      scene: {
+        camera: { x: 0, y: 0, zoom: 1 },
+      },
+      passes: [{ id: 'ui' }],
+      draws: [],
+      actionRegions: [actionRegion],
+    };
+
+    const hashA = await hashRenderCommandBuffer(base);
+    const hashB = await hashRenderCommandBuffer({
+      ...base,
+      actionRegions: [
+        {
+          ...actionRegion,
+          enabled: false,
+        },
+      ],
+    });
+
+    expect(hashA).not.toEqual(hashB);
+  });
 });

@@ -147,6 +147,27 @@ describe('shell-desktop sim runtime', () => {
     expect(energyFillWidth(result.frames[0])).toBe(44);
   });
 
+  it('emits a semantic action region for the sample collect panel', () => {
+    const sim = createSimRuntime({ stepSizeMs: 10, maxStepsPerFrame: 50 });
+
+    const frame = sim.renderCurrentFrame?.();
+
+    expect(frame?.actionRegions).toEqual([
+      {
+        id: 'sample-panel.collect',
+        actionId: 'collect',
+        actionType: 'button',
+        x: 16,
+        y: 16,
+        width: 440,
+        height: 236,
+        enabled: true,
+        label: 'Collect energy',
+        tooltip: 'Click panel or press Space: +1 Energy',
+      },
+    ]);
+  });
+
   it('trims fractional resource labels without regex backtracking', () => {
     const sim = createSimRuntime({ stepSizeMs: 10, maxStepsPerFrame: 50 });
 
@@ -712,7 +733,7 @@ describe('shell-desktop sim runtime', () => {
     expect(result.nextStep).toBe(2);
   });
 
-  it('queues sample-pack collection for the next step on in-bounds INPUT_EVENT', () => {
+  it('does not queue sample-pack collection from raw in-bounds INPUT_EVENT', () => {
     const sim = createSimRuntime({ stepSizeMs: 10, maxStepsPerFrame: 50 });
 
     const command: Command = {
@@ -729,8 +750,8 @@ describe('shell-desktop sim runtime', () => {
     expect(hasText(firstTick.frames[0], 'Energy: 10 / 100 +0/s')).toBe(true);
 
     const secondTick = sim.tick(10);
-    expect(hasText(secondTick.frames[0], 'Energy: 11 / 100 +0/s')).toBe(true);
-    expect(energyFillWidth(secondTick.frames[0])).toBe(44);
+    expect(hasText(secondTick.frames[0], 'Energy: 10 / 100 +0/s')).toBe(true);
+    expect(energyFillWidth(secondTick.frames[0])).toBe(40);
   });
 
   it('does not queue sample-pack collection for out-of-bounds INPUT_EVENT', () => {

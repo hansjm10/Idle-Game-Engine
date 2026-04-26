@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import { hitTestActionRegions } from './action-regions.js';
 import { hashRenderCommandBuffer } from './hashing.js';
 import { __test__, compileViewModelToRenderCommandBuffer } from './render-compiler.js';
 import { RENDERER_CONTRACT_SCHEMA_VERSION } from './types.js';
@@ -277,6 +278,168 @@ describe('render compiler', () => {
       height: 50,
       tintRgba: 0x11_22_33_44,
     });
+  });
+
+  it('compiles UI action metadata into semantic action regions', () => {
+    const viewModel: ViewModel = {
+      frame: {
+        schemaVersion: RENDERER_CONTRACT_SCHEMA_VERSION,
+        step: 6,
+        simTimeMs: 96,
+        contentHash: 'content:test',
+      },
+      scene: {
+        camera: { x: 0, y: 0, zoom: 1 },
+        sprites: [],
+      },
+      ui: {
+        nodes: [
+          {
+            kind: 'rect',
+            id: 'collect-button',
+            x: 12.6,
+            y: 8.4,
+            width: 100,
+            height: 50,
+            colorRgba: 0x11_22_33_44,
+            actionRegion: {
+              id: 'collect-region',
+              actionId: 'collect',
+              actionType: 'button',
+              enabled: true,
+              label: 'Collect',
+              tooltip: '+1 Energy',
+            },
+          },
+        ],
+      },
+    };
+
+    const rcb = compileViewModelToRenderCommandBuffer(viewModel);
+
+    expect(rcb.actionRegions).toEqual([
+      {
+        id: 'collect-region',
+        actionId: 'collect',
+        actionType: 'button',
+        x: 13,
+        y: 8,
+        width: 100,
+        height: 50,
+        enabled: true,
+        label: 'Collect',
+        tooltip: '+1 Energy',
+      },
+    ]);
+  });
+
+  it('orders action regions deterministically by UI draw order', () => {
+    const base: ViewModel = {
+      frame: {
+        schemaVersion: RENDERER_CONTRACT_SCHEMA_VERSION,
+        step: 6,
+        simTimeMs: 96,
+        contentHash: 'content:test',
+      },
+      scene: {
+        camera: { x: 0, y: 0, zoom: 1 },
+        sprites: [],
+      },
+      ui: {
+        nodes: [],
+      },
+    };
+
+    const nodeB = {
+      kind: 'rect',
+      id: 'b',
+      x: 10,
+      y: 10,
+      width: 10,
+      height: 10,
+      colorRgba: 0x11_11_11_ff,
+      actionRegion: {
+        actionId: 'b',
+        actionType: 'button',
+        enabled: true,
+      },
+    } as const;
+    const nodeA = {
+      ...nodeB,
+      id: 'a',
+      actionRegion: {
+        actionId: 'a',
+        actionType: 'button',
+        enabled: true,
+      },
+    } as const;
+
+    const rcb = compileViewModelToRenderCommandBuffer({
+      ...base,
+      ui: { nodes: [nodeB, nodeA] },
+    });
+
+    expect(rcb.actionRegions?.map((region) => region.id)).toEqual(['a', 'b']);
+  });
+
+  it('orders overlapping custom-id action regions by their UI draw keys', () => {
+    const base: ViewModel = {
+      frame: {
+        schemaVersion: RENDERER_CONTRACT_SCHEMA_VERSION,
+        step: 6,
+        simTimeMs: 96,
+        contentHash: 'content:test',
+      },
+      scene: {
+        camera: { x: 0, y: 0, zoom: 1 },
+        sprites: [],
+      },
+      ui: {
+        nodes: [],
+      },
+    };
+
+    const bottomNode = {
+      kind: 'rect',
+      id: 'a',
+      x: 10,
+      y: 10,
+      width: 20,
+      height: 20,
+      colorRgba: 0x11_11_11_ff,
+      actionRegion: {
+        id: 'z-bottom-region',
+        actionId: 'bottom',
+        actionType: 'button',
+        enabled: true,
+      },
+    } as const;
+    const topNode = {
+      kind: 'rect',
+      id: 'b',
+      x: 10,
+      y: 10,
+      width: 20,
+      height: 20,
+      colorRgba: 0x22_22_22_ff,
+      actionRegion: {
+        id: 'a-top-region',
+        actionId: 'top',
+        actionType: 'button',
+        enabled: true,
+      },
+    } as const;
+
+    const rcb = compileViewModelToRenderCommandBuffer({
+      ...base,
+      ui: { nodes: [topNode, bottomNode] },
+    });
+
+    expect(rcb.actionRegions?.map((region) => region.id)).toEqual([
+      'z-bottom-region',
+      'a-top-region',
+    ]);
+    expect(hitTestActionRegions(rcb.actionRegions ?? [], 15, 15)?.actionId).toBe('top');
   });
 
   it('clamps meter fill widths (non-positive max and out-of-range values)', () => {

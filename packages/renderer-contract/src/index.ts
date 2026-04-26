@@ -8,11 +8,20 @@ export {
 } from './hashing.js';
 
 export {
+  hitTestActionRegions,
+  isPointInActionRegion,
+} from './action-regions.js';
+
+export {
   WORLD_FIXED_POINT_SCALE,
   compileViewModelToRenderCommandBuffer,
 } from './render-compiler.js';
 
 export { RENDERER_CONTRACT_SCHEMA_VERSION } from './types.js';
+
+export type {
+  ActionRegionHitTestOptions,
+} from './action-regions.js';
 
 export type {
   AssetId,
@@ -24,6 +33,7 @@ export type {
   FrameHeader,
   ImageDraw,
   RectDraw,
+  RenderActionRegion,
   RenderCommandBuffer,
   RenderDraw,
   RenderPass,
@@ -36,6 +46,7 @@ export type {
   SpriteInstance,
   TextDraw,
   UiImageNode,
+  UiActionRegion,
   UiMeterNode,
   UiNode,
   UiRectNode,

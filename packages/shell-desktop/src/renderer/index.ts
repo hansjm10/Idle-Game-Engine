@@ -1,12 +1,16 @@
-import { RENDERER_CONTRACT_SCHEMA_VERSION } from '@idle-engine/renderer-contract';
+import {
+  RENDERER_CONTRACT_SCHEMA_VERSION,
+  hitTestActionRegions,
+} from '@idle-engine/renderer-contract';
 import { createWebGpuRenderer } from '@idle-engine/renderer-webgpu';
 import type {
   AssetId,
   AssetManifest,
+  RenderActionRegion,
   RenderCommandBuffer,
   Sha256Hex,
 } from '@idle-engine/renderer-contract';
-import type { IdleEngineApi, ShellInputEventEnvelope } from '../ipc.js';
+import type { IdleEngineApi, ShellControlEvent, ShellInputEventEnvelope } from '../ipc.js';
 import type { InputEventModifiers, PointerInputEvent, WheelInputEvent } from '@idle-engine/core';
 import type { WebGpuBitmapFont, WebGpuRenderer } from '@idle-engine/renderer-webgpu';
 
@@ -455,6 +459,54 @@ async function run(): Promise<void> {
     };
   };
 
+  const buildActionRegionControlEvent = (
+    region: RenderActionRegion,
+    phase: ShellControlEvent['phase'],
+    point: { readonly x: number; readonly y: number },
+  ): ShellControlEvent => {
+    const metadata: Record<string, unknown> = {
+      actionRegionId: region.id,
+      actionRegionType: region.actionType,
+      x: point.x,
+      y: point.y,
+    };
+
+    if (region.label !== undefined) {
+      metadata.label = region.label;
+    }
+    if (region.tooltip !== undefined) {
+      metadata.tooltip = region.tooltip;
+    }
+
+    return {
+      intent: region.actionId,
+      phase,
+      metadata,
+    };
+  };
+
+  const sendActionRegionControlEvent = (
+    phase: ShellControlEvent['phase'],
+    event: PointerEvent,
+  ): boolean => {
+    const point = getCanvasLocalPoint(event);
+    const region = hitTestActionRegions(
+      latestRcb?.actionRegions ?? [],
+      point.x,
+      point.y,
+      { includeDisabled: true },
+    );
+    if (!region) {
+      return false;
+    }
+    if (!region.enabled) {
+      return true;
+    }
+
+    idleEngineApi.sendControlEvent(buildActionRegionControlEvent(region, phase, point));
+    return true;
+  };
+
   const buildWheelInputEvent = (event: WheelEvent): WheelInputEvent => {
     const { x, y } = getCanvasLocalPoint(event);
     return {
@@ -507,6 +559,9 @@ async function run(): Promise<void> {
   };
 
   canvasElement.addEventListener('pointerdown', (event) => {
+    if (sendActionRegionControlEvent('start', event)) {
+      return;
+    }
     sendPointerEvent('mouse-down', 'start', event);
   });
 
