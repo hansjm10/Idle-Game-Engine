@@ -55,7 +55,7 @@
     "prebuild": "node ../../tools/scripts/generate-version.mjs",
     "build": "tsc -p tsconfig.json",
     "clean": "rimraf dist",
-    "lint": "eslint --max-warnings=0 'src/**/*.ts'",
+    "lint": "eslint --max-warnings=0 \"src/**/*.ts\"",
     "test": "vitest",
     "test:schema-compat": "pnpm --filter @idle-engine/content-schema build && vitest run --passWithNoTests src/__tests__/schema-compat.test.ts",
     "test:ci": "vitest run --passWithNoTests",
