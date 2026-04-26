@@ -112,6 +112,65 @@ function createSnapshotViewContent() {
   });
 }
 
+function createInitialSnapshotViewContent() {
+  return createContentPack({
+    resources: [
+      createResourceDefinition('resource.energy', { startAmount: 20 }),
+      createResourceDefinition('resource.gold', { startAmount: 0 }),
+    ],
+    automations: [
+      createAutomation({
+        id: 'automation.initial',
+        name: { default: 'Initial Automation' },
+        description: { default: 'Available immediately' },
+        targetType: 'collectResource',
+        targetId: 'resource.gold',
+        targetAmount: literalOne,
+        trigger: { kind: 'commandQueueEmpty' },
+        unlockCondition: { kind: 'always' },
+        enabledByDefault: true,
+        order: 0,
+      }),
+      createAutomation({
+        id: 'automation.locked-initial',
+        name: { default: 'Locked Initial Automation' },
+        description: { default: 'Locked immediately' },
+        targetType: 'collectResource',
+        targetId: 'resource.gold',
+        targetAmount: literalOne,
+        trigger: { kind: 'commandQueueEmpty' },
+        unlockCondition: { kind: 'never' },
+        enabledByDefault: false,
+        order: 1,
+      }),
+    ],
+    transforms: [
+      createTransform({
+        id: 'transform.initial',
+        name: { default: 'Initial Transform' },
+        description: { default: 'Available immediately' },
+        mode: 'instant',
+        trigger: { kind: 'manual' },
+        inputs: [{ resourceId: 'resource.energy', amount: literalOne }],
+        outputs: [{ resourceId: 'resource.gold', amount: literalOne }],
+        unlockCondition: { kind: 'always' },
+        order: 0,
+      }),
+      createTransform({
+        id: 'transform.hidden-initial',
+        name: { default: 'Hidden Initial Transform' },
+        description: { default: 'Hidden immediately' },
+        mode: 'instant',
+        trigger: { kind: 'manual' },
+        inputs: [{ resourceId: 'resource.energy', amount: literalOne }],
+        outputs: [{ resourceId: 'resource.gold', amount: literalOne }],
+        visibilityCondition: { kind: 'never' },
+        order: 1,
+      }),
+    ],
+  });
+}
+
 function createTestContent() {
   return createContentPack({
     resources: [
@@ -263,6 +322,44 @@ describe('createGame', () => {
 
     game.stop();
     vi.useRealTimers();
+  });
+
+  it('publishes initial automation and transform view state before the first tick', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(2000);
+
+    const game = createGame(createInitialSnapshotViewContent(), { stepSizeMs: 100 });
+
+    try {
+      game.start();
+
+      const snapshot = game.getSnapshot();
+
+      expect(snapshot.step).toBe(0);
+      expect(
+        snapshot.automations.map(({ id, unlocked, visible }) => ({
+          id,
+          unlocked,
+          visible,
+        })),
+      ).toEqual([
+        { id: 'automation.initial', unlocked: true, visible: true },
+        { id: 'automation.locked-initial', unlocked: false, visible: false },
+      ]);
+      expect(
+        snapshot.transforms.map(({ id, unlocked, visible }) => ({
+          id,
+          unlocked,
+          visible,
+        })),
+      ).toEqual([
+        { id: 'transform.initial', unlocked: true, visible: true },
+        { id: 'transform.hidden-initial', unlocked: true, visible: false },
+      ]);
+    } finally {
+      game.stop();
+      vi.useRealTimers();
+    }
   });
 
   it('enqueues player commands via facade actions', () => {

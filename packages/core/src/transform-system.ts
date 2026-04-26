@@ -2628,6 +2628,7 @@ export function createTransformSystem(
   options: TransformSystemOptions,
 ): System & {
   getState: () => ReadonlyMap<string, TransformState>;
+  refreshViewState: () => void;
   restoreState: (
     state: readonly SerializedTransformState[],
     options?: { savedWorkerStep?: number; currentStep?: number },
@@ -3448,6 +3449,27 @@ export function createTransformSystem(
     return executeNonMissionTransformRun(transform, state, step, formulaContext);
   };
 
+  const refreshTransformViewState = (
+    transform: TransformDefinition,
+    state: TransformState,
+  ): void => {
+    state.visible = conditionContext
+      ? evaluateCondition(transform.visibilityCondition, conditionContext)
+      : true;
+
+    updateTransformUnlockStatus(transform, state, conditionContext);
+  };
+
+  const refreshViewState = (): void => {
+    for (const transform of sortedTransforms) {
+      const state = transformStates.get(transform.id);
+      if (!state) {
+        continue;
+      }
+      refreshTransformViewState(transform, state);
+    }
+  };
+
   const processTransformTick = (
     transform: TransformDefinition,
     step: number,
@@ -3460,12 +3482,7 @@ export function createTransformSystem(
       return;
     }
 
-    // Update visibility each tick (default visible when no context is provided)
-    state.visible = conditionContext
-      ? evaluateCondition(transform.visibilityCondition, conditionContext)
-      : true;
-
-    updateTransformUnlockStatus(transform, state, conditionContext);
+    refreshTransformViewState(transform, state);
 
     const isEventBased = isEventBasedTrigger(transform);
     const isEventPending = isEventBased && pendingEventTriggers.has(transform.id);
@@ -4013,6 +4030,8 @@ export function createTransformSystem(
     getState() {
       return new Map(transformStates);
     },
+
+    refreshViewState,
 
     restoreState(
       stateArray: readonly SerializedTransformState[],

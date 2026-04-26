@@ -174,6 +174,10 @@ export function wireGameRuntime<
   registerSystemIfDefined(runtime, systems, automationSystem);
   registerSystemIfDefined(runtime, systems, transformSystem);
   registerSystemIfDefined(runtime, systems, entitySystem);
+  refreshRuntimeViewState({
+    automationSystem,
+    transformSystem,
+  });
   syncCoordinatorRuntimeViewState({
     coordinator,
     content,
@@ -229,6 +233,10 @@ export function wireGameRuntime<
       commandQueue: runtime.getCommandQueue(),
       currentStep: hydrateOptions?.currentStep,
       applyRngSeed: hydrateOptions?.applyRngSeed,
+    });
+    refreshRuntimeViewState({
+      automationSystem,
+      transformSystem,
     });
     syncCoordinatorRuntimeViewState({
       coordinator,
@@ -439,6 +447,14 @@ function registerSystemIfDefined(
   }
   runtime.addSystem(system);
   systems.push(system);
+}
+
+function refreshRuntimeViewState(options: Readonly<{
+  automationSystem: ReturnType<typeof createAutomationSystem> | undefined;
+  transformSystem: ReturnType<typeof createTransformSystem> | undefined;
+}>): void {
+  options.automationSystem?.refreshViewState();
+  options.transformSystem?.refreshViewState();
 }
 
 function syncCoordinatorRuntimeViewState(options: Readonly<{

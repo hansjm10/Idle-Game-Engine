@@ -501,6 +501,7 @@ export function createAutomationSystem(
   options: AutomationSystemOptions,
 ): System & {
   getState: () => ReadonlyMap<string, AutomationState>;
+  refreshViewState: () => void;
   restoreState: (
     state: readonly SerializedAutomationState[],
     options?: { savedWorkerStep?: number; currentStep?: number },
@@ -530,12 +531,29 @@ export function createAutomationSystem(
     });
   }
 
+  const refreshViewState = (): void => {
+    for (const automation of automations) {
+      const state = automationStates.get(automation.id);
+      if (!state) {
+        continue;
+      }
+      ensureAutomationUnlocked(
+        automation,
+        state,
+        conditionContext,
+        isAutomationUnlocked,
+      );
+    }
+  };
+
   return {
     id: 'automation-system',
 
     getState() {
       return new Map(automationStates);
     },
+
+    refreshViewState,
 
     restoreState(
       stateArray: readonly SerializedAutomationState[],
