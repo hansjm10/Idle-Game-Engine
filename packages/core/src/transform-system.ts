@@ -76,7 +76,6 @@ const compareStableStrings = (left: string, right: string): number => {
 export interface TransformState {
   readonly id: string;
   unlocked: boolean;
-  visible: boolean;
   cooldownExpiresStep: number;
   runsThisTick: number;
   batches?: TransformBatchState[];
@@ -2628,6 +2627,7 @@ export function createTransformSystem(
   options: TransformSystemOptions,
 ): System & {
   getState: () => ReadonlyMap<string, TransformState>;
+  refreshViewState: () => void;
   restoreState: (
     state: readonly SerializedTransformState[],
     options?: { savedWorkerStep?: number; currentStep?: number },
@@ -2683,7 +2683,6 @@ export function createTransformSystem(
     transformStates.set(transform.id, {
       id: transform.id,
       unlocked: !transform.unlockCondition,
-      visible: true,
       cooldownExpiresStep: 0,
       runsThisTick: 0,
       ...(transform.mode === 'batch' || transform.mode === 'mission'
@@ -3448,6 +3447,23 @@ export function createTransformSystem(
     return executeNonMissionTransformRun(transform, state, step, formulaContext);
   };
 
+  const refreshTransformUnlockState = (
+    transform: TransformDefinition,
+    state: TransformState,
+  ): void => {
+    updateTransformUnlockStatus(transform, state, conditionContext);
+  };
+
+  const refreshViewState = (): void => {
+    for (const transform of sortedTransforms) {
+      const state = transformStates.get(transform.id);
+      if (!state) {
+        continue;
+      }
+      refreshTransformUnlockState(transform, state);
+    }
+  };
+
   const processTransformTick = (
     transform: TransformDefinition,
     step: number,
@@ -3460,12 +3476,7 @@ export function createTransformSystem(
       return;
     }
 
-    // Update visibility each tick (default visible when no context is provided)
-    state.visible = conditionContext
-      ? evaluateCondition(transform.visibilityCondition, conditionContext)
-      : true;
-
-    updateTransformUnlockStatus(transform, state, conditionContext);
+    refreshTransformUnlockState(transform, state);
 
     const isEventBased = isEventBasedTrigger(transform);
     const isEventPending = isEventBased && pendingEventTriggers.has(transform.id);
@@ -4014,6 +4025,8 @@ export function createTransformSystem(
       return new Map(transformStates);
     },
 
+    refreshViewState,
+
     restoreState(
       stateArray: readonly SerializedTransformState[],
       restoreOptions?: { savedWorkerStep?: number; currentStep?: number },
@@ -4178,11 +4191,16 @@ export function buildTransformSnapshot(
     }));
   };
 
+  const resolveVisible = (transform: TransformDefinition): boolean =>
+    options.conditionContext
+      ? evaluateCondition(transform.visibilityCondition, options.conditionContext)
+      : true;
+
   const views: TransformView[] = [];
   for (const transform of sortedTransforms) {
     const state = options.state.get(transform.id);
-    const unlocked = state?.unlocked ?? false;
-    const visible = state?.visible ?? true;
+    const unlocked = resolveTransformSnapshotUnlocked(state);
+    const visible = resolveVisible(transform);
     const cooldownExpiresStep = state?.cooldownExpiresStep ?? 0;
     const cooldownRemainingMs = Math.max(
       0,
@@ -4238,4 +4256,10 @@ export function buildTransformSnapshot(
     publishedAt,
     transforms: Object.freeze(views),
   });
+}
+
+function resolveTransformSnapshotUnlocked(
+  state: TransformState | undefined,
+): boolean {
+  return state?.unlocked ?? false;
 }

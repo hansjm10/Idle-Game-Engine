@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { createAutomation, createTransform } from '@idle-engine/content-schema';
 
 import {
+  createAchievementDefinition,
   createContentPack,
   createGeneratorDefinition,
   createPrestigeLayerDefinition,
@@ -37,6 +38,283 @@ function createTestTransform() {
     trigger: { kind: 'manual' },
     inputs: [{ resourceId: 'resource.energy', amount: literalOne }],
     outputs: [{ resourceId: 'resource.gold', amount: literalOne }],
+  });
+}
+
+function createSnapshotViewContent() {
+  return createContentPack({
+    resources: [
+      createResourceDefinition('resource.energy', { startAmount: 20 }),
+      createResourceDefinition('resource.gold', { startAmount: 0 }),
+    ],
+    automations: [
+      createAutomation({
+        id: 'automation.cooldown',
+        name: { default: 'Cooldown Automation' },
+        description: { default: 'Shows cooldown state' },
+        targetType: 'collectResource',
+        targetId: 'resource.gold',
+        targetAmount: literalOne,
+        trigger: {
+          kind: 'resourceThreshold',
+          resourceId: 'resource.energy',
+          comparator: 'gte',
+          threshold: { kind: 'constant', value: 999 },
+        },
+        unlockCondition: { kind: 'always' },
+        enabledByDefault: true,
+        cooldown: { kind: 'constant', value: 400 },
+        order: 0,
+      }),
+      createAutomation({
+        id: 'automation.locked',
+        name: { default: 'Locked Automation' },
+        description: { default: 'Hidden until unlocked' },
+        targetType: 'collectResource',
+        targetId: 'resource.gold',
+        targetAmount: literalOne,
+        trigger: { kind: 'commandQueueEmpty' },
+        unlockCondition: { kind: 'never' },
+        enabledByDefault: false,
+        order: 1,
+      }),
+    ],
+    transforms: [
+      createTransform({
+        id: 'transform.batch',
+        name: { default: 'Batch Transform' },
+        description: { default: 'Converts energy later' },
+        mode: 'batch',
+        trigger: { kind: 'manual' },
+        inputs: [
+          { resourceId: 'resource.energy', amount: { kind: 'constant', value: 5 } },
+        ],
+        outputs: [
+          { resourceId: 'resource.gold', amount: { kind: 'constant', value: 2 } },
+        ],
+        duration: { kind: 'constant', value: 300 },
+        order: 0,
+      }),
+      createTransform({
+        id: 'transform.expensive',
+        name: { default: 'Expensive Transform' },
+        description: { default: 'Costs more than the player owns' },
+        mode: 'instant',
+        trigger: { kind: 'manual' },
+        inputs: [
+          { resourceId: 'resource.energy', amount: { kind: 'constant', value: 999 } },
+        ],
+        outputs: [
+          { resourceId: 'resource.gold', amount: { kind: 'constant', value: 1 } },
+        ],
+        order: 1,
+      }),
+    ],
+  });
+}
+
+function createInitialSnapshotViewContent() {
+  return createContentPack({
+    resources: [
+      createResourceDefinition('resource.energy', { startAmount: 20 }),
+      createResourceDefinition('resource.gold', { startAmount: 0 }),
+    ],
+    automations: [
+      createAutomation({
+        id: 'automation.initial',
+        name: { default: 'Initial Automation' },
+        description: { default: 'Available immediately' },
+        targetType: 'collectResource',
+        targetId: 'resource.gold',
+        targetAmount: literalOne,
+        trigger: { kind: 'commandQueueEmpty' },
+        unlockCondition: { kind: 'always' },
+        enabledByDefault: true,
+        order: 0,
+      }),
+      createAutomation({
+        id: 'automation.locked-initial',
+        name: { default: 'Locked Initial Automation' },
+        description: { default: 'Locked immediately' },
+        targetType: 'collectResource',
+        targetId: 'resource.gold',
+        targetAmount: literalOne,
+        trigger: { kind: 'commandQueueEmpty' },
+        unlockCondition: { kind: 'never' },
+        enabledByDefault: false,
+        order: 1,
+      }),
+    ],
+    transforms: [
+      createTransform({
+        id: 'transform.initial',
+        name: { default: 'Initial Transform' },
+        description: { default: 'Available immediately' },
+        mode: 'instant',
+        trigger: { kind: 'manual' },
+        inputs: [{ resourceId: 'resource.energy', amount: literalOne }],
+        outputs: [{ resourceId: 'resource.gold', amount: literalOne }],
+        unlockCondition: { kind: 'always' },
+        order: 0,
+      }),
+      createTransform({
+        id: 'transform.hidden-initial',
+        name: { default: 'Hidden Initial Transform' },
+        description: { default: 'Hidden immediately' },
+        mode: 'instant',
+        trigger: { kind: 'manual' },
+        inputs: [{ resourceId: 'resource.energy', amount: literalOne }],
+        outputs: [{ resourceId: 'resource.gold', amount: literalOne }],
+        visibilityCondition: { kind: 'never' },
+        order: 1,
+      }),
+    ],
+  });
+}
+
+function createTransformVisibilityMutationContent() {
+  return createContentPack({
+    resources: [
+      createResourceDefinition('resource.energy', { startAmount: 10 }),
+      createResourceDefinition('resource.gold', { startAmount: 0 }),
+    ],
+    transforms: [
+      createTransform({
+        id: 'transform.spend-visible-resource',
+        name: { default: 'Spend Visible Resource' },
+        description: { default: 'Consumes the resource that controls visibility' },
+        mode: 'instant',
+        trigger: {
+          kind: 'condition',
+          condition: { kind: 'always' },
+        },
+        inputs: [
+          { resourceId: 'resource.energy', amount: { kind: 'constant', value: 10 } },
+        ],
+        outputs: [
+          { resourceId: 'resource.gold', amount: { kind: 'constant', value: 1 } },
+        ],
+        visibilityCondition: {
+          kind: 'resourceThreshold',
+          resourceId: 'resource.energy',
+          comparator: 'gte',
+          amount: { kind: 'constant', value: 10 },
+        },
+      }),
+    ],
+  });
+}
+
+function createAchievementRewardSnapshotViewContent() {
+  const unlockAutomationAchievement = createAchievementDefinition(
+    'achievement.unlock-automation-view',
+    {
+      reward: {
+        kind: 'unlockAutomation' as const,
+        automationId: 'automation.achievement-reward',
+      },
+      order: 0,
+    },
+  );
+  const unlockTransformAchievement = createAchievementDefinition(
+    'achievement.unlock-transform-view',
+    {
+      reward: {
+        kind: 'grantFlag' as const,
+        flagId: 'flag.transform-reward',
+        value: true,
+      },
+      order: 1,
+    },
+  );
+
+  return createContentPack({
+    resources: [
+      createResourceDefinition('resource.energy', { startAmount: 0 }),
+      createResourceDefinition('resource.gold', { startAmount: 0 }),
+    ],
+    achievements: [unlockAutomationAchievement, unlockTransformAchievement],
+    automations: [
+      createAutomation({
+        id: 'automation.achievement-reward',
+        name: { default: 'Achievement Reward Automation' },
+        description: { default: 'Unlocked by an achievement reward' },
+        targetType: 'collectResource',
+        targetId: 'resource.gold',
+        targetAmount: literalOne,
+        trigger: { kind: 'commandQueueEmpty' },
+        unlockCondition: { kind: 'never' },
+        enabledByDefault: true,
+      }),
+    ],
+    transforms: [
+      createTransform({
+        id: 'transform.achievement-reward',
+        name: { default: 'Achievement Reward Transform' },
+        description: { default: 'Unlocked by an achievement flag reward' },
+        mode: 'instant',
+        trigger: { kind: 'manual' },
+        inputs: [{ resourceId: 'resource.energy', amount: literalOne }],
+        outputs: [{ resourceId: 'resource.gold', amount: literalOne }],
+        unlockCondition: {
+          kind: 'flag',
+          flagId: 'flag.transform-reward',
+        },
+      }),
+    ],
+  });
+}
+
+function createLateTickUnlockPersistenceContent() {
+  const unlockFromEnergy = {
+    kind: 'resourceThreshold' as const,
+    resourceId: 'resource.energy',
+    comparator: 'lte' as const,
+    amount: { kind: 'constant' as const, value: 0 },
+  };
+
+  return createContentPack({
+    resources: [
+      createResourceDefinition('resource.energy', { startAmount: 1 }),
+      createResourceDefinition('resource.gold', { startAmount: 0 }),
+    ],
+    automations: [
+      createAutomation({
+        id: 'automation.late-unlocked',
+        name: { default: 'Late Unlocked Automation' },
+        description: { default: 'Unlocks after transforms run' },
+        targetType: 'collectResource',
+        targetId: 'resource.gold',
+        targetAmount: literalOne,
+        trigger: { kind: 'commandQueueEmpty' },
+        unlockCondition: unlockFromEnergy,
+        enabledByDefault: false,
+      }),
+    ],
+    transforms: [
+      createTransform({
+        id: 'transform.late-unlocked-spender',
+        name: { default: 'Late Unlocked Spender' },
+        description: { default: 'Spends the unlock resource' },
+        mode: 'instant',
+        trigger: { kind: 'manual' },
+        inputs: [{ resourceId: 'resource.gold', amount: literalOne }],
+        outputs: [{ resourceId: 'resource.energy', amount: literalOne }],
+        unlockCondition: unlockFromEnergy,
+        order: 0,
+      }),
+      createTransform({
+        id: 'transform.late-resource-spender',
+        name: { default: 'Late Resource Spender' },
+        description: { default: 'Consumes the unlock resource after locked views run' },
+        mode: 'instant',
+        trigger: { kind: 'condition', condition: { kind: 'always' } },
+        inputs: [{ resourceId: 'resource.energy', amount: literalOne }],
+        outputs: [{ resourceId: 'resource.gold', amount: literalOne }],
+        cooldown: { kind: 'constant', value: 10_000 },
+        order: 1,
+      }),
+    ],
   });
 }
 
@@ -100,6 +378,247 @@ describe('createGame', () => {
 
     game.stop();
     vi.useRealTimers();
+  });
+
+  it('exposes automation and transform view state through snapshots', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(1000);
+
+    const game = createGame(createSnapshotViewContent(), { stepSizeMs: 100 });
+    if (!game.internals.automationSystem) {
+      throw new Error('Expected automation system to be enabled.');
+    }
+
+    game.internals.automationSystem.restoreState([
+      {
+        id: 'automation.cooldown',
+        enabled: true,
+        lastFiredStep: 0,
+        cooldownExpiresStep: 4,
+        unlocked: true,
+      },
+      {
+        id: 'automation.locked',
+        enabled: false,
+        lastFiredStep: null,
+        cooldownExpiresStep: 0,
+        unlocked: false,
+      },
+    ]);
+
+    expect(game.startTransform('transform.batch')).toEqual({ success: true });
+    game.tick(game.internals.runtime.getStepSizeMs());
+
+    const snapshot = game.getSnapshot();
+
+    expect(snapshot.automations).toEqual([
+      {
+        id: 'automation.cooldown',
+        displayName: 'Cooldown Automation',
+        description: 'Shows cooldown state',
+        unlocked: true,
+        visible: true,
+        enabled: true,
+        lastTriggeredAt: 900,
+        cooldownRemainingMs: 300,
+        isOnCooldown: true,
+      },
+      {
+        id: 'automation.locked',
+        displayName: 'Locked Automation',
+        description: 'Hidden until unlocked',
+        unlocked: false,
+        visible: false,
+        enabled: false,
+        lastTriggeredAt: null,
+        cooldownRemainingMs: 0,
+        isOnCooldown: false,
+      },
+    ]);
+
+    expect(snapshot.transforms).toEqual([
+      {
+        id: 'transform.batch',
+        displayName: 'Batch Transform',
+        description: 'Converts energy later',
+        mode: 'batch',
+        unlocked: true,
+        visible: true,
+        cooldownRemainingMs: 0,
+        isOnCooldown: false,
+        canAfford: true,
+        inputs: [{ resourceId: 'resource.energy', amount: 5 }],
+        outputs: [{ resourceId: 'resource.gold', amount: 2 }],
+        outstandingBatches: 1,
+        nextBatchReadyAtStep: 3,
+      },
+      {
+        id: 'transform.expensive',
+        displayName: 'Expensive Transform',
+        description: 'Costs more than the player owns',
+        mode: 'instant',
+        unlocked: true,
+        visible: true,
+        cooldownRemainingMs: 0,
+        isOnCooldown: false,
+        canAfford: false,
+        inputs: [{ resourceId: 'resource.energy', amount: 999 }],
+        outputs: [{ resourceId: 'resource.gold', amount: 1 }],
+      },
+    ]);
+
+    game.stop();
+    vi.useRealTimers();
+  });
+
+  it('publishes initial automation and transform view state before the first tick', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(2000);
+
+    const game = createGame(createInitialSnapshotViewContent(), { stepSizeMs: 100 });
+
+    try {
+      game.start();
+
+      const snapshot = game.getSnapshot();
+
+      expect(snapshot.step).toBe(0);
+      expect(
+        snapshot.automations.map(({ id, unlocked, visible }) => ({
+          id,
+          unlocked,
+          visible,
+        })),
+      ).toEqual([
+        { id: 'automation.initial', unlocked: true, visible: true },
+        { id: 'automation.locked-initial', unlocked: false, visible: false },
+      ]);
+      expect(
+        snapshot.transforms.map(({ id, unlocked, visible }) => ({
+          id,
+          unlocked,
+          visible,
+        })),
+      ).toEqual([
+        { id: 'transform.initial', unlocked: true, visible: true },
+        { id: 'transform.hidden-initial', unlocked: true, visible: false },
+      ]);
+    } finally {
+      game.stop();
+      vi.useRealTimers();
+    }
+  });
+
+  it('derives transform visibility from resources mutated earlier in the tick', () => {
+    const game = createGame(createTransformVisibilityMutationContent(), {
+      stepSizeMs: 100,
+    });
+
+    game.tick(game.internals.runtime.getStepSizeMs());
+
+    const snapshot = game.getSnapshot();
+    const energy = snapshot.resources.find(
+      (resource) => resource.id === 'resource.energy',
+    );
+    const transform = snapshot.transforms.find(
+      (view) => view.id === 'transform.spend-visible-resource',
+    );
+
+    expect(energy?.amount).toBe(0);
+    expect(transform).toMatchObject({
+      visible: false,
+      canAfford: false,
+    });
+  });
+
+  it('projects coordinator reward unlocks into the same tick snapshot', () => {
+    const game = createGame(createAchievementRewardSnapshotViewContent(), {
+      stepSizeMs: 100,
+    });
+
+    expect(game.collectResource('resource.energy', 1)).toEqual({ success: true });
+    game.tick(game.internals.runtime.getStepSizeMs());
+
+    const snapshot = game.getSnapshot();
+    const automation = snapshot.automations.find(
+      (view) => view.id === 'automation.achievement-reward',
+    );
+    const transform = snapshot.transforms.find(
+      (view) => view.id === 'transform.achievement-reward',
+    );
+
+    expect(snapshot.achievements?.map(({ id, completions }) => ({
+      id,
+      completions,
+    }))).toEqual([
+      { id: 'achievement.unlock-automation-view', completions: 1 },
+      { id: 'achievement.unlock-transform-view', completions: 1 },
+    ]);
+    expect(automation).toMatchObject({
+      unlocked: true,
+      visible: true,
+    });
+    expect(transform).toMatchObject({
+      unlocked: true,
+      visible: true,
+    });
+  });
+
+  it('persists late-tick automation and transform unlocks before snapshots expose them', () => {
+    const game = createGame(createLateTickUnlockPersistenceContent(), {
+      stepSizeMs: 100,
+    });
+
+    game.tick(game.internals.runtime.getStepSizeMs());
+
+    const unlockedSnapshot = game.getSnapshot();
+    const unlockedEnergy = unlockedSnapshot.resources.find(
+      (resource) => resource.id === 'resource.energy',
+    );
+    const unlockedAutomation = unlockedSnapshot.automations.find(
+      (view) => view.id === 'automation.late-unlocked',
+    );
+    const unlockedTransform = unlockedSnapshot.transforms.find(
+      (view) => view.id === 'transform.late-unlocked-spender',
+    );
+
+    expect(unlockedEnergy?.amount).toBe(0);
+    expect(unlockedAutomation).toMatchObject({
+      unlocked: true,
+      visible: true,
+    });
+    expect(unlockedTransform).toMatchObject({
+      unlocked: true,
+      visible: true,
+      canAfford: true,
+    });
+
+    expect(game.startTransform('transform.late-unlocked-spender')).toEqual({
+      success: true,
+    });
+    game.tick(game.internals.runtime.getStepSizeMs());
+
+    const spentSnapshot = game.getSnapshot();
+    const spentEnergy = spentSnapshot.resources.find(
+      (resource) => resource.id === 'resource.energy',
+    );
+    const persistedAutomation = spentSnapshot.automations.find(
+      (view) => view.id === 'automation.late-unlocked',
+    );
+    const persistedTransform = spentSnapshot.transforms.find(
+      (view) => view.id === 'transform.late-unlocked-spender',
+    );
+
+    expect(spentEnergy?.amount).toBe(1);
+    expect(persistedAutomation).toMatchObject({
+      unlocked: true,
+      visible: true,
+    });
+    expect(persistedTransform).toMatchObject({
+      unlocked: true,
+      visible: true,
+      canAfford: false,
+    });
   });
 
   it('enqueues player commands via facade actions', () => {

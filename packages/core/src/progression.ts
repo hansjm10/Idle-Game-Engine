@@ -138,7 +138,7 @@ export type AutomationView = Readonly<{
   description: string;
   unlocked: boolean;
   visible: boolean;
-  isEnabled: boolean;
+  enabled: boolean;
   lastTriggeredAt: number | null;
   cooldownRemainingMs: number;
   isOnCooldown: boolean;
@@ -764,7 +764,7 @@ function createAutomationViews(
 
   for (const automation of sorted) {
     const state = source.state.get(automation.id);
-    const unlocked = state?.unlocked ?? false;
+    const unlocked = resolveAutomationSnapshotUnlocked(state);
     const visible =
       automation.visibilityCondition && conditionContext
         ? evaluateCondition(automation.visibilityCondition, conditionContext)
@@ -793,7 +793,7 @@ function createAutomationViews(
         description: automation.description.default,
         unlocked,
         visible,
-        isEnabled: state?.enabled ?? automation.enabledByDefault ?? false,
+        enabled: state?.enabled ?? automation.enabledByDefault ?? false,
         lastTriggeredAt,
         cooldownRemainingMs,
         isOnCooldown: cooldownRemainingMs > 0,
@@ -802,6 +802,12 @@ function createAutomationViews(
   }
 
   return Object.freeze(views);
+}
+
+function resolveAutomationSnapshotUnlocked(
+  state: AutomationState | undefined,
+): boolean {
+  return state?.unlocked ?? false;
 }
 
 function createTransformViews(

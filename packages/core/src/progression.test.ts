@@ -434,7 +434,6 @@ describe('buildProgressionSnapshot', () => {
     const transformState: TransformState = {
       id: 'transform:test',
       unlocked: true,
-      visible: true,
       cooldownExpiresStep: 7,
       runsThisTick: 0,
     };
@@ -465,7 +464,7 @@ describe('buildProgressionSnapshot', () => {
         description: 'Does the thing',
         unlocked: true,
         visible: false,
-        isEnabled: true,
+        enabled: true,
         lastTriggeredAt: 4700,
         cooldownRemainingMs: 300,
         isOnCooldown: true,
@@ -487,6 +486,51 @@ describe('buildProgressionSnapshot', () => {
         outputs: [{ resourceId: 'crystal', amount: 2 }],
       },
     ]);
+  });
+
+  it('reports automation unlocked from persisted state only', () => {
+    const conditionContext: ConditionContext = {
+      getResourceAmount: (resourceId) => (resourceId === 'energy' ? 1 : 0),
+      getGeneratorLevel: () => 0,
+      getUpgradePurchases: () => 0,
+    };
+    const automation: AutomationDefinition = {
+      id: 'auto:resource' as any,
+      name: { default: 'Resource Automation', variants: {} },
+      description: { default: 'Requires energy', variants: {} },
+      targetType: 'system',
+      systemTargetId: 'sys:noop' as any,
+      trigger: { kind: 'commandQueueEmpty' },
+      unlockCondition: {
+        kind: 'resourceThreshold',
+        resourceId: 'energy' as any,
+        comparator: 'gte',
+        amount: literal(1),
+      },
+      enabledByDefault: true,
+    };
+    const automationState: AutomationState = {
+      id: automation.id,
+      enabled: true,
+      lastFiredStep: -Infinity,
+      cooldownExpiresStep: 0,
+      unlocked: false,
+    };
+
+    const snapshot = buildProgressionSnapshot(1, 100, {
+      stepDurationMs: 100,
+      automations: {
+        definitions: [automation],
+        state: new Map([[automation.id, automationState]]),
+        conditionContext,
+      },
+    });
+
+    expect(snapshot.automations[0]).toMatchObject({
+      id: automation.id,
+      unlocked: false,
+      visible: false,
+    });
   });
 
   it('falls back to serialized resource state when live buffers are unavailable', () => {

@@ -2608,7 +2608,6 @@ describe('TransformSystem', () => {
       state.set('transform:sorted', {
         id: 'transform:sorted',
         unlocked: true,
-        visible: true,
         cooldownExpiresStep: 0,
         runsThisTick: 0,
       });
@@ -2646,7 +2645,6 @@ describe('TransformSystem', () => {
             {
               id: 'transform:sorted-expensive',
               unlocked: true,
-              visible: true,
               cooldownExpiresStep: 0,
               runsThisTick: 0,
             },
@@ -2663,7 +2661,6 @@ describe('TransformSystem', () => {
       state.set('transform:mission', {
         id: 'transform:mission',
         unlocked: true,
-        visible: true,
         cooldownExpiresStep: 0,
         runsThisTick: 0,
         batches: [
