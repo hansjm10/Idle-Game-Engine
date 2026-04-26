@@ -1,10 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { TestContext } from 'vitest';
 import { promises as fsPromises } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { registerAssetTools } from './asset-tools.js';
 
 type ToolHandler = (args: unknown) => Promise<unknown>;
+type SymlinkType = 'dir' | 'file';
+
+const SYMLINK_PERMISSION_SKIP_NOTE =
+  'Skipping symlink-specific asset-tool assertion because this host cannot create filesystem symlinks.';
 
 const parseToolJson = (result: unknown): unknown => {
   if (typeof result !== 'object' || result === null || Array.isArray(result)) {
@@ -22,6 +27,37 @@ const parseToolJson = (result: unknown): unknown => {
   }
 
   return JSON.parse(first.text) as unknown;
+};
+
+const getErrorCode = (error: unknown): string | undefined => {
+  if (typeof error !== 'object' || error === null || !('code' in error)) {
+    return undefined;
+  }
+
+  const code = (error as { code?: unknown }).code;
+  return typeof code === 'string' ? code : undefined;
+};
+
+const isSymlinkPermissionError = (error: unknown): boolean => {
+  const code = getErrorCode(error);
+  return code === 'EPERM' || code === 'EACCES';
+};
+
+const createSymlinkOrSkip = async (
+  context: Pick<TestContext, 'skip'>,
+  targetPath: string,
+  symlinkPath: string,
+  type: SymlinkType,
+): Promise<void> => {
+  try {
+    await fsPromises.symlink(targetPath, symlinkPath, type);
+  } catch (error) {
+    if (isSymlinkPermissionError(error)) {
+      context.skip(SYMLINK_PERMISSION_SKIP_NOTE);
+    }
+
+    throw error;
+  }
 };
 
 describe('shell-desktop MCP asset tools', () => {
@@ -99,46 +135,50 @@ describe('shell-desktop MCP asset tools', () => {
     await expect(readHandler?.({ path: '../../nope.txt' })).rejects.toThrow(/inside/i);
   });
 
-  it('rejects asset.read requests that escape the root via symlinks', async () => {
+  it('rejects asset.read requests that escape the root via symlinks', async (context) => {
     const externalDir = await fsPromises.mkdtemp(path.join(os.tmpdir(), 'idle-engine-asset-tools-external-'));
-    const externalFile = path.join(externalDir, 'outside.txt');
-    await fsPromises.writeFile(externalFile, 'external', 'utf8');
-    await fsPromises.symlink(externalFile, path.join(rootDir, 'outside-link.txt'));
+    try {
+      const externalFile = path.join(externalDir, 'outside.txt');
+      await fsPromises.writeFile(externalFile, 'external', 'utf8');
+      await createSymlinkOrSkip(context, externalFile, path.join(rootDir, 'outside-link.txt'), 'file');
 
-    const tools = new Map<string, ToolHandler>();
-    const server = {
-      registerTool: vi.fn((name: string, _definition: unknown, handler: ToolHandler) => {
-        tools.set(name, handler);
-      }),
-    };
+      const tools = new Map<string, ToolHandler>();
+      const server = {
+        registerTool: vi.fn((name: string, _definition: unknown, handler: ToolHandler) => {
+          tools.set(name, handler);
+        }),
+      };
 
-    registerAssetTools(server, { compiledAssetsRootPath: rootDir });
+      registerAssetTools(server, { compiledAssetsRootPath: rootDir });
 
-    const readHandler = tools.get('asset.read');
-    await expect(readHandler?.({ path: 'outside-link.txt' })).rejects.toThrow(/inside/i);
-
-    await fsPromises.rm(externalDir, { recursive: true, force: true });
+      const readHandler = tools.get('asset.read');
+      await expect(readHandler?.({ path: 'outside-link.txt' })).rejects.toThrow(/inside/i);
+    } finally {
+      await fsPromises.rm(externalDir, { recursive: true, force: true });
+    }
   });
 
-  it('rejects asset.list requests that escape the root via symlinks', async () => {
+  it('rejects asset.list requests that escape the root via symlinks', async (context) => {
     const externalDir = await fsPromises.mkdtemp(path.join(os.tmpdir(), 'idle-engine-asset-tools-external-'));
-    await fsPromises.mkdir(path.join(externalDir, 'dir'));
-    await fsPromises.writeFile(path.join(externalDir, 'dir', 'outside.txt'), 'external', 'utf8');
-    await fsPromises.symlink(path.join(externalDir, 'dir'), path.join(rootDir, 'outside-dir'));
+    try {
+      await fsPromises.mkdir(path.join(externalDir, 'dir'));
+      await fsPromises.writeFile(path.join(externalDir, 'dir', 'outside.txt'), 'external', 'utf8');
+      await createSymlinkOrSkip(context, path.join(externalDir, 'dir'), path.join(rootDir, 'outside-dir'), 'dir');
 
-    const tools = new Map<string, ToolHandler>();
-    const server = {
-      registerTool: vi.fn((name: string, _definition: unknown, handler: ToolHandler) => {
-        tools.set(name, handler);
-      }),
-    };
+      const tools = new Map<string, ToolHandler>();
+      const server = {
+        registerTool: vi.fn((name: string, _definition: unknown, handler: ToolHandler) => {
+          tools.set(name, handler);
+        }),
+      };
 
-    registerAssetTools(server, { compiledAssetsRootPath: rootDir });
+      registerAssetTools(server, { compiledAssetsRootPath: rootDir });
 
-    const listHandler = tools.get('asset.list');
-    await expect(listHandler?.({ path: 'outside-dir' })).rejects.toThrow(/inside/i);
-
-    await fsPromises.rm(externalDir, { recursive: true, force: true });
+      const listHandler = tools.get('asset.list');
+      await expect(listHandler?.({ path: 'outside-dir' })).rejects.toThrow(/inside/i);
+    } finally {
+      await fsPromises.rm(externalDir, { recursive: true, force: true });
+    }
   });
 
   it('sets asset.list truncated only when entries are omitted', async () => {
