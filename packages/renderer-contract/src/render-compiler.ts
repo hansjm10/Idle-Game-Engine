@@ -30,7 +30,7 @@ type DrawEntry = Readonly<{
 
 type ActionRegionEntry = Readonly<{
   sortKey: SortKey;
-  regionKey: string;
+  drawKey: string;
   region: RenderActionRegion;
 }>;
 
@@ -150,19 +150,37 @@ function sortDrawEntries(entries: DrawEntry[]): void {
     seenKeys.add(entry.drawKey);
   }
 
-  entries.sort((a, b) => {
-    const pass = compareNumbers(getPassIndex(a.passId), getPassIndex(b.passId));
-    if (pass !== 0) {
-      return pass;
-    }
+  entries.sort(compareDrawEntries);
+}
 
-    const sortKey = compareSortKey(a.sortKey, b.sortKey);
-    if (sortKey !== 0) {
-      return sortKey;
-    }
+function compareDrawEntries(a: DrawEntry, b: DrawEntry): number {
+  const pass = compareNumbers(getPassIndex(a.passId), getPassIndex(b.passId));
+  if (pass !== 0) {
+    return pass;
+  }
 
-    return compareStrings(a.drawKey, b.drawKey);
-  });
+  const sortKey = compareSortKey(a.sortKey, b.sortKey);
+  if (sortKey !== 0) {
+    return sortKey;
+  }
+
+  return compareStrings(a.drawKey, b.drawKey);
+}
+
+function getTopmostDrawKey(drawEntries: readonly DrawEntry[]): string {
+  const firstEntry = drawEntries[0];
+  if (firstEntry === undefined) {
+    throw new Error('Render compiler expected UI action regions to have a draw entry.');
+  }
+
+  let topmostEntry = firstEntry;
+  for (const entry of drawEntries.slice(1)) {
+    if (compareDrawEntries(topmostEntry, entry) < 0) {
+      topmostEntry = entry;
+    }
+  }
+
+  return topmostEntry.drawKey;
 }
 
 function sortActionRegionEntries(entries: ActionRegionEntry[]): void {
@@ -180,7 +198,7 @@ function sortActionRegionEntries(entries: ActionRegionEntry[]): void {
       return sortKey;
     }
 
-    return compareStrings(a.regionKey, b.regionKey);
+    return compareStrings(a.drawKey, b.drawKey);
   });
 }
 
@@ -239,6 +257,7 @@ function compileUiActionRegion(
     readonly width: number;
     readonly height: number;
     readonly sortKey: SortKey;
+    readonly drawKey: string;
   },
 ): ActionRegionEntry | undefined {
   const actionRegion = node.actionRegion;
@@ -291,7 +310,7 @@ function compileUiActionRegion(
 
   return {
     sortKey: options.sortKey,
-    regionKey: `ui:action:${regionId}`,
+    drawKey: options.drawKey,
     region,
   };
 }
@@ -388,7 +407,15 @@ function compileUiNode(node: UiNode): CompiledUiNode {
 
   return {
     drawEntries,
-    actionRegionEntry: compileUiActionRegion(node, { id, x, y, width, height, sortKey }),
+    actionRegionEntry: compileUiActionRegion(node, {
+      id,
+      x,
+      y,
+      width,
+      height,
+      sortKey,
+      drawKey: getTopmostDrawKey(drawEntries),
+    }),
   };
 }
 

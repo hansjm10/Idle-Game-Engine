@@ -93,17 +93,31 @@ function sortDrawEntries(entries) {
         }
         seenKeys.add(entry.drawKey);
     }
-    entries.sort((a, b) => {
-        const pass = compareNumbers(getPassIndex(a.passId), getPassIndex(b.passId));
-        if (pass !== 0) {
-            return pass;
+    entries.sort(compareDrawEntries);
+}
+function compareDrawEntries(a, b) {
+    const pass = compareNumbers(getPassIndex(a.passId), getPassIndex(b.passId));
+    if (pass !== 0) {
+        return pass;
+    }
+    const sortKey = compareSortKey(a.sortKey, b.sortKey);
+    if (sortKey !== 0) {
+        return sortKey;
+    }
+    return compareStrings(a.drawKey, b.drawKey);
+}
+function getTopmostDrawKey(drawEntries) {
+    const firstEntry = drawEntries[0];
+    if (firstEntry === undefined) {
+        throw new Error('Render compiler expected UI action regions to have a draw entry.');
+    }
+    let topmostEntry = firstEntry;
+    for (const entry of drawEntries.slice(1)) {
+        if (compareDrawEntries(topmostEntry, entry) < 0) {
+            topmostEntry = entry;
         }
-        const sortKey = compareSortKey(a.sortKey, b.sortKey);
-        if (sortKey !== 0) {
-            return sortKey;
-        }
-        return compareStrings(a.drawKey, b.drawKey);
-    });
+    }
+    return topmostEntry.drawKey;
 }
 function sortActionRegionEntries(entries) {
     const seenKeys = new Set();
@@ -118,7 +132,7 @@ function sortActionRegionEntries(entries) {
         if (sortKey !== 0) {
             return sortKey;
         }
-        return compareStrings(a.regionKey, b.regionKey);
+        return compareStrings(a.drawKey, b.drawKey);
     });
 }
 function compileSpriteInstance(sprite, options) {
@@ -181,7 +195,7 @@ function compileUiActionRegion(node, options) {
     };
     return {
         sortKey: options.sortKey,
-        regionKey: `ui:action:${regionId}`,
+        drawKey: options.drawKey,
         region,
     };
 }
@@ -270,7 +284,15 @@ function compileUiNode(node) {
     }
     return {
         drawEntries,
-        actionRegionEntry: compileUiActionRegion(node, { id, x, y, width, height, sortKey }),
+        actionRegionEntry: compileUiActionRegion(node, {
+            id,
+            x,
+            y,
+            width,
+            height,
+            sortKey,
+            drawKey: getTopmostDrawKey(drawEntries),
+        }),
     };
 }
 function compileUiMeterNode(node, options) {

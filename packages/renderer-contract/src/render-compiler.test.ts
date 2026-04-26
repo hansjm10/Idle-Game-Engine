@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import { hitTestActionRegions } from './action-regions.js';
 import { hashRenderCommandBuffer } from './hashing.js';
 import { __test__, compileViewModelToRenderCommandBuffer } from './render-compiler.js';
 import { RENDERER_CONTRACT_SCHEMA_VERSION } from './types.js';
@@ -379,6 +380,66 @@ describe('render compiler', () => {
     });
 
     expect(rcb.actionRegions?.map((region) => region.id)).toEqual(['a', 'b']);
+  });
+
+  it('orders overlapping custom-id action regions by their UI draw keys', () => {
+    const base: ViewModel = {
+      frame: {
+        schemaVersion: RENDERER_CONTRACT_SCHEMA_VERSION,
+        step: 6,
+        simTimeMs: 96,
+        contentHash: 'content:test',
+      },
+      scene: {
+        camera: { x: 0, y: 0, zoom: 1 },
+        sprites: [],
+      },
+      ui: {
+        nodes: [],
+      },
+    };
+
+    const bottomNode = {
+      kind: 'rect',
+      id: 'a',
+      x: 10,
+      y: 10,
+      width: 20,
+      height: 20,
+      colorRgba: 0x11_11_11_ff,
+      actionRegion: {
+        id: 'z-bottom-region',
+        actionId: 'bottom',
+        actionType: 'button',
+        enabled: true,
+      },
+    } as const;
+    const topNode = {
+      kind: 'rect',
+      id: 'b',
+      x: 10,
+      y: 10,
+      width: 20,
+      height: 20,
+      colorRgba: 0x22_22_22_ff,
+      actionRegion: {
+        id: 'a-top-region',
+        actionId: 'top',
+        actionType: 'button',
+        enabled: true,
+      },
+    } as const;
+
+    const rcb = compileViewModelToRenderCommandBuffer({
+      ...base,
+      ui: { nodes: [topNode, bottomNode] },
+    });
+
+    expect(rcb.actionRegions?.map((region) => region.id)).toEqual([
+      'z-bottom-region',
+      'a-top-region',
+    ]);
+    expect(hitTestActionRegions(rcb.actionRegions ?? [], 15, 15)?.actionId).toBe('top');
   });
 
   it('clamps meter fill widths (non-positive max and out-of-range values)', () => {
