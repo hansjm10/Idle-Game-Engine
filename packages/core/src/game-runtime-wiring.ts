@@ -499,6 +499,7 @@ function syncCoordinatorAutomationStateIfEnabled(
     definitions: automationDefinitions,
     state: automationSystem.getState(),
     conditionContext: coordinator.getConditionContext(),
+    grantedAutomationIds: coordinator.getGrantedAutomationIds(),
   };
 }
 

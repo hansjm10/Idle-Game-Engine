@@ -183,6 +183,7 @@ export interface ProgressionAutomationState {
   readonly definitions: readonly AutomationDefinition[];
   readonly state: ReadonlyMap<string, AutomationState>;
   readonly conditionContext?: ConditionContext;
+  readonly grantedAutomationIds?: ReadonlySet<string>;
 }
 
 export interface ProgressionTransformState {
@@ -764,7 +765,7 @@ function createAutomationViews(
 
   for (const automation of sorted) {
     const state = source.state.get(automation.id);
-    const unlocked = state?.unlocked ?? false;
+    const unlocked = resolveAutomationSnapshotUnlocked(automation, state, source);
     const visible =
       automation.visibilityCondition && conditionContext
         ? evaluateCondition(automation.visibilityCondition, conditionContext)
@@ -802,6 +803,26 @@ function createAutomationViews(
   }
 
   return Object.freeze(views);
+}
+
+function resolveAutomationSnapshotUnlocked(
+  automation: AutomationDefinition,
+  state: AutomationState | undefined,
+  source: ProgressionAutomationState,
+): boolean {
+  if (!state) {
+    return false;
+  }
+  if (state.unlocked) {
+    return true;
+  }
+  if (source.grantedAutomationIds?.has(automation.id)) {
+    return true;
+  }
+  if (source.conditionContext) {
+    return evaluateCondition(automation.unlockCondition, source.conditionContext);
+  }
+  return automation.unlockCondition.kind === 'always';
 }
 
 function createTransformViews(

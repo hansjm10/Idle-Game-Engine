@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { createAutomation, createTransform } from '@idle-engine/content-schema';
 
 import {
+  createAchievementDefinition,
   createContentPack,
   createGeneratorDefinition,
   createPrestigeLayerDefinition,
@@ -198,6 +199,66 @@ function createTransformVisibilityMutationContent() {
           resourceId: 'resource.energy',
           comparator: 'gte',
           amount: { kind: 'constant', value: 10 },
+        },
+      }),
+    ],
+  });
+}
+
+function createAchievementRewardSnapshotViewContent() {
+  const unlockAutomationAchievement = createAchievementDefinition(
+    'achievement.unlock-automation-view',
+    {
+      reward: {
+        kind: 'unlockAutomation' as const,
+        automationId: 'automation.achievement-reward',
+      },
+      order: 0,
+    },
+  );
+  const unlockTransformAchievement = createAchievementDefinition(
+    'achievement.unlock-transform-view',
+    {
+      reward: {
+        kind: 'grantFlag' as const,
+        flagId: 'flag.transform-reward',
+        value: true,
+      },
+      order: 1,
+    },
+  );
+
+  return createContentPack({
+    resources: [
+      createResourceDefinition('resource.energy', { startAmount: 0 }),
+      createResourceDefinition('resource.gold', { startAmount: 0 }),
+    ],
+    achievements: [unlockAutomationAchievement, unlockTransformAchievement],
+    automations: [
+      createAutomation({
+        id: 'automation.achievement-reward',
+        name: { default: 'Achievement Reward Automation' },
+        description: { default: 'Unlocked by an achievement reward' },
+        targetType: 'collectResource',
+        targetId: 'resource.gold',
+        targetAmount: literalOne,
+        trigger: { kind: 'commandQueueEmpty' },
+        unlockCondition: { kind: 'never' },
+        enabledByDefault: true,
+      }),
+    ],
+    transforms: [
+      createTransform({
+        id: 'transform.achievement-reward',
+        name: { default: 'Achievement Reward Transform' },
+        description: { default: 'Unlocked by an achievement flag reward' },
+        mode: 'instant',
+        trigger: { kind: 'manual' },
+        inputs: [{ resourceId: 'resource.energy', amount: literalOne }],
+        outputs: [{ resourceId: 'resource.gold', amount: literalOne }],
+        unlockCondition: {
+          kind: 'flag',
+          flagId: 'flag.transform-reward',
         },
       }),
     ],
@@ -414,6 +475,39 @@ describe('createGame', () => {
     expect(transform).toMatchObject({
       visible: false,
       canAfford: false,
+    });
+  });
+
+  it('projects coordinator reward unlocks into the same tick snapshot', () => {
+    const game = createGame(createAchievementRewardSnapshotViewContent(), {
+      stepSizeMs: 100,
+    });
+
+    expect(game.collectResource('resource.energy', 1)).toEqual({ success: true });
+    game.tick(game.internals.runtime.getStepSizeMs());
+
+    const snapshot = game.getSnapshot();
+    const automation = snapshot.automations.find(
+      (view) => view.id === 'automation.achievement-reward',
+    );
+    const transform = snapshot.transforms.find(
+      (view) => view.id === 'transform.achievement-reward',
+    );
+
+    expect(snapshot.achievements?.map(({ id, completions }) => ({
+      id,
+      completions,
+    }))).toEqual([
+      { id: 'achievement.unlock-automation-view', completions: 1 },
+      { id: 'achievement.unlock-transform-view', completions: 1 },
+    ]);
+    expect(automation).toMatchObject({
+      unlocked: true,
+      visible: true,
+    });
+    expect(transform).toMatchObject({
+      unlocked: true,
+      visible: true,
     });
   });
 

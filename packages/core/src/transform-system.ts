@@ -4199,7 +4199,11 @@ export function buildTransformSnapshot(
   const views: TransformView[] = [];
   for (const transform of sortedTransforms) {
     const state = options.state.get(transform.id);
-    const unlocked = state?.unlocked ?? false;
+    const unlocked = resolveTransformSnapshotUnlocked(
+      transform,
+      state,
+      options.conditionContext,
+    );
     const visible = resolveVisible(transform);
     const cooldownExpiresStep = state?.cooldownExpiresStep ?? 0;
     const cooldownRemainingMs = Math.max(
@@ -4256,4 +4260,23 @@ export function buildTransformSnapshot(
     publishedAt,
     transforms: Object.freeze(views),
   });
+}
+
+function resolveTransformSnapshotUnlocked(
+  transform: TransformDefinition,
+  state: TransformState | undefined,
+  conditionContext: ConditionContext | undefined,
+): boolean {
+  if (!state) {
+    return false;
+  }
+  if (state.unlocked) {
+    return true;
+  }
+  if (!transform.unlockCondition) {
+    return true;
+  }
+  return conditionContext
+    ? evaluateCondition(transform.unlockCondition, conditionContext)
+    : false;
 }
