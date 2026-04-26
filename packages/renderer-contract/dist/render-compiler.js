@@ -64,6 +64,21 @@ function requireNonEmptyString(value, label) {
     }
     return value;
 }
+function requireBoolean(value, label) {
+    if (typeof value !== 'boolean') {
+        throw new TypeError(`Render compiler expected ${label} to be a boolean.`);
+    }
+    return value;
+}
+function copyOptionalString(value, label) {
+    if (value === undefined) {
+        return undefined;
+    }
+    if (typeof value !== 'string') {
+        throw new TypeError(`Render compiler expected ${label} to be a string when provided.`);
+    }
+    return value;
+}
 function createPasses() {
     return [{ id: 'world' }, { id: 'ui' }];
 }
@@ -88,6 +103,22 @@ function sortDrawEntries(entries) {
             return sortKey;
         }
         return compareStrings(a.drawKey, b.drawKey);
+    });
+}
+function sortActionRegionEntries(entries) {
+    const seenKeys = new Set();
+    for (const entry of entries) {
+        if (seenKeys.has(entry.region.id)) {
+            throw new Error(`Render compiler produced duplicate action region id: ${entry.region.id}`);
+        }
+        seenKeys.add(entry.region.id);
+    }
+    entries.sort((a, b) => {
+        const sortKey = compareSortKey(a.sortKey, b.sortKey);
+        if (sortKey !== 0) {
+            return sortKey;
+        }
+        return compareStrings(a.regionKey, b.regionKey);
     });
 }
 function compileSpriteInstance(sprite, options) {
@@ -120,6 +151,40 @@ function compileSpriteInstance(sprite, options) {
         draw,
     };
 }
+function compileUiActionRegion(node, options) {
+    const actionRegion = node.actionRegion;
+    if (actionRegion === undefined) {
+        return undefined;
+    }
+    const regionId = requireNonEmptyString(actionRegion.id ?? options.id, `UiNode(${options.id}).actionRegion.id`);
+    const actionId = requireNonEmptyString(actionRegion.actionId, `UiNode(${options.id}).actionRegion.actionId`);
+    const actionType = requireNonEmptyString(actionRegion.actionType, `UiNode(${options.id}).actionRegion.actionType`);
+    const region = {
+        id: regionId,
+        actionId,
+        actionType,
+        x: options.x,
+        y: options.y,
+        width: options.width,
+        height: options.height,
+        enabled: requireBoolean(actionRegion.enabled, `UiNode(${options.id}).actionRegion.enabled`),
+        ...(actionRegion.label === undefined
+            ? {}
+            : {
+                label: copyOptionalString(actionRegion.label, `UiNode(${options.id}).actionRegion.label`),
+            }),
+        ...(actionRegion.tooltip === undefined
+            ? {}
+            : {
+                tooltip: copyOptionalString(actionRegion.tooltip, `UiNode(${options.id}).actionRegion.tooltip`),
+            }),
+    };
+    return {
+        sortKey: options.sortKey,
+        regionKey: `ui:action:${regionId}`,
+        region,
+    };
+}
 function compileUiNode(node) {
     const id = requireNonEmptyString(node.id, 'UiNode.id');
     const x = quantizeToInt(node.x, 1, `UiNode(${id}).x`);
@@ -130,6 +195,7 @@ function compileUiNode(node) {
         sortKeyHi: encodeSignedInt32ToSortableUint32(y, `UiNode(${id}).sortKeyHi`),
         sortKeyLo: encodeSignedInt32ToSortableUint32(x, `UiNode(${id}).sortKeyLo`),
     };
+    let drawEntries;
     switch (node.kind) {
         case 'rect': {
             const draw = {
@@ -142,7 +208,7 @@ function compileUiNode(node) {
                 height,
                 colorRgba: node.colorRgba,
             };
-            return [
+            drawEntries = [
                 {
                     passId: 'ui',
                     sortKey,
@@ -150,6 +216,7 @@ function compileUiNode(node) {
                     draw,
                 },
             ];
+            break;
         }
         case 'image': {
             const assetId = requireNonEmptyString(node.assetId, `UiImageNode(${id}).assetId`);
@@ -164,7 +231,7 @@ function compileUiNode(node) {
                 height,
                 tintRgba: node.tintRgba,
             };
-            return [
+            drawEntries = [
                 {
                     passId: 'ui',
                     sortKey,
@@ -172,6 +239,7 @@ function compileUiNode(node) {
                     draw,
                 },
             ];
+            break;
         }
         case 'text': {
             const fontSizePx = quantizeToInt(node.fontSizePx, 1, `UiTextNode(${id}).fontSizePx`);
@@ -186,7 +254,7 @@ function compileUiNode(node) {
                 fontAssetId: node.fontAssetId,
                 fontSizePx,
             };
-            return [
+            drawEntries = [
                 {
                     passId: 'ui',
                     sortKey,
@@ -194,10 +262,16 @@ function compileUiNode(node) {
                     draw,
                 },
             ];
+            break;
         }
         case 'meter':
-            return compileUiMeterNode(node, { id, x, y, width, height, sortKey });
+            drawEntries = compileUiMeterNode(node, { id, x, y, width, height, sortKey });
+            break;
     }
+    return {
+        drawEntries,
+        actionRegionEntry: compileUiActionRegion(node, { id, x, y, width, height, sortKey }),
+    };
 }
 function compileUiMeterNode(node, options) {
     const value = requireFiniteNumber(node.value, `UiMeterNode(${options.id}).value`);
@@ -253,16 +327,26 @@ export function compileViewModelToRenderCommandBuffer(viewModel, options = {}) {
     }
     const passes = createPasses();
     const entries = [];
+    const actionRegionEntries = [];
     for (const sprite of viewModel.scene.sprites) {
         entries.push(compileSpriteInstance(sprite, { worldFixedPointScale }));
     }
     for (const node of viewModel.ui.nodes) {
-        entries.push(...compileUiNode(node));
+        const compiledNode = compileUiNode(node);
+        entries.push(...compiledNode.drawEntries);
+        if (compiledNode.actionRegionEntry !== undefined) {
+            actionRegionEntries.push(compiledNode.actionRegionEntry);
+        }
     }
     sortDrawEntries(entries);
+    sortActionRegionEntries(actionRegionEntries);
     const draws = [];
     for (const entry of entries) {
         draws.push(entry.draw);
+    }
+    const actionRegions = [];
+    for (const entry of actionRegionEntries) {
+        actionRegions.push(entry.region);
     }
     return {
         frame: {
@@ -281,6 +365,7 @@ export function compileViewModelToRenderCommandBuffer(viewModel, options = {}) {
         },
         passes,
         draws,
+        ...(actionRegions.length === 0 ? {} : { actionRegions }),
     };
 }
 export const __test__ = {

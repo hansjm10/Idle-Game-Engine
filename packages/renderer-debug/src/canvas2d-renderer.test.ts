@@ -266,6 +266,64 @@ describe('validateRenderCommandBuffer', () => {
     }
   });
 
+  it('validates optional action regions for diagnostics', () => {
+    const valid: RenderCommandBuffer = {
+      frame: {
+        schemaVersion: RENDERER_CONTRACT_SCHEMA_VERSION,
+        step: 1,
+        simTimeMs: 16,
+        contentHash: 'content',
+      },
+      scene: {
+        camera: { x: 0, y: 0, zoom: 1 },
+      },
+      passes: [{ id: 'ui' }],
+      draws: [],
+      actionRegions: [
+        {
+          id: 'collect',
+          actionId: 'collect',
+          actionType: 'button',
+          x: 10,
+          y: 20,
+          width: 30,
+          height: 40,
+          enabled: true,
+          label: 'Collect',
+          tooltip: '+1 Energy',
+        },
+      ],
+    };
+
+    expect(validateRenderCommandBuffer(valid)).toEqual({ ok: true });
+
+    const invalid = {
+      ...valid,
+      actionRegions: [
+        {
+          id: '',
+          actionId: '',
+          actionType: '',
+          x: 10.5,
+          y: Number.NaN,
+          width: -1,
+          height: 20,
+          enabled: 'yes',
+          label: 1,
+        },
+      ],
+    } as unknown as RenderCommandBuffer;
+
+    const result = validateRenderCommandBuffer(invalid);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      const errors = result.errors.join('\n');
+      expect(errors).toContain('actionRegions[0].id must be non-empty');
+      expect(errors).toContain('actionRegions[0].enabled must be a boolean');
+      expect(errors).toContain('actionRegions[0].label must be a string');
+    }
+  });
+
   it('flags malformed pass entries', () => {
     const rcb = {
       frame: {

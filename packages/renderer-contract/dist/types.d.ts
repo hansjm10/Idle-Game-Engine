@@ -39,12 +39,22 @@ export interface SpriteInstance {
 export interface UiViewModel {
     readonly nodes: readonly UiNode[];
 }
+export type ActionRegionType = string;
+export interface UiActionRegion {
+    readonly id?: string;
+    readonly actionId: string;
+    readonly actionType: ActionRegionType;
+    readonly enabled: boolean;
+    readonly label?: string;
+    readonly tooltip?: string;
+}
 export interface UiBaseNode {
     readonly id: string;
     readonly x: number;
     readonly y: number;
     readonly width: number;
     readonly height: number;
+    readonly actionRegion?: UiActionRegion;
 }
 export interface UiRectNode extends UiBaseNode {
     readonly kind: 'rect';
@@ -82,6 +92,18 @@ export interface ViewModel {
 export type RenderPassId = 'world' | 'ui';
 export interface RenderPass {
     readonly id: RenderPassId;
+}
+export interface RenderActionRegion {
+    readonly id: string;
+    readonly actionId: string;
+    readonly actionType: ActionRegionType;
+    readonly x: number;
+    readonly y: number;
+    readonly width: number;
+    readonly height: number;
+    readonly enabled: boolean;
+    readonly label?: string;
+    readonly tooltip?: string;
 }
 export interface SortKey {
     readonly sortKeyHi: number;
@@ -147,5 +169,6 @@ export interface RenderCommandBuffer {
     };
     readonly passes: readonly RenderPass[];
     readonly draws: readonly RenderDraw[];
+    readonly actionRegions?: readonly RenderActionRegion[];
 }
 //# sourceMappingURL=types.d.ts.map

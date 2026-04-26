@@ -1,6 +1,7 @@
 import type {
   AssetId,
   ImageDraw,
+  RenderActionRegion,
   RectDraw,
   RenderCommandBuffer,
   RenderDraw,
@@ -25,6 +26,17 @@ type DrawEntry = Readonly<{
   sortKey: SortKey;
   drawKey: string;
   draw: RenderDraw;
+}>;
+
+type ActionRegionEntry = Readonly<{
+  sortKey: SortKey;
+  regionKey: string;
+  region: RenderActionRegion;
+}>;
+
+type CompiledUiNode = Readonly<{
+  drawEntries: readonly DrawEntry[];
+  actionRegionEntry?: ActionRegionEntry;
 }>;
 
 function compareNumbers(a: number, b: number): number {
@@ -101,6 +113,26 @@ function requireNonEmptyString(value: string, label: string): string {
   return value;
 }
 
+function requireBoolean(value: boolean, label: string): boolean {
+  if (typeof value !== 'boolean') {
+    throw new TypeError(`Render compiler expected ${label} to be a boolean.`);
+  }
+  return value;
+}
+
+function copyOptionalString(
+  value: string | undefined,
+  label: string,
+): string | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  if (typeof value !== 'string') {
+    throw new TypeError(`Render compiler expected ${label} to be a string when provided.`);
+  }
+  return value;
+}
+
 function createPasses(): readonly RenderPass[] {
   return [{ id: 'world' }, { id: 'ui' }];
 }
@@ -130,6 +162,25 @@ function sortDrawEntries(entries: DrawEntry[]): void {
     }
 
     return compareStrings(a.drawKey, b.drawKey);
+  });
+}
+
+function sortActionRegionEntries(entries: ActionRegionEntry[]): void {
+  const seenKeys = new Set<string>();
+  for (const entry of entries) {
+    if (seenKeys.has(entry.region.id)) {
+      throw new Error(`Render compiler produced duplicate action region id: ${entry.region.id}`);
+    }
+    seenKeys.add(entry.region.id);
+  }
+
+  entries.sort((a, b) => {
+    const sortKey = compareSortKey(a.sortKey, b.sortKey);
+    if (sortKey !== 0) {
+      return sortKey;
+    }
+
+    return compareStrings(a.regionKey, b.regionKey);
   });
 }
 
@@ -179,7 +230,73 @@ function compileSpriteInstance(
   };
 }
 
-function compileUiNode(node: UiNode): readonly DrawEntry[] {
+function compileUiActionRegion(
+  node: UiNode,
+  options: {
+    readonly id: string;
+    readonly x: number;
+    readonly y: number;
+    readonly width: number;
+    readonly height: number;
+    readonly sortKey: SortKey;
+  },
+): ActionRegionEntry | undefined {
+  const actionRegion = node.actionRegion;
+  if (actionRegion === undefined) {
+    return undefined;
+  }
+
+  const regionId = requireNonEmptyString(
+    actionRegion.id ?? options.id,
+    `UiNode(${options.id}).actionRegion.id`,
+  );
+  const actionId = requireNonEmptyString(
+    actionRegion.actionId,
+    `UiNode(${options.id}).actionRegion.actionId`,
+  );
+  const actionType = requireNonEmptyString(
+    actionRegion.actionType,
+    `UiNode(${options.id}).actionRegion.actionType`,
+  );
+
+  const region: RenderActionRegion = {
+    id: regionId,
+    actionId,
+    actionType,
+    x: options.x,
+    y: options.y,
+    width: options.width,
+    height: options.height,
+    enabled: requireBoolean(
+      actionRegion.enabled,
+      `UiNode(${options.id}).actionRegion.enabled`,
+    ),
+    ...(actionRegion.label === undefined
+      ? {}
+      : {
+          label: copyOptionalString(
+            actionRegion.label,
+            `UiNode(${options.id}).actionRegion.label`,
+          ),
+        }),
+    ...(actionRegion.tooltip === undefined
+      ? {}
+      : {
+          tooltip: copyOptionalString(
+            actionRegion.tooltip,
+            `UiNode(${options.id}).actionRegion.tooltip`,
+          ),
+        }),
+  };
+
+  return {
+    sortKey: options.sortKey,
+    regionKey: `ui:action:${regionId}`,
+    region,
+  };
+}
+
+function compileUiNode(node: UiNode): CompiledUiNode {
   const id = requireNonEmptyString(node.id, 'UiNode.id');
 
   const x = quantizeToInt(node.x, 1, `UiNode(${id}).x`);
@@ -192,6 +309,7 @@ function compileUiNode(node: UiNode): readonly DrawEntry[] {
     sortKeyLo: encodeSignedInt32ToSortableUint32(x, `UiNode(${id}).sortKeyLo`),
   };
 
+  let drawEntries: readonly DrawEntry[];
   switch (node.kind) {
     case 'rect': {
       const draw: RectDraw = {
@@ -205,7 +323,7 @@ function compileUiNode(node: UiNode): readonly DrawEntry[] {
         colorRgba: node.colorRgba,
       };
 
-      return [
+      drawEntries = [
         {
           passId: 'ui',
           sortKey,
@@ -213,6 +331,7 @@ function compileUiNode(node: UiNode): readonly DrawEntry[] {
           draw,
         },
       ];
+      break;
     }
     case 'image': {
       const assetId = requireNonEmptyString(node.assetId, `UiImageNode(${id}).assetId`) as AssetId;
@@ -228,7 +347,7 @@ function compileUiNode(node: UiNode): readonly DrawEntry[] {
         tintRgba: node.tintRgba,
       };
 
-      return [
+      drawEntries = [
         {
           passId: 'ui',
           sortKey,
@@ -236,6 +355,7 @@ function compileUiNode(node: UiNode): readonly DrawEntry[] {
           draw,
         },
       ];
+      break;
     }
     case 'text': {
       const fontSizePx = quantizeToInt(node.fontSizePx, 1, `UiTextNode(${id}).fontSizePx`);
@@ -251,7 +371,7 @@ function compileUiNode(node: UiNode): readonly DrawEntry[] {
         fontSizePx,
       };
 
-      return [
+      drawEntries = [
         {
           passId: 'ui',
           sortKey,
@@ -259,10 +379,17 @@ function compileUiNode(node: UiNode): readonly DrawEntry[] {
           draw,
         },
       ];
+      break;
     }
     case 'meter':
-      return compileUiMeterNode(node, { id, x, y, width, height, sortKey });
+      drawEntries = compileUiMeterNode(node, { id, x, y, width, height, sortKey });
+      break;
   }
+
+  return {
+    drawEntries,
+    actionRegionEntry: compileUiActionRegion(node, { id, x, y, width, height, sortKey }),
+  };
 }
 
 function compileUiMeterNode(
@@ -336,20 +463,31 @@ export function compileViewModelToRenderCommandBuffer(
 
   const passes = createPasses();
   const entries: DrawEntry[] = [];
+  const actionRegionEntries: ActionRegionEntry[] = [];
 
   for (const sprite of viewModel.scene.sprites) {
     entries.push(compileSpriteInstance(sprite, { worldFixedPointScale }));
   }
 
   for (const node of viewModel.ui.nodes) {
-    entries.push(...compileUiNode(node));
+    const compiledNode = compileUiNode(node);
+    entries.push(...compiledNode.drawEntries);
+    if (compiledNode.actionRegionEntry !== undefined) {
+      actionRegionEntries.push(compiledNode.actionRegionEntry);
+    }
   }
 
   sortDrawEntries(entries);
+  sortActionRegionEntries(actionRegionEntries);
 
   const draws: RenderDraw[] = [];
   for (const entry of entries) {
     draws.push(entry.draw);
+  }
+
+  const actionRegions: RenderActionRegion[] = [];
+  for (const entry of actionRegionEntries) {
+    actionRegions.push(entry.region);
   }
 
   return {
@@ -369,6 +507,7 @@ export function compileViewModelToRenderCommandBuffer(
     },
     passes,
     draws,
+    ...(actionRegions.length === 0 ? {} : { actionRegions }),
   };
 }
 

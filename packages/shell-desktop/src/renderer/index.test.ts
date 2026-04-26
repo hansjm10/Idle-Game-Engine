@@ -303,6 +303,125 @@ describe('shell-desktop renderer entrypoint', () => {
     });
   });
 
+  it('dispatches enabled action regions through control events', async () => {
+    let frameListener: ((frame: unknown) => void) | undefined;
+
+    const idleEngine = (
+      globalThis as unknown as {
+        idleEngine: {
+          onFrame: ReturnType<typeof vi.fn>;
+          sendControlEvent: ReturnType<typeof vi.fn>;
+          sendInputEvent: ReturnType<typeof vi.fn>;
+        };
+      }
+    ).idleEngine;
+
+    idleEngine.onFrame.mockImplementation((handler: (frame: unknown) => void) => {
+      frameListener = handler;
+      return vi.fn();
+    });
+
+    await import('./index.js');
+    await flushMicrotasks();
+
+    frameListener?.({
+      frame: { step: 1, simTimeMs: 16 },
+      actionRegions: [
+        {
+          id: 'collect-panel',
+          actionId: 'collect',
+          actionType: 'button',
+          x: 20,
+          y: 20,
+          width: 80,
+          height: 40,
+          enabled: true,
+          label: 'Collect',
+          tooltip: '+1 Energy',
+        },
+      ],
+    });
+
+    pointerDownHandler?.({
+      clientX: 40,
+      clientY: 50,
+      button: 0,
+      buttons: 1,
+      pointerType: 'mouse',
+      altKey: false,
+      ctrlKey: false,
+      metaKey: false,
+      shiftKey: false,
+    } as PointerEvent);
+
+    expect(idleEngine.sendControlEvent).toHaveBeenCalledWith({
+      intent: 'collect',
+      phase: 'start',
+      metadata: {
+        actionRegionId: 'collect-panel',
+        actionRegionType: 'button',
+        x: 30,
+        y: 30,
+        label: 'Collect',
+        tooltip: '+1 Energy',
+      },
+    });
+    expect(idleEngine.sendInputEvent).not.toHaveBeenCalled();
+  });
+
+  it('does not dispatch disabled action regions or fall through to raw input', async () => {
+    let frameListener: ((frame: unknown) => void) | undefined;
+
+    const idleEngine = (
+      globalThis as unknown as {
+        idleEngine: {
+          onFrame: ReturnType<typeof vi.fn>;
+          sendControlEvent: ReturnType<typeof vi.fn>;
+          sendInputEvent: ReturnType<typeof vi.fn>;
+        };
+      }
+    ).idleEngine;
+
+    idleEngine.onFrame.mockImplementation((handler: (frame: unknown) => void) => {
+      frameListener = handler;
+      return vi.fn();
+    });
+
+    await import('./index.js');
+    await flushMicrotasks();
+
+    frameListener?.({
+      frame: { step: 1, simTimeMs: 16 },
+      actionRegions: [
+        {
+          id: 'disabled-panel',
+          actionId: 'collect',
+          actionType: 'button',
+          x: 20,
+          y: 20,
+          width: 80,
+          height: 40,
+          enabled: false,
+        },
+      ],
+    });
+
+    pointerDownHandler?.({
+      clientX: 40,
+      clientY: 50,
+      button: 0,
+      buttons: 1,
+      pointerType: 'mouse',
+      altKey: false,
+      ctrlKey: false,
+      metaKey: false,
+      shiftKey: false,
+    } as PointerEvent);
+
+    expect(idleEngine.sendControlEvent).not.toHaveBeenCalled();
+    expect(idleEngine.sendInputEvent).not.toHaveBeenCalled();
+  });
+
   it('maps pointer click and move coordinates into canvas-local UI space for a scaled HiDPI canvas', async () => {
     const idleEngine = (
       globalThis as unknown as { idleEngine: { sendInputEvent: ReturnType<typeof vi.fn> } }
