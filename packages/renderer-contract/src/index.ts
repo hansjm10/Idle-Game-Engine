@@ -24,7 +24,6 @@ export type {
 } from './action-regions.js';
 
 export type {
-  ActionRegionType,
   AssetId,
   AssetKind,
   AssetManifest,

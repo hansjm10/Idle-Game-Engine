@@ -39,11 +39,10 @@ export interface SpriteInstance {
 export interface UiViewModel {
     readonly nodes: readonly UiNode[];
 }
-export type ActionRegionType = string;
 export interface UiActionRegion {
     readonly id?: string;
     readonly actionId: string;
-    readonly actionType: ActionRegionType;
+    readonly actionType: string;
     readonly enabled: boolean;
     readonly label?: string;
     readonly tooltip?: string;
@@ -96,7 +95,7 @@ export interface RenderPass {
 export interface RenderActionRegion {
     readonly id: string;
     readonly actionId: string;
-    readonly actionType: ActionRegionType;
+    readonly actionType: string;
     readonly x: number;
     readonly y: number;
     readonly width: number;
