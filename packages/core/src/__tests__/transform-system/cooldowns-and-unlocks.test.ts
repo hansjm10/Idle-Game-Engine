@@ -524,6 +524,53 @@ describe('TransformSystem', () => {
       expect(state.get('transform:unlockable')?.unlocked).toBe(false);
     });
 
+    it('should report snapshot unlocked from persisted state only', () => {
+      const transforms: TransformDefinition[] = [
+        {
+          id: 'transform:unlockable' as any,
+          name: { default: 'Unlockable', variants: {} },
+          description: { default: 'Needs unlock', variants: {} },
+          mode: 'instant',
+          inputs: [{ resourceId: 'res:gold' as any, amount: { kind: 'constant', value: 10 } }],
+          outputs: [{ resourceId: 'res:gems' as any, amount: { kind: 'constant', value: 1 } }],
+          trigger: { kind: 'manual' },
+          unlockCondition: {
+            kind: 'resourceThreshold',
+            resourceId: 'res:prestige' as any,
+            comparator: 'gte',
+            amount: { kind: 'constant', value: 1 },
+          },
+          tags: [],
+        },
+      ];
+      const state = new Map<string, TransformState>([
+        [
+          'transform:unlockable',
+          {
+            id: 'transform:unlockable',
+            unlocked: false,
+            cooldownExpiresStep: 0,
+            runsThisTick: 0,
+          },
+        ],
+      ]);
+      const conditionContext = createMockConditionContext(
+        new Map([['res:prestige', 1]]),
+      );
+
+      const snapshot = buildTransformSnapshot(0, 0, {
+        transforms,
+        state,
+        stepDurationMs,
+        conditionContext,
+      });
+
+      expect(snapshot.transforms[0]).toMatchObject({
+        id: 'transform:unlockable',
+        unlocked: false,
+      });
+    });
+
     it('should unlock when condition becomes true and stay unlocked', () => {
       const transforms: TransformDefinition[] = [
         {

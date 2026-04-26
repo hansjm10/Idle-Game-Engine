@@ -265,6 +265,59 @@ function createAchievementRewardSnapshotViewContent() {
   });
 }
 
+function createLateTickUnlockPersistenceContent() {
+  const unlockFromEnergy = {
+    kind: 'resourceThreshold' as const,
+    resourceId: 'resource.energy',
+    comparator: 'lte' as const,
+    amount: { kind: 'constant' as const, value: 0 },
+  };
+
+  return createContentPack({
+    resources: [
+      createResourceDefinition('resource.energy', { startAmount: 1 }),
+      createResourceDefinition('resource.gold', { startAmount: 0 }),
+    ],
+    automations: [
+      createAutomation({
+        id: 'automation.late-unlocked',
+        name: { default: 'Late Unlocked Automation' },
+        description: { default: 'Unlocks after transforms run' },
+        targetType: 'collectResource',
+        targetId: 'resource.gold',
+        targetAmount: literalOne,
+        trigger: { kind: 'commandQueueEmpty' },
+        unlockCondition: unlockFromEnergy,
+        enabledByDefault: false,
+      }),
+    ],
+    transforms: [
+      createTransform({
+        id: 'transform.late-unlocked-spender',
+        name: { default: 'Late Unlocked Spender' },
+        description: { default: 'Spends the unlock resource' },
+        mode: 'instant',
+        trigger: { kind: 'manual' },
+        inputs: [{ resourceId: 'resource.gold', amount: literalOne }],
+        outputs: [{ resourceId: 'resource.energy', amount: literalOne }],
+        unlockCondition: unlockFromEnergy,
+        order: 0,
+      }),
+      createTransform({
+        id: 'transform.late-resource-spender',
+        name: { default: 'Late Resource Spender' },
+        description: { default: 'Consumes the unlock resource after locked views run' },
+        mode: 'instant',
+        trigger: { kind: 'condition', condition: { kind: 'always' } },
+        inputs: [{ resourceId: 'resource.energy', amount: literalOne }],
+        outputs: [{ resourceId: 'resource.gold', amount: literalOne }],
+        cooldown: { kind: 'constant', value: 10_000 },
+        order: 1,
+      }),
+    ],
+  });
+}
+
 function createTestContent() {
   return createContentPack({
     resources: [
@@ -508,6 +561,63 @@ describe('createGame', () => {
     expect(transform).toMatchObject({
       unlocked: true,
       visible: true,
+    });
+  });
+
+  it('persists late-tick automation and transform unlocks before snapshots expose them', () => {
+    const game = createGame(createLateTickUnlockPersistenceContent(), {
+      stepSizeMs: 100,
+    });
+
+    game.tick(game.internals.runtime.getStepSizeMs());
+
+    const unlockedSnapshot = game.getSnapshot();
+    const unlockedEnergy = unlockedSnapshot.resources.find(
+      (resource) => resource.id === 'resource.energy',
+    );
+    const unlockedAutomation = unlockedSnapshot.automations.find(
+      (view) => view.id === 'automation.late-unlocked',
+    );
+    const unlockedTransform = unlockedSnapshot.transforms.find(
+      (view) => view.id === 'transform.late-unlocked-spender',
+    );
+
+    expect(unlockedEnergy?.amount).toBe(0);
+    expect(unlockedAutomation).toMatchObject({
+      unlocked: true,
+      visible: true,
+    });
+    expect(unlockedTransform).toMatchObject({
+      unlocked: true,
+      visible: true,
+      canAfford: true,
+    });
+
+    expect(game.startTransform('transform.late-unlocked-spender')).toEqual({
+      success: true,
+    });
+    game.tick(game.internals.runtime.getStepSizeMs());
+
+    const spentSnapshot = game.getSnapshot();
+    const spentEnergy = spentSnapshot.resources.find(
+      (resource) => resource.id === 'resource.energy',
+    );
+    const persistedAutomation = spentSnapshot.automations.find(
+      (view) => view.id === 'automation.late-unlocked',
+    );
+    const persistedTransform = spentSnapshot.transforms.find(
+      (view) => view.id === 'transform.late-unlocked-spender',
+    );
+
+    expect(spentEnergy?.amount).toBe(1);
+    expect(persistedAutomation).toMatchObject({
+      unlocked: true,
+      visible: true,
+    });
+    expect(persistedTransform).toMatchObject({
+      unlocked: true,
+      visible: true,
+      canAfford: false,
     });
   });
 

@@ -141,6 +141,21 @@ export function wireGameRuntime<
     config: options.config,
   });
 
+  const publishRuntimeViewState = (): void => {
+    refreshRuntimeViewState({
+      automationSystem,
+      transformSystem,
+    });
+    syncCoordinatorRuntimeViewState({
+      coordinator,
+      content,
+      automationSystem,
+      transformSystem,
+      entitySystem,
+      resourceStateAdapter,
+    });
+  };
+
   registerResourceCommandHandlers({
     dispatcher: runtime.getCommandDispatcher(),
     resources: coordinator.resourceState,
@@ -174,23 +189,13 @@ export function wireGameRuntime<
   registerSystemIfDefined(runtime, systems, automationSystem);
   registerSystemIfDefined(runtime, systems, transformSystem);
   registerSystemIfDefined(runtime, systems, entitySystem);
-  refreshRuntimeViewState({
-    automationSystem,
-    transformSystem,
-  });
-  syncCoordinatorRuntimeViewState({
-    coordinator,
-    content,
-    automationSystem,
-    transformSystem,
-    entitySystem,
-    resourceStateAdapter,
-  });
+  publishRuntimeViewState();
 
   const coordinatorUpdateSystem: System = {
     id: 'progression-coordinator',
     tick: ({ step, events }) => {
       coordinator.updateForStep(step + 1, { events });
+      publishRuntimeViewState();
     },
   };
 
@@ -234,18 +239,7 @@ export function wireGameRuntime<
       currentStep: hydrateOptions?.currentStep,
       applyRngSeed: hydrateOptions?.applyRngSeed,
     });
-    refreshRuntimeViewState({
-      automationSystem,
-      transformSystem,
-    });
-    syncCoordinatorRuntimeViewState({
-      coordinator,
-      content,
-      automationSystem,
-      transformSystem,
-      entitySystem,
-      resourceStateAdapter,
-    });
+    publishRuntimeViewState();
     runtime.restoreAccumulatorBacklog(
       normalizeRuntimeBacklogSourceState(save.runtime),
     );
@@ -499,7 +493,6 @@ function syncCoordinatorAutomationStateIfEnabled(
     definitions: automationDefinitions,
     state: automationSystem.getState(),
     conditionContext: coordinator.getConditionContext(),
-    grantedAutomationIds: coordinator.getGrantedAutomationIds(),
   };
 }
 
