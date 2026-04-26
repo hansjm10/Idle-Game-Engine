@@ -204,10 +204,136 @@ export interface AutomationSystemOptions {
   readonly isAutomationUnlocked?: (automationId: string) => boolean;
 }
 
+type AutomationRestoreOptions = Readonly<{
+  readonly savedWorkerStep?: number;
+  readonly currentStep?: number;
+}>;
+
+type AutomationRestoreTimeline = Readonly<{
+  readonly hasValidSavedStep: boolean;
+  readonly rebaseDelta: number;
+}>;
+
 type AutomationTriggerEvaluation = Readonly<{
   readonly triggered: boolean;
   readonly thresholdCrossing: boolean;
 }>;
+
+function createAutomationRestoreTimeline(
+  restoreOptions: AutomationRestoreOptions | undefined,
+): AutomationRestoreTimeline {
+  const savedWorkerStep = restoreOptions?.savedWorkerStep;
+  if (typeof savedWorkerStep !== 'number' || !Number.isFinite(savedWorkerStep)) {
+    return {
+      hasValidSavedStep: false,
+      rebaseDelta: 0,
+    };
+  }
+
+  const targetCurrentStep = restoreOptions?.currentStep ?? 0;
+  return {
+    hasValidSavedStep: true,
+    rebaseDelta: targetCurrentStep - savedWorkerStep,
+  };
+}
+
+function hasRestoredLastFiredStep(restored: SerializedAutomationState): boolean {
+  return restored.lastFiredStep === null || typeof restored.lastFiredStep === 'number';
+}
+
+function normalizeRestoredLastFiredStep(
+  lastFiredStep: SerializedAutomationState['lastFiredStep'],
+): number {
+  if (
+    typeof lastFiredStep === 'number' &&
+    Number.isFinite(lastFiredStep)
+  ) {
+    return lastFiredStep;
+  }
+
+  return -Infinity;
+}
+
+function rebaseRestoredLastFiredStep(
+  restored: SerializedAutomationState,
+  existing: AutomationState,
+  timeline: AutomationRestoreTimeline,
+): number {
+  if (!hasRestoredLastFiredStep(restored)) {
+    return existing.lastFiredStep;
+  }
+
+  const normalizedLastFired = normalizeRestoredLastFiredStep(restored.lastFiredStep);
+  if (normalizedLastFired === -Infinity) {
+    return -Infinity;
+  }
+
+  return normalizedLastFired + timeline.rebaseDelta;
+}
+
+function rebaseRestoredCooldownExpiresStep(
+  restored: SerializedAutomationState,
+  existing: AutomationState,
+  timeline: AutomationRestoreTimeline,
+): number {
+  const originalCooldownExpires = restored.cooldownExpiresStep;
+  if (
+    typeof originalCooldownExpires !== 'number' ||
+    !Number.isFinite(originalCooldownExpires)
+  ) {
+    return existing.cooldownExpiresStep;
+  }
+
+  if (!timeline.hasValidSavedStep) {
+    return originalCooldownExpires;
+  }
+
+  return originalCooldownExpires + timeline.rebaseDelta;
+}
+
+function applyRestoredAutomationState(
+  existing: AutomationState,
+  restored: SerializedAutomationState,
+  timeline: AutomationRestoreTimeline,
+): void {
+  if (typeof restored.enabled === 'boolean') {
+    existing.enabled = restored.enabled;
+  }
+  if (typeof restored.unlocked === 'boolean') {
+    existing.unlocked = restored.unlocked;
+  }
+
+  existing.lastFiredStep = rebaseRestoredLastFiredStep(restored, existing, timeline);
+  existing.cooldownExpiresStep = rebaseRestoredCooldownExpiresStep(
+    restored,
+    existing,
+    timeline,
+  );
+
+  if ('lastThresholdSatisfied' in restored) {
+    existing.lastThresholdSatisfied = restored.lastThresholdSatisfied;
+  }
+}
+
+function restoreAutomationStates(
+  automationStates: Map<string, AutomationState>,
+  stateArray: readonly SerializedAutomationState[] | undefined,
+  restoreOptions: AutomationRestoreOptions | undefined,
+): void {
+  if (!stateArray || stateArray.length === 0) {
+    return;
+  }
+
+  const timeline = createAutomationRestoreTimeline(restoreOptions);
+  for (const restored of stateArray) {
+    const existing = automationStates.get(restored.id);
+    if (!existing) {
+      continue;
+    }
+
+    applyRestoredAutomationState(existing, restored, timeline);
+  }
+}
 
 function ensureAutomationUnlocked(
   automation: AutomationDefinition,
@@ -557,74 +683,9 @@ export function createAutomationSystem(
 
     restoreState(
       stateArray: readonly SerializedAutomationState[],
-      restoreOptions?: { savedWorkerStep?: number; currentStep?: number },
+      restoreOptions?: AutomationRestoreOptions,
     ) {
-      // If no state provided (e.g., legacy save migrated to []), retain defaults
-      if (!stateArray || stateArray.length === 0) {
-        return;
-      }
-
-      // Merge provided entries into existing definitions without clearing
-      for (const restored of stateArray) {
-        const existing = automationStates.get(restored.id);
-        if (!existing) {
-          // Ignore unknown automations not present in current definitions
-          continue;
-        }
-        // Normalize fields that may not round-trip through JSON (e.g. -Infinity -> null)
-        // SerializedAutomationState.lastFiredStep is number | null, convert null to -Infinity
-        const hasRestoredLastFired =
-          restored.lastFiredStep === null || typeof restored.lastFiredStep === 'number';
-        const normalizedLastFired =
-          hasRestoredLastFired &&
-          restored.lastFiredStep !== null &&
-          typeof restored.lastFiredStep === 'number' &&
-          Number.isFinite(restored.lastFiredStep)
-            ? restored.lastFiredStep
-            : -Infinity;
-
-        // Compute optional step rebase if provided by caller.
-        // When restoring from a snapshot captured at a non-zero worker step,
-        // lastFiredStep and cooldownExpiresStep are absolute to that timeline.
-        // Rebase them into the caller's current timeline so cooldown math
-        // remains consistent.
-        const savedWorkerStep = restoreOptions?.savedWorkerStep;
-        const targetCurrentStep = restoreOptions?.currentStep ?? 0;
-        const hasValidSavedStep =
-          typeof savedWorkerStep === 'number' && Number.isFinite(savedWorkerStep);
-
-        const rebaseDelta = hasValidSavedStep
-          ? targetCurrentStep - (savedWorkerStep)
-          : 0;
-
-        const rebasedLastFired = hasRestoredLastFired
-          ? normalizedLastFired === -Infinity
-            ? -Infinity
-            : normalizedLastFired + rebaseDelta
-          : existing.lastFiredStep;
-
-        const originalCooldownExpires = restored.cooldownExpiresStep;
-        const hasRestoredCooldownExpires =
-          typeof originalCooldownExpires === 'number' &&
-          Number.isFinite(originalCooldownExpires);
-        const rebasedCooldownExpires = hasRestoredCooldownExpires
-          ? hasValidSavedStep
-            ? originalCooldownExpires + rebaseDelta
-            : originalCooldownExpires
-          : existing.cooldownExpiresStep;
-
-        if (typeof restored.enabled === 'boolean') {
-          existing.enabled = restored.enabled;
-        }
-        if (typeof restored.unlocked === 'boolean') {
-          existing.unlocked = restored.unlocked;
-        }
-        existing.lastFiredStep = rebasedLastFired;
-        existing.cooldownExpiresStep = rebasedCooldownExpires;
-        if ('lastThresholdSatisfied' in restored) {
-          existing.lastThresholdSatisfied = restored.lastThresholdSatisfied;
-        }
-      }
+      restoreAutomationStates(automationStates, stateArray, restoreOptions);
     },
 
     setup({ events }) {
