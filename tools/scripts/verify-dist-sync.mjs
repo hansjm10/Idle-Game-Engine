@@ -16,7 +16,7 @@
  *   1: dist/ files are stale and need rebuilding/committing
  */
 
-import { execSync } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -24,19 +24,46 @@ import { fileURLToPath } from 'node:url';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const projectRoot = join(__dirname, '../..');
 
-// Packages that commit dist/ and need verification
-const PACKAGES_WITH_DIST = ['packages/controls'];
-
-function run(cmd) {
+function runGit(args) {
   try {
-    return execSync(cmd, {
+    return execFileSync('git', args, {
       cwd: projectRoot,
       encoding: 'utf-8',
-      stdio: 'pipe',
-    }).trim();
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
   } catch {
     return '';
   }
+}
+
+function listTrackedDistRoots() {
+  const output = runGit(['ls-files', '-z', '--', 'packages/*/dist/**']);
+  const roots = new Set();
+
+  for (const filePath of output.split('\0')) {
+    const match = /^(packages\/[^/]+\/dist)\//.exec(filePath);
+    if (match) {
+      roots.add(match[1]);
+    }
+  }
+
+  return [...roots].sort();
+}
+
+function splitLines(output) {
+  return output
+    .trim()
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean);
+}
+
+function listUnstagedStatusFiles(distPath) {
+  return runGit(['status', '--short', '--untracked-files=no', '--', distPath])
+    .split('\n')
+    .filter(Boolean)
+    .filter((line) => line.length >= 3 && line[1] !== ' ')
+    .map((line) => line.slice(3));
 }
 
 function verifyDistSync() {
@@ -44,21 +71,23 @@ function verifyDistSync() {
 
   const stalePackages = [];
 
-  for (const packagePath of PACKAGES_WITH_DIST) {
-    const distPath = join(packagePath, 'dist');
+  for (const distPath of listTrackedDistRoots()) {
     if (!existsSync(join(projectRoot, distPath))) {
       console.warn(`⚠️  ${distPath} does not exist, skipping`);
       continue;
     }
 
     // Check for unstaged changes only (staged files are about to be committed)
-    const diff = run(`git diff --name-only -- "${distPath}"`);
-    const changedFiles = diff.split('\n').filter(Boolean);
+    const diffChangedFiles = splitLines(runGit(['diff', '--name-only', '--', distPath]));
+    const statusChangedFiles = listUnstagedStatusFiles(distPath);
+    const changedFiles = [...new Set([...diffChangedFiles, ...statusChangedFiles])];
+    const statusOnlyFiles = statusChangedFiles.filter((file) => !diffChangedFiles.includes(file));
 
     if (changedFiles.length > 0) {
       stalePackages.push({
-        packagePath,
+        distPath,
         files: changedFiles,
+        statusOnlyFiles,
       });
     }
   }
@@ -71,10 +100,13 @@ function verifyDistSync() {
   console.error('❌ dist/ files are out of sync!\n');
   console.error('The following packages have uncommitted dist/ changes:\n');
 
-  for (const { packagePath, files } of stalePackages) {
-    console.error(`  📁 ${packagePath}/dist/`);
+  for (const { distPath, files, statusOnlyFiles } of stalePackages) {
+    console.error(`  📁 ${distPath}/`);
     for (const file of files) {
       console.error(`     - ${file}`);
+    }
+    if (statusOnlyFiles.length > 0) {
+      console.error('     status-only changes detected; git status and git diff disagree');
     }
     console.error('');
   }
