@@ -18,17 +18,74 @@
 
 import { execFileSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { delimiter, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const projectRoot = join(__dirname, '../..');
 
+const trustedGitCommandsByPlatform = new Map([
+  ['darwin', ['/usr/bin/git']],
+  ['linux', ['/usr/bin/git', '/bin/git']],
+  ['win32', ['C:\\Program Files\\Git\\cmd\\git.exe', 'C:\\Program Files\\Git\\bin\\git.exe']],
+]);
+
+const trustedPathEntriesByPlatform = new Map([
+  ['darwin', ['/usr/bin', '/bin']],
+  ['linux', ['/usr/bin', '/bin']],
+  ['win32', ['C:\\Program Files\\Git\\cmd', 'C:\\Program Files\\Git\\bin', 'C:\\Windows\\System32', 'C:\\Windows']],
+]);
+
+function compareStrings(left, right) {
+  if (left < right) {
+    return -1;
+  }
+  if (left > right) {
+    return 1;
+  }
+  return 0;
+}
+
+function getTrustedGitCommand() {
+  const candidates = trustedGitCommandsByPlatform.get(process.platform) ?? ['/usr/bin/git'];
+  const command = candidates.find((candidate) => existsSync(candidate));
+
+  if (command === undefined) {
+    throw new Error(`Unable to find git in trusted locations for ${process.platform}.`);
+  }
+
+  return command;
+}
+
+function copyEnvironmentValue(environment, name) {
+  const value = process.env[name];
+  if (value !== undefined) {
+    environment[name] = value;
+  }
+}
+
+function createGitEnvironment() {
+  const pathEntries = trustedPathEntriesByPlatform.get(process.platform) ?? ['/usr/bin', '/bin'];
+  const environment = {
+    PATH: pathEntries.join(delimiter),
+  };
+
+  for (const name of ['HOME', 'USERPROFILE', 'HOMEDRIVE', 'HOMEPATH', 'SystemRoot', 'SYSTEMROOT', 'WINDIR']) {
+    copyEnvironmentValue(environment, name);
+  }
+
+  return environment;
+}
+
+const gitCommand = getTrustedGitCommand();
+const gitEnvironment = createGitEnvironment();
+
 function runGit(args) {
   try {
-    return execFileSync('git', args, {
+    return execFileSync(gitCommand, args, {
       cwd: projectRoot,
       encoding: 'utf-8',
+      env: gitEnvironment,
       stdio: ['ignore', 'pipe', 'pipe'],
     });
   } catch {
@@ -47,7 +104,7 @@ function listTrackedDistRoots() {
     }
   }
 
-  return [...roots].sort();
+  return [...roots].sort(compareStrings);
 }
 
 function splitLines(output) {
