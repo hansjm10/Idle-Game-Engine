@@ -16,27 +16,135 @@
  *   1: dist/ files are stale and need rebuilding/committing
  */
 
-import { execSync } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { delimiter, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const projectRoot = join(__dirname, '../..');
 
-// Packages that commit dist/ and need verification
-const PACKAGES_WITH_DIST = ['packages/controls'];
+const trustedGitCommandsByPlatform = new Map([
+  ['darwin', ['/usr/bin/git']],
+  ['linux', ['/usr/bin/git', '/bin/git']],
+  [
+    'win32',
+    [
+      String.raw`C:\Program Files\Git\cmd\git.exe`,
+      String.raw`C:\Program Files\Git\bin\git.exe`,
+    ],
+  ],
+]);
 
-function run(cmd) {
+const trustedPathEntriesByPlatform = new Map([
+  ['darwin', ['/usr/bin', '/bin']],
+  ['linux', ['/usr/bin', '/bin']],
+  [
+    'win32',
+    [
+      String.raw`C:\Program Files\Git\cmd`,
+      String.raw`C:\Program Files\Git\bin`,
+      String.raw`C:\Windows\System32`,
+      String.raw`C:\Windows`,
+    ],
+  ],
+]);
+
+function compareStrings(left, right) {
+  if (left < right) {
+    return -1;
+  }
+  if (left > right) {
+    return 1;
+  }
+  return 0;
+}
+
+function getTrustedGitCommand() {
+  const candidates = trustedGitCommandsByPlatform.get(process.platform) ?? ['/usr/bin/git'];
+  const command = candidates.find((candidate) => existsSync(candidate));
+
+  if (command === undefined) {
+    throw new Error(`Unable to find git in trusted locations for ${process.platform}.`);
+  }
+
+  return command;
+}
+
+function copyEnvironmentValue(environment, name) {
+  const value = process.env[name];
+  if (value !== undefined) {
+    environment[name] = value;
+  }
+}
+
+function createGitEnvironment() {
+  const pathEntries = trustedPathEntriesByPlatform.get(process.platform) ?? ['/usr/bin', '/bin'];
+  const environment = {
+    PATH: pathEntries.join(delimiter),
+  };
+
+  for (const name of ['HOME', 'USERPROFILE', 'HOMEDRIVE', 'HOMEPATH', 'SystemRoot', 'SYSTEMROOT', 'WINDIR']) {
+    copyEnvironmentValue(environment, name);
+  }
+
+  return environment;
+}
+
+const gitCommand = getTrustedGitCommand();
+const gitEnvironment = createGitEnvironment();
+
+function runGit(args) {
   try {
-    return execSync(cmd, {
+    return execFileSync(gitCommand, args, {
       cwd: projectRoot,
       encoding: 'utf-8',
-      stdio: 'pipe',
-    }).trim();
+      env: gitEnvironment,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
   } catch {
     return '';
   }
+}
+
+function listTrackedDistRoots() {
+  const output = runGit(['ls-files', '-z', '--', 'packages/*/dist/**']);
+  const roots = new Set();
+
+  for (const filePath of output.split('\0')) {
+    const match = /^(packages\/[^/]+\/dist)\//.exec(filePath);
+    if (match) {
+      roots.add(match[1]);
+    }
+  }
+
+  return [...roots].sort(compareStrings);
+}
+
+function listTrackedFiles(distPath) {
+  return runGit(['ls-files', '-z', '--', distPath]).split('\0').filter(Boolean);
+}
+
+function refreshTrackedFiles(filePaths) {
+  if (filePaths.length > 0) {
+    runGit(['update-index', '--refresh', '--', ...filePaths]);
+  }
+}
+
+function splitLines(output) {
+  return output
+    .trim()
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean);
+}
+
+function listUnstagedStatusFiles(distPath) {
+  return runGit(['status', '--short', '--untracked-files=no', '--', distPath])
+    .split('\n')
+    .filter(Boolean)
+    .filter((line) => line.length >= 3 && line[1] !== ' ')
+    .map((line) => line.slice(3));
 }
 
 function verifyDistSync() {
@@ -44,21 +152,26 @@ function verifyDistSync() {
 
   const stalePackages = [];
 
-  for (const packagePath of PACKAGES_WITH_DIST) {
-    const distPath = join(packagePath, 'dist');
+  for (const distPath of listTrackedDistRoots()) {
     if (!existsSync(join(projectRoot, distPath))) {
       console.warn(`⚠️  ${distPath} does not exist, skipping`);
       continue;
     }
 
+    const trackedFiles = listTrackedFiles(distPath);
+    refreshTrackedFiles(trackedFiles);
+
     // Check for unstaged changes only (staged files are about to be committed)
-    const diff = run(`git diff --name-only -- "${distPath}"`);
-    const changedFiles = diff.split('\n').filter(Boolean);
+    const diffChangedFiles = splitLines(runGit(['diff', '--name-only', '--', distPath]));
+    const statusChangedFiles = listUnstagedStatusFiles(distPath);
+    const changedFiles = [...new Set([...diffChangedFiles, ...statusChangedFiles])];
+    const statusOnlyFiles = statusChangedFiles.filter((file) => !diffChangedFiles.includes(file));
 
     if (changedFiles.length > 0) {
       stalePackages.push({
-        packagePath,
+        distPath,
         files: changedFiles,
+        statusOnlyFiles,
       });
     }
   }
@@ -71,10 +184,13 @@ function verifyDistSync() {
   console.error('❌ dist/ files are out of sync!\n');
   console.error('The following packages have uncommitted dist/ changes:\n');
 
-  for (const { packagePath, files } of stalePackages) {
-    console.error(`  📁 ${packagePath}/dist/`);
+  for (const { distPath, files, statusOnlyFiles } of stalePackages) {
+    console.error(`  📁 ${distPath}/`);
     for (const file of files) {
       console.error(`     - ${file}`);
+    }
+    if (statusOnlyFiles.length > 0) {
+      console.error('     status-only changes detected; git status and git diff disagree');
     }
     console.error('');
   }
