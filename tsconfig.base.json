@@ -10,6 +10,7 @@
     "skipLibCheck": true,
     "types": [],
     "resolveJsonModule": true,
+    "newLine": "lf",
     "useDefineForClassFields": true,
     "allowSyntheticDefaultImports": true,
     "noImplicitOverride": true,
