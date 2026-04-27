@@ -24,24 +24,28 @@ body {
 
 main.overlay {
   box-sizing: border-box;
-  position: relative;
-  padding: 16px;
+  position: absolute;
+  inset-block-start: 8px;
+  inset-inline-start: 8px;
+  padding: 0;
   display: grid;
-  gap: 16px;
+  gap: 6px;
   align-content: start;
-  max-width: 520px;
+  max-width: min(360px, calc(100% - 16px));
+  pointer-events: none;
 }
 
 h1 {
-  font-size: 18px;
+  font-size: 13px;
+  line-height: 1.2;
   margin: 0;
   font-weight: 600;
 }
 
 .error-banner {
   margin: 0;
-  padding: 10px 12px;
-  border-radius: 8px;
+  padding: 6px 8px;
+  border-radius: 6px;
   border: 1px solid rgba(239, 68, 68, 0.7);
   background: rgba(127, 29, 29, 0.55);
   color: #fecaca;
@@ -51,9 +55,13 @@ h1 {
 pre {
   background: rgba(255, 255, 255, 0.06);
   border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 8px;
-  padding: 12px;
+  border-radius: 6px;
+  padding: 6px 8px;
   margin: 0;
+  max-height: 120px;
+  overflow: hidden;
+  font-size: 11px;
+  line-height: 1.35;
   white-space: pre-wrap;
   word-break: break-word;
 }

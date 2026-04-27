@@ -1478,6 +1478,7 @@ _WebGpuRendererImpl_alphaMode = new WeakMap(), _WebGpuRendererImpl_onDeviceLost 
         batchKind: undefined,
         batchPassId: undefined,
         batchInstances: __classPrivateFieldGet(this, _WebGpuRendererImpl_quadInstanceWriter, "f"),
+        instanceUploadOffsetBytes: 0,
     };
 }, _WebGpuRendererImpl_applyScissorRect = function _WebGpuRendererImpl_applyScissorRect(state, rect) {
     if (state.appliedScissor && isSameScissorRect(state.appliedScissor, rect)) {
@@ -1503,13 +1504,14 @@ _WebGpuRendererImpl_alphaMode = new WeakMap(), _WebGpuRendererImpl_onDeviceLost 
         __classPrivateFieldGet(this, _WebGpuRendererImpl_instances, "m", _WebGpuRendererImpl_resetQuadBatch).call(this, state);
         return;
     }
-    __classPrivateFieldGet(this, _WebGpuRendererImpl_instances, "m", _WebGpuRendererImpl_ensureInstanceBuffer).call(this, usedBytes);
+    const uploadOffsetBytes = state.instanceUploadOffsetBytes;
+    __classPrivateFieldGet(this, _WebGpuRendererImpl_instances, "m", _WebGpuRendererImpl_ensureInstanceBuffer).call(this, uploadOffsetBytes + usedBytes);
     const instanceBuffer = __classPrivateFieldGet(this, _WebGpuRendererImpl_spriteInstanceBuffer, "f");
     if (!instanceBuffer) {
         throw new Error('Sprite pipeline missing instance buffer.');
     }
     // For TypedArray uploads, WebGPU interprets `size` as element count, not bytes.
-    this.device.queue.writeBuffer(instanceBuffer, 0, state.batchInstances.buffer, 0, usedFloats);
+    this.device.queue.writeBuffer(instanceBuffer, uploadOffsetBytes, state.batchInstances.buffer, 0, usedFloats);
     const globals = passId === 'world' ? state.worldGlobalsBindGroup : state.uiGlobalsBindGroup;
     if (kind === 'image') {
         if (!state.textureBindGroup) {
@@ -1530,9 +1532,10 @@ _WebGpuRendererImpl_alphaMode = new WeakMap(), _WebGpuRendererImpl_onDeviceLost 
     }
     state.passEncoder.setBindGroup(0, globals);
     state.passEncoder.setVertexBuffer(0, state.vertexBuffer);
-    state.passEncoder.setVertexBuffer(1, instanceBuffer);
+    state.passEncoder.setVertexBuffer(1, instanceBuffer, uploadOffsetBytes, usedBytes);
     state.passEncoder.setIndexBuffer(state.indexBuffer, 'uint16');
     state.passEncoder.drawIndexed(6, instanceCount, 0, 0, 0);
+    state.instanceUploadOffsetBytes += usedBytes;
     __classPrivateFieldGet(this, _WebGpuRendererImpl_instances, "m", _WebGpuRendererImpl_resetQuadBatch).call(this, state);
 }, _WebGpuRendererImpl_ensureQuadBatch = function _WebGpuRendererImpl_ensureQuadBatch(state, kind, passId) {
     if (state.batchKind === kind && state.batchPassId === passId) {

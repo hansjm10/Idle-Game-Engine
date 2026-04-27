@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const createWebGpuRenderer = vi.fn();
@@ -182,6 +183,12 @@ describe('shell-desktop renderer entrypoint', () => {
     const idleEngine = (globalThis as unknown as { idleEngine: { ping: ReturnType<typeof vi.fn> } }).idleEngine;
     expect(idleEngine.ping).not.toHaveBeenCalled();
     expect(createWebGpuRenderer).not.toHaveBeenCalled();
+  });
+
+  it('keeps the diagnostics overlay from intercepting canvas pointer input', () => {
+    const styles = readFileSync(new URL('./styles.css', import.meta.url), 'utf8');
+
+    expect(styles).toMatch(/main\.overlay\s*\{[^}]*pointer-events:\s*none;/s);
   });
 
   it('renders sim status updates and forwards key events', async () => {
