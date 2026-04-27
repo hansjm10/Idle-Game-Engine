@@ -121,6 +121,16 @@ function listTrackedDistRoots() {
   return [...roots].sort(compareStrings);
 }
 
+function listTrackedFiles(distPath) {
+  return runGit(['ls-files', '-z', '--', distPath]).split('\0').filter(Boolean);
+}
+
+function refreshTrackedFiles(filePaths) {
+  if (filePaths.length > 0) {
+    runGit(['update-index', '--refresh', '--', ...filePaths]);
+  }
+}
+
 function splitLines(output) {
   return output
     .trim()
@@ -147,6 +157,9 @@ function verifyDistSync() {
       console.warn(`⚠️  ${distPath} does not exist, skipping`);
       continue;
     }
+
+    const trackedFiles = listTrackedFiles(distPath);
+    refreshTrackedFiles(trackedFiles);
 
     // Check for unstaged changes only (staged files are about to be committed)
     const diffChangedFiles = splitLines(runGit(['diff', '--name-only', '--', distPath]));
