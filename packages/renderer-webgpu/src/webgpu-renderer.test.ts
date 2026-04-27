@@ -1666,6 +1666,95 @@ describe('renderer-webgpu', () => {
       expect(drawIndexed).toHaveBeenNthCalledWith(2, 6, 1, 0, 0, 0);
     });
 
+    it('uploads flushed quad batches to distinct instance buffer ranges', async () => {
+      const { canvas, beginRenderPass, drawIndexed, writeBuffer } = createStubWebGpuEnvironment();
+      const renderer = await createWebGpuRenderer(canvas);
+
+      const spriteAssetId = 'sprite:demo' as AssetId;
+      const manifest = {
+        schemaVersion: RENDERER_CONTRACT_SCHEMA_VERSION,
+        assets: [{ id: spriteAssetId, kind: 'image', contentHash: 'hash:demo' }],
+      } satisfies AssetManifest;
+
+      const loadImage = vi.fn(
+        async () => ({ width: 8, height: 8 } as unknown as GPUImageCopyExternalImageSource),
+      );
+      await renderer.loadAssets(
+        manifest,
+        { loadImage },
+        { maxAtlasSizePx: 64, paddingPx: 0, powerOfTwo: true },
+      );
+
+      const rcb = {
+        frame: {
+          schemaVersion: RENDERER_CONTRACT_SCHEMA_VERSION,
+          step: 0,
+          simTimeMs: 0,
+          contentHash: 'content:dev',
+        },
+        scene: {
+          camera: { x: 0, y: 0, zoom: 1 },
+        },
+        passes: [{ id: 'ui' }],
+        draws: [
+          {
+            kind: 'rect',
+            passId: 'ui',
+            sortKey: { sortKeyHi: 0, sortKeyLo: 0 },
+            x: 1,
+            y: 2,
+            width: 3,
+            height: 4,
+            colorRgba: 0xff_00_00_ff,
+          },
+          {
+            kind: 'image',
+            passId: 'ui',
+            sortKey: { sortKeyHi: 0, sortKeyLo: 1 },
+            x: 5,
+            y: 6,
+            width: 7,
+            height: 8,
+            assetId: spriteAssetId,
+          },
+          {
+            kind: 'rect',
+            passId: 'ui',
+            sortKey: { sortKeyHi: 0, sortKeyLo: 2 },
+            x: 9,
+            y: 10,
+            width: 11,
+            height: 12,
+            colorRgba: 0x00_ff_00_ff,
+          },
+        ],
+      } satisfies RenderCommandBuffer;
+
+      renderer.render(rcb);
+
+      expect(drawIndexed).toHaveBeenCalledTimes(3);
+
+      const instanceWrites = writeBuffer.mock.calls.filter((call) => call[2] instanceof Float32Array);
+      expect(instanceWrites).toHaveLength(3);
+      expect(instanceWrites.map((call) => call[1])).toEqual([0, 52, 104]);
+      expect(instanceWrites.map((call) => call[4])).toEqual([13, 13, 13]);
+
+      const passEncoder = beginRenderPass.mock.results[0]?.value as
+        | { setVertexBuffer: ReturnType<typeof vi.fn> }
+        | undefined;
+      if (!passEncoder) {
+        throw new Error('Expected a render pass encoder.');
+      }
+
+      const instanceBindings = passEncoder.setVertexBuffer.mock.calls.filter((call) => call[0] === 1);
+      expect(instanceBindings).toHaveLength(3);
+      expect(instanceBindings.map((call) => [call[2], call[3]])).toEqual([
+        [0, 52],
+        [52, 52],
+        [104, 52],
+      ]);
+    });
+
     it('preserves quad instance data when the batch buffer grows', async () => {
       const { canvas, drawIndexed, writeBuffer } = createStubWebGpuEnvironment();
       const renderer = await createWebGpuRenderer(canvas);

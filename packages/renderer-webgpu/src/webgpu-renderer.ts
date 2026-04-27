@@ -1139,6 +1139,7 @@ interface WebGpuQuadRenderState {
   batchKind: WebGpuQuadBatchKind | undefined;
   batchPassId: RenderPassId | undefined;
   batchInstances: QuadInstanceWriter;
+  instanceUploadOffsetBytes: number;
 }
 
 function applyBitmapTextControlCharacter(
@@ -1998,6 +1999,7 @@ class WebGpuRendererImpl implements WebGpuRenderer {
       batchKind: undefined,
       batchPassId: undefined,
       batchInstances: this.#quadInstanceWriter,
+      instanceUploadOffsetBytes: 0,
     };
   }
 
@@ -2033,7 +2035,8 @@ class WebGpuRendererImpl implements WebGpuRenderer {
       return;
     }
 
-    this.#ensureInstanceBuffer(usedBytes);
+    const uploadOffsetBytes = state.instanceUploadOffsetBytes;
+    this.#ensureInstanceBuffer(uploadOffsetBytes + usedBytes);
 
     const instanceBuffer = this.#spriteInstanceBuffer;
     if (!instanceBuffer) {
@@ -2041,7 +2044,7 @@ class WebGpuRendererImpl implements WebGpuRenderer {
     }
 
     // For TypedArray uploads, WebGPU interprets `size` as element count, not bytes.
-    this.device.queue.writeBuffer(instanceBuffer, 0, state.batchInstances.buffer, 0, usedFloats);
+    this.device.queue.writeBuffer(instanceBuffer, uploadOffsetBytes, state.batchInstances.buffer, 0, usedFloats);
 
     const globals = passId === 'world' ? state.worldGlobalsBindGroup : state.uiGlobalsBindGroup;
 
@@ -2063,10 +2066,11 @@ class WebGpuRendererImpl implements WebGpuRenderer {
 
     state.passEncoder.setBindGroup(0, globals);
     state.passEncoder.setVertexBuffer(0, state.vertexBuffer);
-    state.passEncoder.setVertexBuffer(1, instanceBuffer);
+    state.passEncoder.setVertexBuffer(1, instanceBuffer, uploadOffsetBytes, usedBytes);
     state.passEncoder.setIndexBuffer(state.indexBuffer, 'uint16');
     state.passEncoder.drawIndexed(6, instanceCount, 0, 0, 0);
 
+    state.instanceUploadOffsetBytes += usedBytes;
     this.#resetQuadBatch(state);
   }
 
