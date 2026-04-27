@@ -27,13 +27,27 @@ const projectRoot = join(__dirname, '../..');
 const trustedGitCommandsByPlatform = new Map([
   ['darwin', ['/usr/bin/git']],
   ['linux', ['/usr/bin/git', '/bin/git']],
-  ['win32', ['C:\\Program Files\\Git\\cmd\\git.exe', 'C:\\Program Files\\Git\\bin\\git.exe']],
+  [
+    'win32',
+    [
+      String.raw`C:\Program Files\Git\cmd\git.exe`,
+      String.raw`C:\Program Files\Git\bin\git.exe`,
+    ],
+  ],
 ]);
 
 const trustedPathEntriesByPlatform = new Map([
   ['darwin', ['/usr/bin', '/bin']],
   ['linux', ['/usr/bin', '/bin']],
-  ['win32', ['C:\\Program Files\\Git\\cmd', 'C:\\Program Files\\Git\\bin', 'C:\\Windows\\System32', 'C:\\Windows']],
+  [
+    'win32',
+    [
+      String.raw`C:\Program Files\Git\cmd`,
+      String.raw`C:\Program Files\Git\bin`,
+      String.raw`C:\Windows\System32`,
+      String.raw`C:\Windows`,
+    ],
+  ],
 ]);
 
 function compareStrings(left, right) {
