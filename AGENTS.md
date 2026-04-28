@@ -15,6 +15,8 @@ in repository docs, package READMEs, and validation scripts.
   layout, deterministic test rules, and output constraints.
 - Use [docs/agent-first-workflow-design.md](docs/agent-first-workflow-design.md)
   as the source initiative for agent workflow infrastructure changes.
+- Follow progressive disclosure: load the context packet for the task family you
+  are handling, not every repository document up front.
 
 ## Task Routing
 
@@ -36,6 +38,8 @@ in repository docs, package READMEs, and validation scripts.
   `pnpm docs:build` when the changed surface calls for broader checks.
 - Use `pnpm fast:check` for the repository fast path; scope behavior is
   documented in the contributor handbook.
+- Use repository tools directly (`gh`, pnpm scripts, local CLIs, and MCP
+  diagnostics when relevant) to gather context and validate behavior.
 - Lefthook runs pre-commit checks through `pnpm prepare`. Automated commits
   should allow several minutes for hooks instead of treating them as hung.
 
@@ -61,6 +65,9 @@ in repository docs, package READMEs, and validation scripts.
 - Use `import type { ... }` and `export type { ... }` for type-only symbols.
 - Prefer existing workspace patterns and package-local helpers before adding new
   abstractions.
+- When a repeated instruction or review comment matters, encode it in
+  repository-local docs, tests, scripts, or lint rules so future agents inherit
+  it.
 - Leave unrelated user or local changes untouched, including local agent
   scratch files and editor swap files.
 - Ask for clarification when docs disagree, task scope crosses public API
