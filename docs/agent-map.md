@@ -254,7 +254,8 @@ performance docs, runtime overhead checks, and threshold changes.
   - `docs/validation-performance-benchmarks-caching-design.md`
   - `docs/content-validation-performance.md`
   - `docs/agent-first-workflow-design.md`
-  - `tools/perf-report/package.json`
+  - `package.json`
+  - `tools/perf-report/index.ts`
 - **Primary packages and files**:
   - `packages/core/benchmarks/`
   - `packages/content-schema/benchmarks/`
