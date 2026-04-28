@@ -158,7 +158,13 @@ gateway tools, shell automation, screenshots, logs, and local diagnostics.
   - `pnpm --filter @idle-engine/shell-desktop test`
   - `pnpm --filter @idle-engine/shell-desktop run test:ci`
   - `pnpm shell:desktop:mcp:smoke`
-  - `pnpm shell:desktop:headless`
+- **MCP launcher prerequisite**:
+  - On a fresh or headless host, start `pnpm shell:desktop:headless` in a
+    separate terminal/session before running `pnpm shell:desktop:mcp:smoke`.
+    The smoke test connects to the running MCP endpoint on loopback and does
+    not start the shell itself.
+  - Stop the headless shell with `pnpm shell:desktop:headless:stop` after
+    collecting validation evidence.
 - **Artifact expectations**:
   - Store local run artifacts under `artifacts/agent-runs/<run-id>/` when the
     task requires screenshots, logs, or health snapshots.
