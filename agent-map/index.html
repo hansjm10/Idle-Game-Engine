@@ -1,0 +1,445 @@
+<!doctype html>
+<html lang="en" dir="ltr" class="docs-wrapper plugin-docs plugin-id-default docs-version-current docs-doc-page docs-doc-id-agent-map" data-has-hydrated="false">
+<head>
+<meta charset="UTF-8">
+<meta name="generator" content="Docusaurus v3.9.2">
+<title data-rh="true">Agent Map | Idle Engine Docs</title><meta data-rh="true" name="viewport" content="width=device-width,initial-scale=1"><meta data-rh="true" name="twitter:card" content="summary_large_image"><meta data-rh="true" property="og:image" content="https://hansjm10.github.io/Idle-Game-Engine/img/docusaurus-social-card.jpg"><meta data-rh="true" name="twitter:image" content="https://hansjm10.github.io/Idle-Game-Engine/img/docusaurus-social-card.jpg"><meta data-rh="true" property="og:url" content="https://hansjm10.github.io/Idle-Game-Engine/agent-map"><meta data-rh="true" property="og:locale" content="en"><meta data-rh="true" name="docusaurus_locale" content="en"><meta data-rh="true" name="docsearch:language" content="en"><meta data-rh="true" name="docusaurus_version" content="current"><meta data-rh="true" name="docusaurus_tag" content="docs-default-current"><meta data-rh="true" name="docsearch:version" content="current"><meta data-rh="true" name="docsearch:docusaurus_tag" content="docs-default-current"><meta data-rh="true" property="og:title" content="Agent Map | Idle Engine Docs"><meta data-rh="true" name="description" content="This is the canonical task router for agents working in Idle Engine. Start here"><meta data-rh="true" property="og:description" content="This is the canonical task router for agents working in Idle Engine. Start here"><link data-rh="true" rel="icon" href="/Idle-Game-Engine/img/favicon.ico"><link data-rh="true" rel="canonical" href="https://hansjm10.github.io/Idle-Game-Engine/agent-map"><link data-rh="true" rel="alternate" href="https://hansjm10.github.io/Idle-Game-Engine/agent-map" hreflang="en"><link data-rh="true" rel="alternate" href="https://hansjm10.github.io/Idle-Game-Engine/agent-map" hreflang="x-default"><script data-rh="true" type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Agent Map","item":"https://hansjm10.github.io/Idle-Game-Engine/agent-map"}]}</script><link rel="stylesheet" href="/Idle-Game-Engine/assets/css/styles.0ca8729c.css">
+<script src="/Idle-Game-Engine/assets/js/runtime~main.e2aa27bd.js" defer="defer"></script>
+<script src="/Idle-Game-Engine/assets/js/main.c0981a43.js" defer="defer"></script>
+</head>
+<body class="navigation-with-keyboard">
+<svg style="display: none;"><defs>
+<symbol id="theme-svg-external-link" viewBox="0 0 24 24"><path fill="currentColor" d="M21 13v10h-21v-19h12v2h-10v15h17v-8h2zm3-12h-10.988l4.035 4-6.977 7.07 2.828 2.828 6.977-7.07 4.125 4.172v-11z"/></symbol>
+</defs></svg>
+<script>!function(){var t=function(){try{return new URLSearchParams(window.location.search).get("docusaurus-theme")}catch(t){}}()||function(){try{return window.localStorage.getItem("theme")}catch(t){}}();document.documentElement.setAttribute("data-theme",t||(window.matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light")),document.documentElement.setAttribute("data-theme-choice",t||"system")}(),function(){try{const c=new URLSearchParams(window.location.search).entries();for(var[t,e]of c)if(t.startsWith("docusaurus-data-")){var a=t.replace("docusaurus-data-","data-");document.documentElement.setAttribute(a,e)}}catch(t){}}()</script><div id="__docusaurus"><link rel="preload" as="image" href="/Idle-Game-Engine/img/logo.svg"><div role="region" aria-label="Skip to main content"><a class="skipToContent_sIzO" href="#__docusaurus_skipToContent_fallback">Skip to main content</a></div><nav aria-label="Main" class="theme-layout-navbar navbar navbar--fixed-top"><div class="navbar__inner"><div class="theme-layout-navbar-left navbar__items"><button aria-label="Toggle navigation bar" aria-expanded="false" class="navbar__toggle clean-btn" type="button"><svg width="30" height="30" viewBox="0 0 30 30" aria-hidden="true"><path stroke="currentColor" stroke-linecap="round" stroke-miterlimit="10" stroke-width="2" d="M4 7h22M4 15h22M4 23h22"></path></svg></button><a class="navbar__brand" href="/Idle-Game-Engine/"><div class="navbar__logo"><img src="/Idle-Game-Engine/img/logo.svg" alt="Idle Engine Logo" class="themedComponent_yXCL themedComponent--light_m26g"><img src="/Idle-Game-Engine/img/logo.svg" alt="Idle Engine Logo" class="themedComponent_yXCL themedComponent--dark_DQxa"></div><b class="navbar__title text--truncate">Idle Engine</b></a><a aria-current="page" class="navbar__item navbar__link navbar__link--active" href="/Idle-Game-Engine/">Docs</a></div><div class="theme-layout-navbar-right navbar__items navbar__items--right"><a href="https://github.com/hansjm10/Idle-Game-Engine" target="_blank" rel="noopener noreferrer" class="navbar__item navbar__link">GitHub<svg width="13.5" height="13.5" aria-label="(opens in new tab)" class="iconExternalLink_zgE_"><use href="#theme-svg-external-link"></use></svg></a><div class="toggle_VTTy colorModeToggle_mrTp"><button class="clean-btn toggleButton_Qf8c toggleButtonDisabled_hCyI" type="button" disabled="" title="system mode" aria-label="Switch between dark and light mode (currently system mode)"><svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" class="toggleIcon_j9FX lightToggleIcon_i4Ty"><path fill="currentColor" d="M12,9c1.65,0,3,1.35,3,3s-1.35,3-3,3s-3-1.35-3-3S10.35,9,12,9 M12,7c-2.76,0-5,2.24-5,5s2.24,5,5,5s5-2.24,5-5 S14.76,7,12,7L12,7z M2,13l2,0c0.55,0,1-0.45,1-1s-0.45-1-1-1l-2,0c-0.55,0-1,0.45-1,1S1.45,13,2,13z M20,13l2,0c0.55,0,1-0.45,1-1 s-0.45-1-1-1l-2,0c-0.55,0-1,0.45-1,1S19.45,13,20,13z M11,2v2c0,0.55,0.45,1,1,1s1-0.45,1-1V2c0-0.55-0.45-1-1-1S11,1.45,11,2z M11,20v2c0,0.55,0.45,1,1,1s1-0.45,1-1v-2c0-0.55-0.45-1-1-1C11.45,19,11,19.45,11,20z M5.99,4.58c-0.39-0.39-1.03-0.39-1.41,0 c-0.39,0.39-0.39,1.03,0,1.41l1.06,1.06c0.39,0.39,1.03,0.39,1.41,0s0.39-1.03,0-1.41L5.99,4.58z M18.36,16.95 c-0.39-0.39-1.03-0.39-1.41,0c-0.39,0.39-0.39,1.03,0,1.41l1.06,1.06c0.39,0.39,1.03,0.39,1.41,0c0.39-0.39,0.39-1.03,0-1.41 L18.36,16.95z M19.42,5.99c0.39-0.39,0.39-1.03,0-1.41c-0.39-0.39-1.03-0.39-1.41,0l-1.06,1.06c-0.39,0.39-0.39,1.03,0,1.41 s1.03,0.39,1.41,0L19.42,5.99z M7.05,18.36c0.39-0.39,0.39-1.03,0-1.41c-0.39-0.39-1.03-0.39-1.41,0l-1.06,1.06 c-0.39,0.39-0.39,1.03,0,1.41s1.03,0.39,1.41,0L7.05,18.36z"></path></svg><svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" class="toggleIcon_j9FX darkToggleIcon_B1fV"><path fill="currentColor" d="M9.37,5.51C9.19,6.15,9.1,6.82,9.1,7.5c0,4.08,3.32,7.4,7.4,7.4c0.68,0,1.35-0.09,1.99-0.27C17.45,17.19,14.93,19,12,19 c-3.86,0-7-3.14-7-7C5,9.07,6.81,6.55,9.37,5.51z M12,3c-4.97,0-9,4.03-9,9s4.03,9,9,9s9-4.03,9-9c0-0.46-0.04-0.92-0.1-1.36 c-0.98,1.37-2.58,2.26-4.4,2.26c-2.98,0-5.4-2.42-5.4-5.4c0-1.81,0.89-3.42,2.26-4.4C12.92,3.04,12.46,3,12,3L12,3z"></path></svg><svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" class="toggleIcon_j9FX systemToggleIcon_d9Wq"><path fill="currentColor" d="m12 21c4.971 0 9-4.029 9-9s-4.029-9-9-9-9 4.029-9 9 4.029 9 9 9zm4.95-13.95c1.313 1.313 2.05 3.093 2.05 4.95s-0.738 3.637-2.05 4.95c-1.313 1.313-3.093 2.05-4.95 2.05v-14c1.857 0 3.637 0.737 4.95 2.05z"></path></svg></button></div><div class="navbarSearchContainer_xdO6"></div></div></div><div role="presentation" class="navbar-sidebar__backdrop"></div></nav><div id="__docusaurus_skipToContent_fallback" class="theme-layout-main main-wrapper mainWrapper_fCXc"><div class="docsWrapper_oodB"><button aria-label="Scroll back to top" class="clean-btn theme-back-to-top-button backToTopButton_ZUBg" type="button"></button><div class="docRoot_zYbW"><aside class="theme-doc-sidebar-container docSidebarContainer_cQjy"><div class="sidebarViewport_guUk"><div class="sidebar_flRn"><nav aria-label="Docs sidebar" class="menu thin-scrollbar menu_e0X4"><ul class="theme-doc-sidebar-menu menu__list"><li class="theme-doc-sidebar-item-category theme-doc-sidebar-item-category-level-1 menu__list-item"><div class="menu__list-item-collapsible"><a class="categoryLink_WJIo menu__link menu__link--sublist menu__link--sublist-caret" role="button" aria-expanded="true" href="/Idle-Game-Engine/"><span title="Getting Started" class="categoryLinkLabel_uVix">Getting Started</span></a></div><ul class="menu__list"><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-2 menu__list-item"><a class="menu__link" tabindex="0" href="/Idle-Game-Engine/"><span title="Overview" class="linkLabel_Hws7">Overview</span></a></li><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-2 menu__list-item"><a class="menu__link" tabindex="0" href="/Idle-Game-Engine/contributor-handbook"><span title="Contributor Handbook" class="linkLabel_Hws7">Contributor Handbook</span></a></li><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-2 menu__list-item"><a class="menu__link" tabindex="0" href="/Idle-Game-Engine/role-index"><span title="Role Index" class="linkLabel_Hws7">Role Index</span></a></li><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-2 menu__list-item"><a class="menu__link" tabindex="0" href="/Idle-Game-Engine/design-document-template"><span title="Design Document Template" class="linkLabel_Hws7">Design Document Template</span></a></li></ul></li><li class="theme-doc-sidebar-item-category theme-doc-sidebar-item-category-level-1 menu__list-item menu__list-item--collapsed"><div class="menu__list-item-collapsible"><a class="categoryLink_WJIo menu__link menu__link--sublist menu__link--sublist-caret" role="button" aria-expanded="false" href="/Idle-Game-Engine/idle-engine-design"><span title="Core Runtime" class="categoryLinkLabel_uVix">Core Runtime</span></a></div></li><li class="theme-doc-sidebar-item-category theme-doc-sidebar-item-category-level-1 menu__list-item menu__list-item--collapsed"><div class="menu__list-item-collapsible"><a class="categoryLink_WJIo menu__link menu__link--sublist menu__link--sublist-caret" role="button" aria-expanded="false" href="/Idle-Game-Engine/content-dsl-schema-design"><span title="Content Pipeline" class="categoryLinkLabel_uVix">Content Pipeline</span></a></div></li><li class="theme-doc-sidebar-item-category theme-doc-sidebar-item-category-level-1 menu__list-item menu__list-item--collapsed"><div class="menu__list-item-collapsible"><a class="categoryLink_WJIo menu__link menu__link--sublist menu__link--sublist-caret" role="button" aria-expanded="false" href="/Idle-Game-Engine/coverage/"><span title="Diagnostics &amp; Quality" class="categoryLinkLabel_uVix">Diagnostics &amp; Quality</span></a></div></li><li class="theme-doc-sidebar-item-category theme-doc-sidebar-item-category-level-1 menu__list-item"><div class="menu__list-item-collapsible"><a class="categoryLink_WJIo menu__link menu__link--sublist menu__link--sublist-caret menu__link--active" role="button" aria-expanded="true" href="/Idle-Game-Engine/agent-map"><span title="Operations &amp; Process" class="categoryLinkLabel_uVix">Operations &amp; Process</span></a></div><ul class="menu__list"><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-2 menu__list-item"><a class="menu__link menu__link--active" aria-current="page" tabindex="0" href="/Idle-Game-Engine/agent-map"><span title="Agent Map" class="linkLabel_Hws7">Agent Map</span></a></li><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-2 menu__list-item"><a class="menu__link" tabindex="0" href="/Idle-Game-Engine/implementation-plan"><span title="Idle Engine Implementation Plan" class="linkLabel_Hws7">Idle Engine Implementation Plan</span></a></li><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-2 menu__list-item"><a class="menu__link" tabindex="0" href="/Idle-Game-Engine/project-board-workflow"><span title="Project Board Workflow" class="linkLabel_Hws7">Project Board Workflow</span></a></li><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-2 menu__list-item"><a class="menu__link" tabindex="0" href="/Idle-Game-Engine/agent-first-workflow-design"><span title="Agent-First Workflow Design" class="linkLabel_Hws7">Agent-First Workflow Design</span></a></li></ul></li></ul></nav></div></div></aside><main class="docMainContainer_BJhZ"><div class="container padding-top--md padding-bottom--lg"><div class="row"><div class="col docItemCol_NkVs"><div class="docItemContainer_WMJH"><article><nav class="theme-doc-breadcrumbs breadcrumbsContainer_iCU1" aria-label="Breadcrumbs"><ul class="breadcrumbs"><li class="breadcrumbs__item"><a aria-label="Home page" class="breadcrumbs__link" href="/Idle-Game-Engine/"><svg viewBox="0 0 24 24" class="breadcrumbHomeIcon_HviJ"><path d="M10 19v-5h4v5c0 .55.45 1 1 1h3c.55 0 1-.45 1-1v-7h1.7c.46 0 .68-.57.33-.87L12.67 3.6c-.38-.34-.96-.34-1.34 0l-8.36 7.53c-.34.3-.13.87.33.87H5v7c0 .55.45 1 1 1h3c.55 0 1-.45 1-1z" fill="currentColor"></path></svg></a></li><li class="breadcrumbs__item"><span class="breadcrumbs__link">Operations &amp; Process</span></li><li class="breadcrumbs__item breadcrumbs__item--active"><span class="breadcrumbs__link">Agent Map</span></li></ul></nav><div class="tocCollapsible_Kd7K theme-doc-toc-mobile tocMobile_Gv4l"><button type="button" class="clean-btn tocCollapsibleButton_ajnv">On this page</button></div><div class="theme-doc-markdown markdown"><header><h1>Agent Map</h1></header>
+<p>This is the canonical task router for agents working in Idle Engine. Start here
+after reading <code>AGENTS.md</code>, then load only the context packet for the task family
+you are handling.</p>
+<p>Source initiative: <a class="" href="/Idle-Game-Engine/agent-first-workflow-design"><code>docs/agent-first-workflow-design.md</code></a>.</p>
+<h2 class="anchor anchorTargetStickyNavbar_pQUT" id="how-to-use-this-map">How to use this map<a href="#how-to-use-this-map" class="hash-link" aria-label="Direct link to How to use this map" title="Direct link to How to use this map" translate="no">​</a></h2>
+<ol>
+<li class="">Identify the task family that matches the issue, PR review, or maintenance
+request.</li>
+<li class="">Load the listed context packet before editing files.</li>
+<li class="">Keep the diff centered in the listed packages or files.</li>
+<li class="">Run the focused validation commands first, then broaden validation when the
+change crosses package or workflow boundaries.</li>
+<li class="">Capture only the artifacts that help reviewers reproduce or inspect the
+change.</li>
+</ol>
+<p>Escalate instead of guessing when the task crosses public API boundaries,
+contradicts a design document, requires a new generated artifact policy, or
+needs long-running local processes that are not clearly owned by the command you
+are running.</p>
+<h2 class="anchor anchorTargetStickyNavbar_pQUT" id="runtime">Runtime<a href="#runtime" class="hash-link" aria-label="Direct link to Runtime" title="Direct link to Runtime" translate="no">​</a></h2>
+<p>Use this family for deterministic simulation behavior, runtime commands,
+events, persistence, scheduling, telemetry, and core package exports.</p>
+<ul>
+<li class=""><strong>Context packet</strong>:<!-- -->
+<ul>
+<li class=""><code>AGENTS.md</code></li>
+<li class=""><code>docs/idle-engine-design.md</code></li>
+<li class=""><code>docs/runtime-step-lifecycle.md</code></li>
+<li class=""><code>docs/runtime-command-queue-design.md</code></li>
+<li class=""><code>docs/runtime-event-manifest-authoring.md</code></li>
+<li class=""><code>docs/diagnostic-timeline-design.md</code></li>
+<li class=""><code>packages/core/README.md</code></li>
+</ul>
+</li>
+<li class=""><strong>Primary packages and files</strong>:<!-- -->
+<ul>
+<li class=""><code>packages/core/src/</code></li>
+<li class=""><code>packages/core/src/__tests__/</code></li>
+<li class=""><code>packages/core/benchmarks/</code></li>
+<li class=""><code>packages/core/package.json</code></li>
+</ul>
+</li>
+<li class=""><strong>Validation commands</strong>:<!-- -->
+<ul>
+<li class=""><code>pnpm --filter @idle-engine/core test</code></li>
+<li class=""><code>pnpm --filter @idle-engine/core run test:ci</code></li>
+<li class=""><code>pnpm --filter @idle-engine/core run typecheck</code></li>
+<li class=""><code>pnpm lint</code></li>
+</ul>
+</li>
+<li class=""><strong>Artifact expectations</strong>:<!-- -->
+<ul>
+<li class="">Keep Vitest output machine-readable; do not add console noise before the
+final reporter JSON.</li>
+<li class="">Include benchmark JSON only when runtime performance or payload shape is
+part of the change.</li>
+<li class="">Note changed public exports and migration guidance in the PR body.</li>
+</ul>
+</li>
+<li class=""><strong>Escalation triggers</strong>:<!-- -->
+<ul>
+<li class="">A stable <code>@idle-engine/core</code> export needs to be renamed, removed, or moved.</li>
+<li class="">Deterministic step ordering, hydration semantics, or runtime event frame
+shape would change.</li>
+<li class="">The fix requires shell, renderer, or content packages to depend on
+<code>@idle-engine/core/internals</code> instead of a public or harness entry point.</li>
+</ul>
+</li>
+</ul>
+<h2 class="anchor anchorTargetStickyNavbar_pQUT" id="content-pipeline">Content Pipeline<a href="#content-pipeline" class="hash-link" aria-label="Direct link to Content Pipeline" title="Direct link to Content Pipeline" translate="no">​</a></h2>
+<p>Use this family for content schemas, DSL validation, compiler output, sample
+packs, generated content modules, and content validation CLIs.</p>
+<ul>
+<li class=""><strong>Context packet</strong>:<!-- -->
+<ul>
+<li class=""><code>AGENTS.md</code></li>
+<li class=""><code>docs/content-dsl-schema-design.md</code></li>
+<li class=""><code>docs/content-dsl-usage-guidelines.md</code></li>
+<li class=""><code>docs/content-schema-reference.md</code></li>
+<li class=""><code>docs/content-compiler-design.md</code></li>
+<li class=""><code>docs/content-validation-cli-design.md</code></li>
+<li class=""><code>packages/content-sample/README.md</code></li>
+</ul>
+</li>
+<li class=""><strong>Primary packages and files</strong>:<!-- -->
+<ul>
+<li class=""><code>packages/content-schema/src/</code></li>
+<li class=""><code>packages/content-compiler/src/</code></li>
+<li class=""><code>packages/content-sample/content/</code></li>
+<li class=""><code>packages/content-sample/dist/</code></li>
+<li class=""><code>tools/content-schema-cli/src/</code></li>
+<li class=""><code>docs/examples/</code></li>
+</ul>
+</li>
+<li class=""><strong>Validation commands</strong>:<!-- -->
+<ul>
+<li class=""><code>pnpm generate --check</code></li>
+<li class=""><code>pnpm --filter @idle-engine/content-schema test</code></li>
+<li class=""><code>pnpm --filter @idle-engine/content-compiler test</code></li>
+<li class=""><code>pnpm --filter @idle-engine/content-validation-cli test</code></li>
+<li class=""><code>pnpm test:ci</code></li>
+</ul>
+</li>
+<li class=""><strong>Artifact expectations</strong>:<!-- -->
+<ul>
+<li class="">Commit generated sample or compiled outputs when the source content change
+requires them.</li>
+<li class="">Preserve final JSON payloads emitted by content tooling.</li>
+<li class="">Include schema compatibility notes when older generated packs may be
+affected.</li>
+</ul>
+</li>
+<li class=""><strong>Escalation triggers</strong>:<!-- -->
+<ul>
+<li class="">A schema change is not backward-compatible or needs a migration path.</li>
+<li class="">Generated output changes without a source content or compiler change.</li>
+<li class="">Validation failures point to ambiguous DSL behavior rather than a simple
+fixture update.</li>
+</ul>
+</li>
+</ul>
+<h2 class="anchor anchorTargetStickyNavbar_pQUT" id="renderer">Renderer<a href="#renderer" class="hash-link" aria-label="Direct link to Renderer" title="Direct link to Renderer" translate="no">​</a></h2>
+<p>Use this family for renderer contracts, debug renderers, WebGPU rendering,
+sprite batching, atlases, render-frame metadata, and action regions.</p>
+<ul>
+<li class=""><strong>Context packet</strong>:<!-- -->
+<ul>
+<li class=""><code>AGENTS.md</code></li>
+<li class=""><code>docs/controls-contract-design-issue-705.md</code></li>
+<li class=""><code>docs/desktop-shell-webgpu-renderer-replay-design-issue-778.md</code></li>
+<li class=""><code>docs/runtime-event-manifest-authoring.md</code></li>
+<li class=""><code>packages/renderer-webgpu/README.md</code></li>
+<li class=""><code>packages/shell-desktop/README.md</code></li>
+</ul>
+</li>
+<li class=""><strong>Primary packages and files</strong>:<!-- -->
+<ul>
+<li class=""><code>packages/renderer-contract/src/</code></li>
+<li class=""><code>packages/renderer-debug/src/</code></li>
+<li class=""><code>packages/renderer-webgpu/src/</code></li>
+<li class=""><code>packages/controls/src/</code></li>
+<li class=""><code>packages/shell-desktop/src/renderer/</code></li>
+</ul>
+</li>
+<li class=""><strong>Validation commands</strong>:<!-- -->
+<ul>
+<li class=""><code>pnpm --filter @idle-engine/renderer-contract test</code></li>
+<li class=""><code>pnpm --filter @idle-engine/renderer-debug test</code></li>
+<li class=""><code>pnpm --filter @idle-engine/renderer-webgpu test</code></li>
+<li class=""><code>pnpm --filter @idle-engine/shell-desktop test</code></li>
+<li class=""><code>pnpm build</code></li>
+</ul>
+</li>
+<li class=""><strong>Artifact expectations</strong>:<!-- -->
+<ul>
+<li class="">Attach or describe screenshots when visual output changes.</li>
+<li class="">Capture renderer status, WebGPU health, and relevant logs for shell-facing
+regressions.</li>
+<li class="">Include generated renderer bundles or copied assets only when build output
+sync requires them.</li>
+</ul>
+</li>
+<li class=""><strong>Escalation triggers</strong>:<!-- -->
+<ul>
+<li class="">Renderer contract types need a breaking change.</li>
+<li class="">WebGPU fallback behavior or hardware assumptions change.</li>
+<li class="">A renderer fix depends on runtime state that is not exposed through a stable
+contract.</li>
+</ul>
+</li>
+</ul>
+<h2 class="anchor anchorTargetStickyNavbar_pQUT" id="shell-mcp">Shell MCP<a href="#shell-mcp" class="hash-link" aria-label="Direct link to Shell MCP" title="Direct link to Shell MCP" translate="no">​</a></h2>
+<p>Use this family for the Electron shell, headless launchers, MCP server and
+gateway tools, shell automation, screenshots, logs, and local diagnostics.</p>
+<ul>
+<li class=""><strong>Context packet</strong>:<!-- -->
+<ul>
+<li class=""><code>AGENTS.md</code></li>
+<li class=""><code>docs/shell-desktop-mcp.md</code></li>
+<li class=""><code>docs/agent-first-workflow-design.md</code></li>
+<li class=""><code>packages/shell-desktop/README.md</code></li>
+<li class=""><code>tools/scripts/shell-desktop-mcp-smoke.mjs</code></li>
+</ul>
+</li>
+<li class=""><strong>Primary packages and files</strong>:<!-- -->
+<ul>
+<li class=""><code>packages/shell-desktop/src/</code></li>
+<li class=""><code>packages/shell-desktop/src/mcp/</code></li>
+<li class=""><code>tools/scripts/start-shell-desktop-headless.sh</code></li>
+<li class=""><code>tools/scripts/shell-desktop-mcp-smoke.mjs</code></li>
+<li class=""><code>tools/scripts/*shell-desktop*mcp*</code></li>
+</ul>
+</li>
+<li class=""><strong>Validation commands</strong>:<!-- -->
+<ul>
+<li class=""><code>pnpm --filter @idle-engine/shell-desktop test</code></li>
+<li class=""><code>pnpm --filter @idle-engine/shell-desktop run test:ci</code></li>
+<li class=""><code>pnpm shell:desktop:mcp:smoke</code></li>
+</ul>
+</li>
+<li class=""><strong>MCP launcher prerequisite</strong>:<!-- -->
+<ul>
+<li class="">On a fresh or headless host, start <code>pnpm shell:desktop:headless</code> in a
+separate terminal/session before running <code>pnpm shell:desktop:mcp:smoke</code>.
+The smoke test connects to the running MCP endpoint on loopback and does
+not start the shell itself.</li>
+<li class="">Stop the headless shell with <code>pnpm shell:desktop:headless:stop</code> after
+collecting validation evidence.</li>
+</ul>
+</li>
+<li class=""><strong>Artifact expectations</strong>:<!-- -->
+<ul>
+<li class="">Store local run artifacts under <code>artifacts/agent-runs/&lt;run-id&gt;/</code> when the
+task requires screenshots, logs, or health snapshots.</li>
+<li class="">Include <code>summary.json</code>, bounded command logs, renderer status, WebGPU
+health, and a screenshot when validating UI or renderer behavior.</li>
+<li class="">Do not capture secrets, arbitrary environment dumps, or home-directory files.</li>
+</ul>
+</li>
+<li class=""><strong>Escalation triggers</strong>:<!-- -->
+<ul>
+<li class="">The script would need to kill a process it did not start.</li>
+<li class="">MCP must bind outside loopback or accept non-local clients.</li>
+<li class="">The smoke loop needs long retries, broad log capture, or manual GUI
+interaction to pass.</li>
+</ul>
+</li>
+</ul>
+<h2 class="anchor anchorTargetStickyNavbar_pQUT" id="docs">Docs<a href="#docs" class="hash-link" aria-label="Direct link to Docs" title="Direct link to Docs" translate="no">​</a></h2>
+<p>Use this family for Markdown docs, Docusaurus navigation, design documents,
+role guidance, contributor instructions, and package README orientation.</p>
+<ul>
+<li class=""><strong>Context packet</strong>:<!-- -->
+<ul>
+<li class=""><code>AGENTS.md</code></li>
+<li class=""><code>docs/index.md</code></li>
+<li class=""><code>docs/role-index.md</code></li>
+<li class=""><code>docs/design-document-template.md</code></li>
+<li class=""><code>docs/contributor-handbook.md</code></li>
+<li class=""><code>docs/testing-guidelines.md</code></li>
+<li class=""><code>packages/docs/sidebars.ts</code></li>
+</ul>
+</li>
+<li class=""><strong>Primary packages and files</strong>:<!-- -->
+<ul>
+<li class=""><code>docs/</code></li>
+<li class=""><code>packages/docs/</code></li>
+<li class=""><code>packages/docs/scripts/</code></li>
+<li class="">package-level <code>README.md</code> files</li>
+<li class=""><code>AGENTS.md</code></li>
+</ul>
+</li>
+<li class=""><strong>Validation commands</strong>:<!-- -->
+<ul>
+<li class=""><code>pnpm --filter @idle-engine/docs test</code></li>
+<li class=""><code>pnpm --filter @idle-engine/docs lint</code></li>
+<li class=""><code>pnpm docs:build</code></li>
+<li class=""><code>pnpm fast:check</code></li>
+</ul>
+</li>
+<li class=""><strong>Artifact expectations</strong>:<!-- -->
+<ul>
+<li class="">Reference the source design, issue, or decision record that the doc updates.</li>
+<li class="">Keep navigation diffs focused in <code>packages/docs/sidebars.ts</code>.</li>
+<li class="">Do not refresh generated coverage or performance pages unless the issue
+explicitly targets those pages.</li>
+</ul>
+</li>
+<li class=""><strong>Escalation triggers</strong>:<!-- -->
+<ul>
+<li class="">Two docs disagree about current shipped behavior and no source of truth is
+obvious.</li>
+<li class="">A docs-only issue would require a new CI check, package README policy, or
+generated manifest.</li>
+<li class=""><code>AGENTS.md</code> starts growing into a long manual instead of routing to durable
+docs.</li>
+</ul>
+</li>
+</ul>
+<h2 class="anchor anchorTargetStickyNavbar_pQUT" id="tooling-and-ci">Tooling and CI<a href="#tooling-and-ci" class="hash-link" aria-label="Direct link to Tooling and CI" title="Direct link to Tooling and CI" translate="no">​</a></h2>
+<p>Use this family for workspace scripts, GitHub Actions, Lefthook hooks, lint
+presets, fast checks, repository hygiene, and agent doctor-style commands.</p>
+<ul>
+<li class=""><strong>Context packet</strong>:<!-- -->
+<ul>
+<li class=""><code>AGENTS.md</code></li>
+<li class=""><code>docs/contributor-handbook.md</code></li>
+<li class=""><code>docs/agent-first-workflow-design.md</code></li>
+<li class=""><code>packages/config-eslint/README.md</code></li>
+<li class=""><code>package.json</code></li>
+<li class=""><code>lefthook.yml</code></li>
+<li class=""><code>.github/workflows/ci.yml</code></li>
+</ul>
+</li>
+<li class=""><strong>Primary packages and files</strong>:<!-- -->
+<ul>
+<li class=""><code>tools/scripts/</code></li>
+<li class=""><code>packages/config-eslint/</code></li>
+<li class=""><code>packages/config-vitest/</code></li>
+<li class=""><code>.github/workflows/</code></li>
+<li class=""><code>lefthook.yml</code></li>
+<li class="">root <code>package.json</code></li>
+</ul>
+</li>
+<li class=""><strong>Validation commands</strong>:<!-- -->
+<ul>
+<li class=""><code>pnpm lint</code></li>
+<li class=""><code>pnpm typecheck</code></li>
+<li class=""><code>pnpm test:ci</code></li>
+<li class=""><code>pnpm fast:check</code></li>
+<li class=""><code>pnpm exec lefthook run pre-commit --all-files --force</code></li>
+</ul>
+</li>
+<li class=""><strong>Artifact expectations</strong>:<!-- -->
+<ul>
+<li class="">Record before and after command duration when changing CI or hook scope.</li>
+<li class="">Include actionable failure text for new lint or structural rules.</li>
+<li class="">Keep local scratch paths ignored rather than committed.</li>
+</ul>
+</li>
+<li class=""><strong>Escalation triggers</strong>:<!-- -->
+<ul>
+<li class="">A guardrail would block existing legitimate package dependencies.</li>
+<li class="">CI duration changes materially or requires new external services.</li>
+<li class="">A hook needs to mutate unstaged files or hide validation output from agents.</li>
+</ul>
+</li>
+</ul>
+<h2 class="anchor anchorTargetStickyNavbar_pQUT" id="benchmarks-and-performance">Benchmarks and Performance<a href="#benchmarks-and-performance" class="hash-link" aria-label="Direct link to Benchmarks and Performance" title="Direct link to Benchmarks and Performance" translate="no">​</a></h2>
+<p>Use this family for benchmark harnesses, performance reports, generated
+performance docs, runtime overhead checks, and threshold changes.</p>
+<ul>
+<li class=""><strong>Context packet</strong>:<!-- -->
+<ul>
+<li class=""><code>AGENTS.md</code></li>
+<li class=""><code>docs/benchmark-output-schema.md</code></li>
+<li class=""><code>docs/validation-performance-benchmarks-caching-design.md</code></li>
+<li class=""><code>docs/content-validation-performance.md</code></li>
+<li class=""><code>docs/agent-first-workflow-design.md</code></li>
+<li class=""><code>package.json</code></li>
+<li class=""><code>tools/perf-report/index.ts</code></li>
+</ul>
+</li>
+<li class=""><strong>Primary packages and files</strong>:<!-- -->
+<ul>
+<li class=""><code>packages/core/benchmarks/</code></li>
+<li class=""><code>packages/content-schema/benchmarks/</code></li>
+<li class=""><code>tools/perf-report/</code></li>
+<li class=""><code>docs/performance/index.md</code></li>
+<li class="">benchmark fixtures and baselines near the package under test</li>
+</ul>
+</li>
+<li class=""><strong>Validation commands</strong>:<!-- -->
+<ul>
+<li class=""><code>pnpm benchmark</code></li>
+<li class=""><code>pnpm perf:run</code></li>
+<li class=""><code>pnpm perf:md</code></li>
+<li class=""><code>pnpm --filter @idle-engine/content-schema run bench:check</code></li>
+<li class=""><code>pnpm --filter @idle-engine/core run benchmark</code></li>
+</ul>
+</li>
+<li class=""><strong>Artifact expectations</strong>:<!-- -->
+<ul>
+<li class="">Preserve machine-readable benchmark output shape.</li>
+<li class="">Commit <code>docs/performance/index.md</code> only when explicitly refreshing the
+generated performance page.</li>
+<li class="">Include baseline update rationale and the compared commit or run ID.</li>
+</ul>
+</li>
+<li class=""><strong>Escalation triggers</strong>:<!-- -->
+<ul>
+<li class="">A threshold change weakens a regression gate.</li>
+<li class="">Benchmark noise makes pass or fail status ambiguous.</li>
+<li class="">Performance output schema changes would break report generation.</li>
+</ul>
+</li>
+</ul>
+<h2 class="anchor anchorTargetStickyNavbar_pQUT" id="release-and-generated-artifacts">Release and Generated Artifacts<a href="#release-and-generated-artifacts" class="hash-link" aria-label="Direct link to Release and Generated Artifacts" title="Direct link to Release and Generated Artifacts" translate="no">​</a></h2>
+<p>Use this family for checked-in <code>dist/</code> outputs, generated runtime version files,
+coverage reports, content outputs, package publishing readiness, and release
+validation.</p>
+<ul>
+<li class=""><strong>Context packet</strong>:<!-- -->
+<ul>
+<li class=""><code>AGENTS.md</code></li>
+<li class=""><code>docs/contributor-handbook.md</code></li>
+<li class=""><code>docs/coverage-report-automation-design.md</code></li>
+<li class=""><code>docs/benchmark-output-schema.md</code></li>
+<li class=""><code>docs/agent-first-workflow-design.md</code></li>
+<li class="">package README for every package whose generated output changes</li>
+</ul>
+</li>
+<li class=""><strong>Primary packages and files</strong>:<!-- -->
+<ul>
+<li class=""><code>packages/*/dist/</code></li>
+<li class=""><code>packages/content-sample/dist/</code></li>
+<li class=""><code>docs/coverage/index.md</code></li>
+<li class=""><code>docs/performance/index.md</code></li>
+<li class=""><code>tools/scripts/generate-version.mjs</code></li>
+<li class=""><code>tools/scripts/verify-dist-sync.mjs</code></li>
+</ul>
+</li>
+<li class=""><strong>Validation commands</strong>:<!-- -->
+<ul>
+<li class=""><code>pnpm build</code></li>
+<li class=""><code>pnpm generate --check</code></li>
+<li class=""><code>pnpm coverage:md</code></li>
+<li class=""><code>pnpm perf:md</code></li>
+<li class=""><code>pnpm test:ci</code></li>
+</ul>
+</li>
+<li class=""><strong>Artifact expectations</strong>:<!-- -->
+<ul>
+<li class="">Do not edit generated files by hand.</li>
+<li class="">Commit refreshed generated files only when the issue explicitly calls for
+the refresh or the source change requires the output to stay in sync.</li>
+<li class="">Prefer the manual Coverage Report workflow for coverage page refreshes, then
+commit the generated <code>docs/coverage/index.md</code> artifact when applying it.</li>
+</ul>
+</li>
+<li class=""><strong>Escalation triggers</strong>:<!-- -->
+<ul>
+<li class="">A generated diff appears without a reproducible command.</li>
+<li class="">Coverage or performance pages change during an unrelated fix.</li>
+<li class="">Release validation requires secrets, publishing credentials, or production
+package registry access.</li>
+</ul>
+</li>
+</ul></div><footer class="theme-doc-footer docusaurus-mt-lg"><div class="row margin-top--sm theme-doc-footer-edit-meta-row"><div class="col noPrint_zkN7"><a href="https://github.com/hansjm10/Idle-Game-Engine/edit/main/docs/../../docs/agent-map.md" target="_blank" rel="noopener noreferrer" class="theme-edit-this-page"><svg fill="currentColor" height="20" width="20" viewBox="0 0 40 40" class="iconEdit_URLU" aria-hidden="true"><g><path d="m34.5 11.7l-3 3.1-6.3-6.3 3.1-3q0.5-0.5 1.2-0.5t1.1 0.5l3.9 3.9q0.5 0.4 0.5 1.1t-0.5 1.2z m-29.5 17.1l18.4-18.5 6.3 6.3-18.4 18.4h-6.3v-6.2z"></path></g></svg>Edit this page</a></div><div class="col lastUpdated_DCA4"></div></div></footer></article><nav class="docusaurus-mt-lg pagination-nav" aria-label="Docs pages"><a class="pagination-nav__link pagination-nav__link--prev" href="/Idle-Game-Engine/performance/"><div class="pagination-nav__sublabel">Previous</div><div class="pagination-nav__label">Performance Report</div></a><a class="pagination-nav__link pagination-nav__link--next" href="/Idle-Game-Engine/implementation-plan"><div class="pagination-nav__sublabel">Next</div><div class="pagination-nav__label">Idle Engine Implementation Plan</div></a></nav></div></div><div class="col col--3"><div class="tableOfContents_7BTH thin-scrollbar theme-doc-toc-desktop"><ul class="table-of-contents table-of-contents__left-border"><li><a href="#how-to-use-this-map" class="table-of-contents__link toc-highlight">How to use this map</a></li><li><a href="#runtime" class="table-of-contents__link toc-highlight">Runtime</a></li><li><a href="#content-pipeline" class="table-of-contents__link toc-highlight">Content Pipeline</a></li><li><a href="#renderer" class="table-of-contents__link toc-highlight">Renderer</a></li><li><a href="#shell-mcp" class="table-of-contents__link toc-highlight">Shell MCP</a></li><li><a href="#docs" class="table-of-contents__link toc-highlight">Docs</a></li><li><a href="#tooling-and-ci" class="table-of-contents__link toc-highlight">Tooling and CI</a></li><li><a href="#benchmarks-and-performance" class="table-of-contents__link toc-highlight">Benchmarks and Performance</a></li><li><a href="#release-and-generated-artifacts" class="table-of-contents__link toc-highlight">Release and Generated Artifacts</a></li></ul></div></div></div></div></main></div></div></div><footer class="theme-layout-footer footer footer--dark"><div class="container container-fluid"><div class="row footer__links"><div class="theme-layout-footer-column col footer__col"><div class="footer__title">Docs</div><ul class="footer__items clean-list"><li class="footer__item"><a class="footer__link-item" href="/Idle-Game-Engine/">Overview</a></li><li class="footer__item"><a class="footer__link-item" href="/Idle-Game-Engine/contributor-handbook">Contributor Handbook</a></li></ul></div><div class="theme-layout-footer-column col footer__col"><div class="footer__title">More</div><ul class="footer__items clean-list"><li class="footer__item"><a href="https://github.com/hansjm10/Idle-Game-Engine/issues" target="_blank" rel="noopener noreferrer" class="footer__link-item">Issue Tracker<svg width="13.5" height="13.5" aria-label="(opens in new tab)" class="iconExternalLink_zgE_"><use href="#theme-svg-external-link"></use></svg></a></li><li class="footer__item"><a href="https://github.com/hansjm10/Idle-Game-Engine" target="_blank" rel="noopener noreferrer" class="footer__link-item">GitHub<svg width="13.5" height="13.5" aria-label="(opens in new tab)" class="iconExternalLink_zgE_"><use href="#theme-svg-external-link"></use></svg></a></li></ul></div></div><div class="footer__bottom text--center"><div class="footer__copyright">Copyright © 2026 Idle Engine.</div></div></div></footer></div>
+</body>
+</html>
