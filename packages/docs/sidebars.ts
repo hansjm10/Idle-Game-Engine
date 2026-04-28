@@ -58,7 +58,12 @@ const sidebars: SidebarsConfig = {
     {
       type: 'category',
       label: 'Operations & Process',
-      items: ['implementation-plan', 'project-board-workflow', 'agent-first-workflow-design'],
+      items: [
+        'agent-map',
+        'implementation-plan',
+        'project-board-workflow',
+        'agent-first-workflow-design',
+      ],
     },
   ],
 };

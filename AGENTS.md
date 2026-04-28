@@ -1,5 +1,7 @@
 # Repository Guidelines
 
+Use [docs/agent-map.md](docs/agent-map.md) as the canonical task-to-context router for agent work.
+
 ## Project Structure & Module Organization
 Modules are declared in `pnpm-workspace.yaml`: `packages/core` contains the deterministic runtime with colocated `*.test.ts`, `packages/content-sample` ships reference data packs, and `packages/config-*` publish shared lint/test presets. Command-line tooling lives in `tools/`. Generated `dist/` outputs are checked in for inspectors but should not be edited by hand.
 
