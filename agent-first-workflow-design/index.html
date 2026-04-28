@@ -1,0 +1,481 @@
+<!doctype html>
+<html lang="en" dir="ltr" class="docs-wrapper plugin-docs plugin-id-default docs-version-current docs-doc-page docs-doc-id-agent-first-workflow-design" data-has-hydrated="false">
+<head>
+<meta charset="UTF-8">
+<meta name="generator" content="Docusaurus v3.9.2">
+<title data-rh="true">Agent-First Workflow Design | Idle Engine Docs</title><meta data-rh="true" name="viewport" content="width=device-width,initial-scale=1"><meta data-rh="true" name="twitter:card" content="summary_large_image"><meta data-rh="true" property="og:image" content="https://hansjm10.github.io/Idle-Game-Engine/img/docusaurus-social-card.jpg"><meta data-rh="true" name="twitter:image" content="https://hansjm10.github.io/Idle-Game-Engine/img/docusaurus-social-card.jpg"><meta data-rh="true" property="og:url" content="https://hansjm10.github.io/Idle-Game-Engine/agent-first-workflow-design"><meta data-rh="true" property="og:locale" content="en"><meta data-rh="true" name="docusaurus_locale" content="en"><meta data-rh="true" name="docsearch:language" content="en"><meta data-rh="true" name="docusaurus_version" content="current"><meta data-rh="true" name="docusaurus_tag" content="docs-default-current"><meta data-rh="true" name="docsearch:version" content="current"><meta data-rh="true" name="docsearch:docusaurus_tag" content="docs-default-current"><meta data-rh="true" property="og:title" content="Agent-First Workflow Design | Idle Engine Docs"><meta data-rh="true" name="description" content="Document Control"><meta data-rh="true" property="og:description" content="Document Control"><link data-rh="true" rel="icon" href="/Idle-Game-Engine/img/favicon.ico"><link data-rh="true" rel="canonical" href="https://hansjm10.github.io/Idle-Game-Engine/agent-first-workflow-design"><link data-rh="true" rel="alternate" href="https://hansjm10.github.io/Idle-Game-Engine/agent-first-workflow-design" hreflang="en"><link data-rh="true" rel="alternate" href="https://hansjm10.github.io/Idle-Game-Engine/agent-first-workflow-design" hreflang="x-default"><script data-rh="true" type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Agent-First Workflow Design","item":"https://hansjm10.github.io/Idle-Game-Engine/agent-first-workflow-design"}]}</script><link rel="stylesheet" href="/Idle-Game-Engine/assets/css/styles.0ca8729c.css">
+<script src="/Idle-Game-Engine/assets/js/runtime~main.a815ef2e.js" defer="defer"></script>
+<script src="/Idle-Game-Engine/assets/js/main.700d2161.js" defer="defer"></script>
+</head>
+<body class="navigation-with-keyboard">
+<svg style="display: none;"><defs>
+<symbol id="theme-svg-external-link" viewBox="0 0 24 24"><path fill="currentColor" d="M21 13v10h-21v-19h12v2h-10v15h17v-8h2zm3-12h-10.988l4.035 4-6.977 7.07 2.828 2.828 6.977-7.07 4.125 4.172v-11z"/></symbol>
+</defs></svg>
+<script>!function(){var t=function(){try{return new URLSearchParams(window.location.search).get("docusaurus-theme")}catch(t){}}()||function(){try{return window.localStorage.getItem("theme")}catch(t){}}();document.documentElement.setAttribute("data-theme",t||(window.matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light")),document.documentElement.setAttribute("data-theme-choice",t||"system")}(),function(){try{const c=new URLSearchParams(window.location.search).entries();for(var[t,e]of c)if(t.startsWith("docusaurus-data-")){var a=t.replace("docusaurus-data-","data-");document.documentElement.setAttribute(a,e)}}catch(t){}}()</script><div id="__docusaurus"><link rel="preload" as="image" href="/Idle-Game-Engine/img/logo.svg"><div role="region" aria-label="Skip to main content"><a class="skipToContent_sIzO" href="#__docusaurus_skipToContent_fallback">Skip to main content</a></div><nav aria-label="Main" class="theme-layout-navbar navbar navbar--fixed-top"><div class="navbar__inner"><div class="theme-layout-navbar-left navbar__items"><button aria-label="Toggle navigation bar" aria-expanded="false" class="navbar__toggle clean-btn" type="button"><svg width="30" height="30" viewBox="0 0 30 30" aria-hidden="true"><path stroke="currentColor" stroke-linecap="round" stroke-miterlimit="10" stroke-width="2" d="M4 7h22M4 15h22M4 23h22"></path></svg></button><a class="navbar__brand" href="/Idle-Game-Engine/"><div class="navbar__logo"><img src="/Idle-Game-Engine/img/logo.svg" alt="Idle Engine Logo" class="themedComponent_yXCL themedComponent--light_m26g"><img src="/Idle-Game-Engine/img/logo.svg" alt="Idle Engine Logo" class="themedComponent_yXCL themedComponent--dark_DQxa"></div><b class="navbar__title text--truncate">Idle Engine</b></a><a aria-current="page" class="navbar__item navbar__link navbar__link--active" href="/Idle-Game-Engine/">Docs</a></div><div class="theme-layout-navbar-right navbar__items navbar__items--right"><a href="https://github.com/hansjm10/Idle-Game-Engine" target="_blank" rel="noopener noreferrer" class="navbar__item navbar__link">GitHub<svg width="13.5" height="13.5" aria-label="(opens in new tab)" class="iconExternalLink_zgE_"><use href="#theme-svg-external-link"></use></svg></a><div class="toggle_VTTy colorModeToggle_mrTp"><button class="clean-btn toggleButton_Qf8c toggleButtonDisabled_hCyI" type="button" disabled="" title="system mode" aria-label="Switch between dark and light mode (currently system mode)"><svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" class="toggleIcon_j9FX lightToggleIcon_i4Ty"><path fill="currentColor" d="M12,9c1.65,0,3,1.35,3,3s-1.35,3-3,3s-3-1.35-3-3S10.35,9,12,9 M12,7c-2.76,0-5,2.24-5,5s2.24,5,5,5s5-2.24,5-5 S14.76,7,12,7L12,7z M2,13l2,0c0.55,0,1-0.45,1-1s-0.45-1-1-1l-2,0c-0.55,0-1,0.45-1,1S1.45,13,2,13z M20,13l2,0c0.55,0,1-0.45,1-1 s-0.45-1-1-1l-2,0c-0.55,0-1,0.45-1,1S19.45,13,20,13z M11,2v2c0,0.55,0.45,1,1,1s1-0.45,1-1V2c0-0.55-0.45-1-1-1S11,1.45,11,2z M11,20v2c0,0.55,0.45,1,1,1s1-0.45,1-1v-2c0-0.55-0.45-1-1-1C11.45,19,11,19.45,11,20z M5.99,4.58c-0.39-0.39-1.03-0.39-1.41,0 c-0.39,0.39-0.39,1.03,0,1.41l1.06,1.06c0.39,0.39,1.03,0.39,1.41,0s0.39-1.03,0-1.41L5.99,4.58z M18.36,16.95 c-0.39-0.39-1.03-0.39-1.41,0c-0.39,0.39-0.39,1.03,0,1.41l1.06,1.06c0.39,0.39,1.03,0.39,1.41,0c0.39-0.39,0.39-1.03,0-1.41 L18.36,16.95z M19.42,5.99c0.39-0.39,0.39-1.03,0-1.41c-0.39-0.39-1.03-0.39-1.41,0l-1.06,1.06c-0.39,0.39-0.39,1.03,0,1.41 s1.03,0.39,1.41,0L19.42,5.99z M7.05,18.36c0.39-0.39,0.39-1.03,0-1.41c-0.39-0.39-1.03-0.39-1.41,0l-1.06,1.06 c-0.39,0.39-0.39,1.03,0,1.41s1.03,0.39,1.41,0L7.05,18.36z"></path></svg><svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" class="toggleIcon_j9FX darkToggleIcon_B1fV"><path fill="currentColor" d="M9.37,5.51C9.19,6.15,9.1,6.82,9.1,7.5c0,4.08,3.32,7.4,7.4,7.4c0.68,0,1.35-0.09,1.99-0.27C17.45,17.19,14.93,19,12,19 c-3.86,0-7-3.14-7-7C5,9.07,6.81,6.55,9.37,5.51z M12,3c-4.97,0-9,4.03-9,9s4.03,9,9,9s9-4.03,9-9c0-0.46-0.04-0.92-0.1-1.36 c-0.98,1.37-2.58,2.26-4.4,2.26c-2.98,0-5.4-2.42-5.4-5.4c0-1.81,0.89-3.42,2.26-4.4C12.92,3.04,12.46,3,12,3L12,3z"></path></svg><svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" class="toggleIcon_j9FX systemToggleIcon_d9Wq"><path fill="currentColor" d="m12 21c4.971 0 9-4.029 9-9s-4.029-9-9-9-9 4.029-9 9 4.029 9 9 9zm4.95-13.95c1.313 1.313 2.05 3.093 2.05 4.95s-0.738 3.637-2.05 4.95c-1.313 1.313-3.093 2.05-4.95 2.05v-14c1.857 0 3.637 0.737 4.95 2.05z"></path></svg></button></div><div class="navbarSearchContainer_xdO6"></div></div></div><div role="presentation" class="navbar-sidebar__backdrop"></div></nav><div id="__docusaurus_skipToContent_fallback" class="theme-layout-main main-wrapper mainWrapper_fCXc"><div class="docsWrapper_oodB"><button aria-label="Scroll back to top" class="clean-btn theme-back-to-top-button backToTopButton_ZUBg" type="button"></button><div class="docRoot_zYbW"><aside class="theme-doc-sidebar-container docSidebarContainer_cQjy"><div class="sidebarViewport_guUk"><div class="sidebar_flRn"><nav aria-label="Docs sidebar" class="menu thin-scrollbar menu_e0X4"><ul class="theme-doc-sidebar-menu menu__list"><li class="theme-doc-sidebar-item-category theme-doc-sidebar-item-category-level-1 menu__list-item"><div class="menu__list-item-collapsible"><a class="categoryLink_WJIo menu__link menu__link--sublist menu__link--sublist-caret" role="button" aria-expanded="true" href="/Idle-Game-Engine/"><span title="Getting Started" class="categoryLinkLabel_uVix">Getting Started</span></a></div><ul class="menu__list"><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-2 menu__list-item"><a class="menu__link" tabindex="0" href="/Idle-Game-Engine/"><span title="Overview" class="linkLabel_Hws7">Overview</span></a></li><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-2 menu__list-item"><a class="menu__link" tabindex="0" href="/Idle-Game-Engine/contributor-handbook"><span title="Contributor Handbook" class="linkLabel_Hws7">Contributor Handbook</span></a></li><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-2 menu__list-item"><a class="menu__link" tabindex="0" href="/Idle-Game-Engine/role-index"><span title="Role Index" class="linkLabel_Hws7">Role Index</span></a></li><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-2 menu__list-item"><a class="menu__link" tabindex="0" href="/Idle-Game-Engine/design-document-template"><span title="Design Document Template" class="linkLabel_Hws7">Design Document Template</span></a></li></ul></li><li class="theme-doc-sidebar-item-category theme-doc-sidebar-item-category-level-1 menu__list-item menu__list-item--collapsed"><div class="menu__list-item-collapsible"><a class="categoryLink_WJIo menu__link menu__link--sublist menu__link--sublist-caret" role="button" aria-expanded="false" href="/Idle-Game-Engine/idle-engine-design"><span title="Core Runtime" class="categoryLinkLabel_uVix">Core Runtime</span></a></div></li><li class="theme-doc-sidebar-item-category theme-doc-sidebar-item-category-level-1 menu__list-item menu__list-item--collapsed"><div class="menu__list-item-collapsible"><a class="categoryLink_WJIo menu__link menu__link--sublist menu__link--sublist-caret" role="button" aria-expanded="false" href="/Idle-Game-Engine/content-dsl-schema-design"><span title="Content Pipeline" class="categoryLinkLabel_uVix">Content Pipeline</span></a></div></li><li class="theme-doc-sidebar-item-category theme-doc-sidebar-item-category-level-1 menu__list-item menu__list-item--collapsed"><div class="menu__list-item-collapsible"><a class="categoryLink_WJIo menu__link menu__link--sublist menu__link--sublist-caret" role="button" aria-expanded="false" href="/Idle-Game-Engine/coverage/"><span title="Diagnostics &amp; Quality" class="categoryLinkLabel_uVix">Diagnostics &amp; Quality</span></a></div></li><li class="theme-doc-sidebar-item-category theme-doc-sidebar-item-category-level-1 menu__list-item"><div class="menu__list-item-collapsible"><a class="categoryLink_WJIo menu__link menu__link--sublist menu__link--sublist-caret menu__link--active" role="button" aria-expanded="true" href="/Idle-Game-Engine/implementation-plan"><span title="Operations &amp; Process" class="categoryLinkLabel_uVix">Operations &amp; Process</span></a></div><ul class="menu__list"><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-2 menu__list-item"><a class="menu__link" tabindex="0" href="/Idle-Game-Engine/implementation-plan"><span title="Idle Engine Implementation Plan" class="linkLabel_Hws7">Idle Engine Implementation Plan</span></a></li><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-2 menu__list-item"><a class="menu__link" tabindex="0" href="/Idle-Game-Engine/project-board-workflow"><span title="Project Board Workflow" class="linkLabel_Hws7">Project Board Workflow</span></a></li><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-2 menu__list-item"><a class="menu__link menu__link--active" aria-current="page" tabindex="0" href="/Idle-Game-Engine/agent-first-workflow-design"><span title="Agent-First Workflow Design" class="linkLabel_Hws7">Agent-First Workflow Design</span></a></li></ul></li></ul></nav></div></div></aside><main class="docMainContainer_BJhZ"><div class="container padding-top--md padding-bottom--lg"><div class="row"><div class="col docItemCol_NkVs"><div class="docItemContainer_WMJH"><article><nav class="theme-doc-breadcrumbs breadcrumbsContainer_iCU1" aria-label="Breadcrumbs"><ul class="breadcrumbs"><li class="breadcrumbs__item"><a aria-label="Home page" class="breadcrumbs__link" href="/Idle-Game-Engine/"><svg viewBox="0 0 24 24" class="breadcrumbHomeIcon_HviJ"><path d="M10 19v-5h4v5c0 .55.45 1 1 1h3c.55 0 1-.45 1-1v-7h1.7c.46 0 .68-.57.33-.87L12.67 3.6c-.38-.34-.96-.34-1.34 0l-8.36 7.53c-.34.3-.13.87.33.87H5v7c0 .55.45 1 1 1h3c.55 0 1-.45 1-1z" fill="currentColor"></path></svg></a></li><li class="breadcrumbs__item"><span class="breadcrumbs__link">Operations &amp; Process</span></li><li class="breadcrumbs__item breadcrumbs__item--active"><span class="breadcrumbs__link">Agent-First Workflow Design</span></li></ul></nav><div class="tocCollapsible_Kd7K theme-doc-toc-mobile tocMobile_Gv4l"><button type="button" class="clean-btn tocCollapsibleButton_ajnv">On this page</button></div><div class="theme-doc-markdown markdown"><header><h1>Agent-First Workflow Design</h1></header>
+<h2 class="anchor anchorTargetStickyNavbar_pQUT" id="document-control">Document Control<a href="#document-control" class="hash-link" aria-label="Direct link to Document Control" title="Direct link to Document Control" translate="no">​</a></h2>
+<ul>
+<li class=""><strong>Title</strong>: Introduce agent-first workflow infrastructure</li>
+<li class=""><strong>Authors</strong>: Codex</li>
+<li class=""><strong>Reviewers</strong>: TBD</li>
+<li class=""><strong>Status</strong>: Draft</li>
+<li class=""><strong>Last Updated</strong>: 2026-04-28</li>
+<li class=""><strong>Related Issues</strong>: TBD</li>
+<li class=""><strong>Execution Mode</strong>: AI-led</li>
+</ul>
+<h2 class="anchor anchorTargetStickyNavbar_pQUT" id="1-summary">1. Summary<a href="#1-summary" class="hash-link" aria-label="Direct link to 1. Summary" title="Direct link to 1. Summary" translate="no">​</a></h2>
+<p>Idle Engine already has many agent-friendly ingredients: a compact <code>AGENTS.md</code>, deterministic Vitest output, design documents, CI quality gates, fast local checks, shell-desktop MCP tools, and generated coverage/performance reports. The next step is to make those pieces operate as an explicit agent-first workflow. This design proposes a repository-local knowledge map, documentation freshness checks, architecture boundary linting, standardized agent run artifacts, one-command shell MCP validation, package-level orientation docs, and recurring cleanup tasks so agents can navigate, verify, and improve the codebase with less implicit context from humans.</p>
+<h2 class="anchor anchorTargetStickyNavbar_pQUT" id="2-context--problem-statement">2. Context &amp; Problem Statement<a href="#2-context--problem-statement" class="hash-link" aria-label="Direct link to 2. Context &amp; Problem Statement" title="Direct link to 2. Context &amp; Problem Statement" translate="no">​</a></h2>
+<ul>
+<li class=""><strong>Background</strong>: The repository is a TypeScript pnpm monorepo for deterministic idle-game runtime, content tooling, renderers, shell automation, documentation, and diagnostic CLIs. Current guidance lives in <code>AGENTS.md</code>, <code>docs/index.md</code>, <code>docs/role-index.md</code>, package READMEs, design docs, CI workflows, Lefthook hooks, and shell MCP docs.</li>
+<li class=""><strong>Problem</strong>: Agent workflow depends on scattered knowledge that is not fully indexed or mechanically guarded. Some docs are stale, many docs are not exposed in the Docusaurus sidebar, several packages lack README entry points, architecture constraints are partly cultural instead of enforced, and the shell MCP validation loop requires humans or agents to assemble multiple commands manually.</li>
+<li class=""><strong>Forces</strong>:<!-- -->
+<ul>
+<li class="">Agent context is limited; entry instructions must point to the right source quickly.</li>
+<li class="">Repository-local artifacts are the only durable context agents can depend on.</li>
+<li class="">The runtime must remain deterministic, test output must remain machine-readable, and generated artifacts must stay in sync.</li>
+<li class="">CI already has meaningful quality gates; new checks must avoid making routine docs-only work unnecessarily slow.</li>
+<li class="">Local worktrees and agent scratch files must not pollute diffs or task context.</li>
+</ul>
+</li>
+</ul>
+<h2 class="anchor anchorTargetStickyNavbar_pQUT" id="3-goals--non-goals">3. Goals &amp; Non-Goals<a href="#3-goals--non-goals" class="hash-link" aria-label="Direct link to 3. Goals &amp; Non-Goals" title="Direct link to 3. Goals &amp; Non-Goals" translate="no">​</a></h2>
+<ul>
+<li class=""><strong>Goals</strong>:<!-- -->
+<ol>
+<li class="">Make <code>AGENTS.md</code> a concise table of contents that routes agents to task-specific context.</li>
+<li class="">Create a canonical agent map that links tasks to docs, packages, commands, tools, and validation expectations.</li>
+<li class="">Detect stale or orphaned documentation mechanically.</li>
+<li class="">Encode architecture and taste invariants in lint/test tooling instead of relying on review memory.</li>
+<li class="">Provide a one-command local validation loop for shell-desktop MCP workflows.</li>
+<li class="">Standardize local agent run artifacts for screenshots, logs, diagnostics, benchmark JSON, and validation summaries.</li>
+<li class="">Reduce agent guesswork by adding package READMEs for all workspace packages and tools.</li>
+<li class="">Keep the workflow incremental so each improvement can land in a focused PR.</li>
+</ol>
+</li>
+<li class=""><strong>Non-Goals</strong>:<!-- -->
+<ul>
+<li class="">Replacing human product or architecture judgment.</li>
+<li class="">Rewriting existing design docs as part of the first rollout.</li>
+<li class="">Introducing a production observability stack.</li>
+<li class="">Enforcing every style preference through lint immediately.</li>
+<li class="">Changing runtime, content, renderer, or shell public APIs except where needed for validation tooling.</li>
+</ul>
+</li>
+</ul>
+<h2 class="anchor anchorTargetStickyNavbar_pQUT" id="4-stakeholders-agents--impacted-surfaces">4. Stakeholders, Agents &amp; Impacted Surfaces<a href="#4-stakeholders-agents--impacted-surfaces" class="hash-link" aria-label="Direct link to 4. Stakeholders, Agents &amp; Impacted Surfaces" title="Direct link to 4. Stakeholders, Agents &amp; Impacted Surfaces" translate="no">​</a></h2>
+<ul>
+<li class=""><strong>Primary Stakeholders</strong>:<!-- -->
+<ul>
+<li class="">Maintainers reviewing agent-authored work.</li>
+<li class="">Runtime, content, renderer, shell, and tooling contributors.</li>
+<li class="">Agents executing GitHub issues, design-doc tasks, reviews, and validation loops.</li>
+</ul>
+</li>
+<li class=""><strong>Agent Roles</strong>:<!-- -->
+<ul>
+<li class=""><strong>Workflow Infrastructure Agent</strong>: Implements repository maps, scripts, CI hooks, and gitignore hygiene.</li>
+<li class=""><strong>Docs Agent</strong>: Maintains doc indexes, frontmatter, sidebars, cross-links, and package READMEs.</li>
+<li class=""><strong>Architecture Guard Agent</strong>: Adds and tunes import-boundary, file-size, generated-artifact, and docs freshness checks.</li>
+<li class=""><strong>Shell Validation Agent</strong>: Builds shell-desktop MCP smoke/regression commands and standardized artifact output.</li>
+<li class=""><strong>Cleanup Agent</strong>: Runs recurring scans for stale docs, oversized files, missing READMEs, and repeated helper patterns.</li>
+</ul>
+</li>
+<li class=""><strong>Affected Packages/Services</strong>:<!-- -->
+<ul>
+<li class=""><code>AGENTS.md</code></li>
+<li class=""><code>docs/</code></li>
+<li class=""><code>packages/docs</code></li>
+<li class=""><code>packages/config-eslint</code></li>
+<li class=""><code>packages/shell-desktop</code></li>
+<li class=""><code>tools/scripts</code></li>
+<li class=""><code>.github/workflows</code></li>
+<li class=""><code>.gitignore</code></li>
+</ul>
+</li>
+<li class=""><strong>Compatibility Considerations</strong>:<!-- -->
+<ul>
+<li class="">Existing commands such as <code>pnpm lint</code>, <code>pnpm test:ci</code>, <code>pnpm docs:build</code>, <code>pnpm generate --check</code>, and <code>pnpm shell:desktop:mcp:smoke</code> must keep their current behavior.</li>
+<li class="">New checks should start as focused tests or warnings where churn is expected, then become stricter once the repository is clean.</li>
+<li class="">Docs-only PRs should remain cheap to validate locally.</li>
+</ul>
+</li>
+</ul>
+<h2 class="anchor anchorTargetStickyNavbar_pQUT" id="5-current-state">5. Current State<a href="#5-current-state" class="hash-link" aria-label="Direct link to 5. Current State" title="Direct link to 5. Current State" translate="no">​</a></h2>
+<ul>
+<li class=""><code>AGENTS.md</code> is compact and useful, but it primarily lists conventions and commands. It does not route agents by task type or point to a canonical agent workflow map.</li>
+<li class=""><code>docs/index.md</code> introduces the docs hub and contributor flow, while <code>docs/role-index.md</code> gives high-level role entry points. The role index is currently too thin to serve as the only task router.</li>
+<li class=""><code>docs/design-document-template.md</code> already defines an AI-first design-doc structure with work breakdown, agent guidance, validation hooks, and migration playbooks.</li>
+<li class=""><code>docs/implementation-plan.md</code> is stale in important places: it describes missing CI, minimal tests, absent content compiler, and absent persistence, although the repository now includes those capabilities.</li>
+<li class="">The repository has many docs, but only a subset appears in <code>packages/docs/sidebars.ts</code>. Agents can miss design history that is present but not discoverable.</li>
+<li class=""><code>packages/docs/scripts/test-docs.mjs</code> verifies selected doc invariants, but <code>@idle-engine/docs</code> has no <code>test:ci</code> script, so the root <code>pnpm test:ci</code> workspace runner does not execute it.</li>
+<li class="">CI already runs lint, typecheck, generated version validation, schema compatibility, build, dist sync, content validation with JSON-tail verification, coverage generation, tests, benchmark checks, and SonarCloud.</li>
+<li class="">Lefthook already runs staged-file-sensitive lint, typecheck, build, content generation, focused core/content tests, version checks, and dist sync.</li>
+<li class=""><code>packages/config-eslint</code> can restrict accidental <code>@idle-engine/core/internals</code> imports, but broader package/domain dependency rules are not yet encoded.</li>
+<li class=""><code>docs/shell-desktop-mcp.md</code> documents shell MCP quickstart, gateway mode, tool surface, client setup, and example workflows. The workflow is strong but not packaged as a single agent validation command.</li>
+<li class="">Several workspace packages and tools do not have package-level README entry points, including <code>packages/content-compiler</code>, <code>packages/content-schema</code>, <code>packages/controls</code>, <code>packages/renderer-contract</code>, <code>packages/renderer-debug</code>, <code>tools/content-schema-cli</code>, <code>tools/coverage-report</code>, and <code>tools/runtime-sim</code>.</li>
+<li class="">Local untracked agent/worktree artifacts such as <code>.agtx/</code> and editor swap files can appear in <code>git status</code>, increasing noise for agents.</li>
+</ul>
+<h2 class="anchor anchorTargetStickyNavbar_pQUT" id="6-proposed-solution">6. Proposed Solution<a href="#6-proposed-solution" class="hash-link" aria-label="Direct link to 6. Proposed Solution" title="Direct link to 6. Proposed Solution" translate="no">​</a></h2>
+<h3 class="anchor anchorTargetStickyNavbar_pQUT" id="61-architecture-overview">6.1 Architecture Overview<a href="#61-architecture-overview" class="hash-link" aria-label="Direct link to 6.1 Architecture Overview" title="Direct link to 6.1 Architecture Overview" translate="no">​</a></h3>
+<ul>
+<li class=""><strong>Narrative</strong>: Treat the repository as the agent operating environment. Agents start with a small <code>AGENTS.md</code>, follow a task-to-context map, use package READMEs and design docs as the source of truth, run bounded validation commands, write artifacts to a predictable location, and rely on CI/lint/tests to enforce important invariants. Human review focuses on product and architecture judgment, while the repo handles repeatable navigation and quality checks.</li>
+<li class=""><strong>Diagram</strong>:</li>
+</ul>
+<div class="language-text codeBlockContainer_QSSF theme-code-block" style="--prism-color:#393A34;--prism-background-color:#f6f8fa"><div class="codeBlockContent_YGpJ"><pre tabindex="0" class="prism-code language-text codeBlock_Ap7y thin-scrollbar" style="color:#393A34;background-color:#f6f8fa"><code class="codeBlockLines_zA5F"><span class="token-line" style="color:#393A34"><span class="token plain">Prompt or issue</span><br></span><span class="token-line" style="color:#393A34"><span class="token plain">  -&gt; AGENTS.md</span><br></span><span class="token-line" style="color:#393A34"><span class="token plain">  -&gt; docs/agent-map.md</span><br></span><span class="token-line" style="color:#393A34"><span class="token plain">  -&gt; task-specific docs + package README</span><br></span><span class="token-line" style="color:#393A34"><span class="token plain">  -&gt; implementation or docs change</span><br></span><span class="token-line" style="color:#393A34"><span class="token plain">  -&gt; focused validation</span><br></span><span class="token-line" style="color:#393A34"><span class="token plain">  -&gt; artifacts/agent-runs/&lt;run-id&gt;/</span><br></span><span class="token-line" style="color:#393A34"><span class="token plain">  -&gt; CI + review</span><br></span><span class="token-line" style="color:#393A34"><span class="token plain">  -&gt; doc/tooling cleanup when drift is found</span><br></span></code></pre></div></div>
+<h3 class="anchor anchorTargetStickyNavbar_pQUT" id="62-detailed-design">6.2 Detailed Design<a href="#62-detailed-design" class="hash-link" aria-label="Direct link to 6.2 Detailed Design" title="Direct link to 6.2 Detailed Design" translate="no">​</a></h3>
+<ul>
+<li class=""><strong>Runtime Changes</strong>:<!-- -->
+<ul>
+<li class="">No runtime gameplay changes are required.</li>
+<li class="">Shell validation may call existing runtime and renderer surfaces through shell-desktop MCP.</li>
+<li class="">Any new runtime diagnostic output must keep deterministic JSON payloads and avoid corrupting Vitest or benchmark final JSON lines.</li>
+</ul>
+</li>
+<li class=""><strong>Data &amp; Schemas</strong>:<!-- -->
+<ul>
+<li class="">Add <code>docs/agent-map.md</code> as the canonical task router.</li>
+<li class="">Add a lightweight <code>docs/doc-index.json</code> or generated manifest only if a Markdown-only index becomes too hard to validate.</li>
+<li class="">Standardize local artifact output under <code>artifacts/agent-runs/&lt;YYYYMMDD-HHMMSS-task&gt;/</code>.</li>
+<li class="">Suggested artifact files:<!-- -->
+<ul>
+<li class=""><code>summary.json</code>: command outcomes, duration, git SHA, branch, and validation status.</li>
+<li class=""><code>commands.log</code>: bounded command list and exit codes.</li>
+<li class=""><code>shell-mcp-health.json</code>: shell MCP health response when relevant.</li>
+<li class=""><code>renderer-status.json</code>: renderer status and error banner state when relevant.</li>
+<li class=""><code>logs-tail.jsonl</code>: bounded structured log samples.</li>
+<li class=""><code>screenshot.png</code>: shell/window screenshot when UI or renderer behavior changed.</li>
+<li class=""><code>notes.md</code>: short human-readable notes for review.</li>
+</ul>
+</li>
+</ul>
+</li>
+<li class=""><strong>APIs &amp; Contracts</strong>:<!-- -->
+<ul>
+<li class=""><code>docs/agent-map.md</code> should contain a table with:<!-- -->
+<ul>
+<li class="">Task family.</li>
+<li class="">Primary docs to read.</li>
+<li class="">Main packages and files.</li>
+<li class="">Required validation commands.</li>
+<li class="">Artifact expectations.</li>
+<li class="">Escalation triggers.</li>
+</ul>
+</li>
+<li class="">Add package README contracts for every workspace package:<!-- -->
+<ul>
+<li class="">Purpose.</li>
+<li class="">Public entry points.</li>
+<li class="">Important invariants.</li>
+<li class="">Common commands.</li>
+<li class="">Related docs.</li>
+<li class="">Validation guidance.</li>
+</ul>
+</li>
+<li class="">Add architecture boundary rules to <code>@idle-engine/config-eslint</code> or a small structural test:<!-- -->
+<ul>
+<li class=""><code>packages/core</code> must not import shell, renderer, docs, or tool packages.</li>
+<li class="">Content schema/compiler packages must not import shell-desktop.</li>
+<li class="">Renderer contract must not import renderer implementations.</li>
+<li class="">Shell-desktop may import integration surfaces but should prefer public or harness entry points before internals.</li>
+<li class="">Game/app-facing code should avoid <code>@idle-engine/core/internals</code>.</li>
+</ul>
+</li>
+</ul>
+</li>
+<li class=""><strong>Tooling &amp; Automation</strong>:<!-- -->
+<ul>
+<li class="">Add a docs index check:<!-- -->
+<ul>
+<li class="">Every top-level <code>docs/*.md</code> file must be in the sidebar, explicitly archived, or marked hidden through approved frontmatter.</li>
+<li class="">Design docs should include <code>Document Control</code> and <code>Last Updated</code>.</li>
+<li class="">Stale superseded docs must link to their replacement.</li>
+</ul>
+</li>
+<li class="">Add <code>test:ci</code> to <code>@idle-engine/docs</code> so root <code>pnpm test:ci</code> runs doc invariants.</li>
+<li class="">Add a file-size guardrail:<!-- -->
+<ul>
+<li class="">Start with a warning/report for non-generated source files over a threshold such as 1,500 lines.</li>
+<li class="">Exempt generated files and fixtures.</li>
+<li class="">Promote worst offenders into follow-up refactor issues instead of blocking all work immediately.</li>
+</ul>
+</li>
+<li class="">Add <code>pnpm agent:shell-smoke</code>:<!-- -->
+<ul>
+<li class="">Start or verify the shell MCP gateway.</li>
+<li class="">Start the headless shell backend when not already available.</li>
+<li class="">Run health, sim status, pause/step, renderer status, logs tail, WebGPU health, and screenshot.</li>
+<li class="">Write a single <code>summary.json</code> plus optional screenshot/log artifacts.</li>
+<li class="">Stop only processes started by the command.</li>
+</ul>
+</li>
+<li class="">Add <code>pnpm agent:doctor</code>:<!-- -->
+<ul>
+<li class="">Print branch, git status summary, Node/pnpm versions, package install state, docs check status, and recommended focused validation commands for changed files.</li>
+</ul>
+</li>
+<li class="">Add <code>.gitignore</code> entries for local agent scratch directories and editor swap files that are known to appear during agent runs.</li>
+</ul>
+</li>
+</ul>
+<h3 class="anchor anchorTargetStickyNavbar_pQUT" id="63-operational-considerations">6.3 Operational Considerations<a href="#63-operational-considerations" class="hash-link" aria-label="Direct link to 6.3 Operational Considerations" title="Direct link to 6.3 Operational Considerations" translate="no">​</a></h3>
+<ul>
+<li class=""><strong>Deployment</strong>:<!-- -->
+<ul>
+<li class="">Phase new checks into CI gradually. Start with docs tests and non-blocking reports, then convert stable checks to required failures.</li>
+<li class="">Keep manual coverage/performance refresh behavior unchanged unless a PR explicitly targets those reports.</li>
+</ul>
+</li>
+<li class=""><strong>Telemetry &amp; Observability</strong>:<!-- -->
+<ul>
+<li class="">Prefer local JSON artifacts first.</li>
+<li class="">Shell MCP artifacts should include bounded logs and renderer/WebGPU status.</li>
+<li class="">Future observability can expose runtime metrics and trace-like diagnostic timelines through local files or MCP tools before adopting external services.</li>
+</ul>
+</li>
+<li class=""><strong>Security &amp; Compliance</strong>:<!-- -->
+<ul>
+<li class="">Local MCP must continue binding to loopback only.</li>
+<li class="">Artifact writers must avoid capturing secrets, environment dumps, tokens, or arbitrary home-directory files.</li>
+<li class="">Agent scratch directories should remain ignored and must not be uploaded by CI unless explicitly selected.</li>
+</ul>
+</li>
+</ul>
+<h2 class="anchor anchorTargetStickyNavbar_pQUT" id="7-work-breakdown--delivery-plan">7. Work Breakdown &amp; Delivery Plan<a href="#7-work-breakdown--delivery-plan" class="hash-link" aria-label="Direct link to 7. Work Breakdown &amp; Delivery Plan" title="Direct link to 7. Work Breakdown &amp; Delivery Plan" translate="no">​</a></h2>
+<h3 class="anchor anchorTargetStickyNavbar_pQUT" id="71-issue-map">7.1 Issue Map<a href="#71-issue-map" class="hash-link" aria-label="Direct link to 7.1 Issue Map" title="Direct link to 7.1 Issue Map" translate="no">​</a></h3>
+<table><thead><tr><th>Issue Title</th><th>Scope Summary</th><th>Proposed Assignee/Agent</th><th>Dependencies</th><th>Acceptance Criteria</th></tr></thead><tbody><tr><td>docs(agent): add canonical agent map</td><td>Add <code>docs/agent-map.md</code> with task families, context packets, commands, artifacts, and escalation triggers</td><td>Docs Agent</td><td>Design approval</td><td>New doc is in sidebar; <code>AGENTS.md</code> links to it; docs build succeeds</td></tr><tr><td>docs(agent): refresh AGENTS.md as table of contents</td><td>Replace broad prose with a compact map to agent docs, role index, commands, and repo-specific safety rails</td><td>Docs Agent</td><td>Agent map</td><td><code>AGENTS.md</code> stays under 120 lines; task routing is explicit; no duplicated long-form guidance</td></tr><tr><td>test(docs): run docs invariants in CI</td><td>Add <code>test:ci</code> to <code>@idle-engine/docs</code> and ensure root <code>pnpm test:ci</code> executes doc invariant tests</td><td>Workflow Infrastructure Agent</td><td>None</td><td><code>pnpm --filter @idle-engine/docs test:ci</code> passes; root <code>pnpm test:ci --filter @idle-engine/docs</code> passes</td></tr><tr><td>test(docs): enforce doc index coverage</td><td>Add a docs script that reports unindexed top-level docs and unsupported frontmatter states</td><td>Architecture Guard Agent</td><td>Sidebar policy decision</td><td>Script fails for orphan docs unless they are explicitly archived or hidden</td></tr><tr><td>docs(plan): refresh or supersede stale implementation plan</td><td>Update <code>docs/implementation-plan.md</code> current state or mark it superseded with a replacement roadmap</td><td>Docs Agent</td><td>Doc index check</td><td>Stale claims about missing CI/compiler/persistence are removed or marked historical</td></tr><tr><td>docs(readme): add missing package READMEs</td><td>Add concise READMEs for workspace packages/tools without entry docs</td><td>Docs Agent</td><td>Agent map</td><td>Every workspace package and tool has purpose, entry points, invariants, commands, and related docs</td></tr><tr><td>feat(lint): enforce package architecture boundaries</td><td>Add ESLint or structural tests for package/domain import rules with agent-actionable messages</td><td>Architecture Guard Agent</td><td>Boundary rules approved</td><td>CI fails on prohibited imports; rule messages include the preferred import or doc</td></tr><tr><td>test(tools): add source file-size report</td><td>Add a script that reports oversized non-generated source files and supports threshold/exemption config</td><td>Architecture Guard Agent</td><td>None</td><td>Report identifies current oversized files; generated files are exempt; follow-up issues are easy to create</td></tr><tr><td>feat(agent): add shell MCP smoke artifact command</td><td>Add <code>pnpm agent:shell-smoke</code> to run the MCP validation loop and write artifacts</td><td>Shell Validation Agent</td><td>Existing shell MCP commands</td><td>Command emits <code>summary.json</code>; captures health, sim status, renderer status, logs, WebGPU health, and screenshot</td></tr><tr><td>feat(agent): add agent doctor command</td><td>Add <code>pnpm agent:doctor</code> for environment and focused-validation recommendations</td><td>Workflow Infrastructure Agent</td><td>None</td><td>Command prints machine-readable summary and human-readable next commands</td></tr><tr><td>chore(agent): ignore local agent scratch files</td><td>Add <code>.agtx/</code>, <code>*.swp</code>, and any agreed local scratch paths to <code>.gitignore</code></td><td>Workflow Infrastructure Agent</td><td>None</td><td>Clean checkout ignores local agent worktrees and editor swap files</td></tr><tr><td>docs(cleanup): define recurring cleanup cadence</td><td>Add or extend docs describing weekly/monthly agent cleanup scans and PR expectations</td><td>Cleanup Agent</td><td>Agent map</td><td>Cleanup scan categories are documented with commands, owners, and review expectations</td></tr></tbody></table>
+<h3 class="anchor anchorTargetStickyNavbar_pQUT" id="72-milestones">7.2 Milestones<a href="#72-milestones" class="hash-link" aria-label="Direct link to 7.2 Milestones" title="Direct link to 7.2 Milestones" translate="no">​</a></h3>
+<ul>
+<li class=""><strong>Phase 1 - Navigation and Freshness</strong>:<!-- -->
+<ul>
+<li class="">Deliverables: <code>docs/agent-map.md</code>, updated <code>AGENTS.md</code>, docs <code>test:ci</code>, doc index coverage check, stale implementation-plan resolution.</li>
+<li class="">Gating criteria: docs build passes; root CI runs docs tests; agents have a single starting map.</li>
+</ul>
+</li>
+<li class=""><strong>Phase 2 - Package Legibility and Hygiene</strong>:<!-- -->
+<ul>
+<li class="">Deliverables: missing package READMEs, <code>.gitignore</code> cleanup, file-size report.</li>
+<li class="">Gating criteria: every workspace package/tool has an orientation README; local agent scratch files do not appear in normal status; oversized files have follow-up tickets.</li>
+</ul>
+</li>
+<li class=""><strong>Phase 3 - Mechanical Architecture Guardrails</strong>:<!-- -->
+<ul>
+<li class="">Deliverables: package-boundary lint/structural tests, improved lint remediation messages, initial rule documentation.</li>
+<li class="">Gating criteria: CI enforces approved boundaries without blocking legitimate integration paths.</li>
+</ul>
+</li>
+<li class=""><strong>Phase 4 - Validation Loop Automation</strong>:<!-- -->
+<ul>
+<li class="">Deliverables: <code>agent:shell-smoke</code>, <code>agent:doctor</code>, artifact directory contract.</li>
+<li class="">Gating criteria: shell validation can be run from one command and produces reviewable local artifacts.</li>
+</ul>
+</li>
+<li class=""><strong>Phase 5 - Recurring Cleanup</strong>:<!-- -->
+<ul>
+<li class="">Deliverables: documented cleanup cadence, optional scheduled/manual workflow, issue templates or PR checklist updates.</li>
+<li class="">Gating criteria: recurring cleanup tasks can open small, reviewable PRs without human-generated context packets.</li>
+</ul>
+</li>
+</ul>
+<h3 class="anchor anchorTargetStickyNavbar_pQUT" id="73-coordination-notes">7.3 Coordination Notes<a href="#73-coordination-notes" class="hash-link" aria-label="Direct link to 7.3 Coordination Notes" title="Direct link to 7.3 Coordination Notes" translate="no">​</a></h3>
+<ul>
+<li class=""><strong>Hand-off Package</strong>:<!-- -->
+<ul>
+<li class=""><code>AGENTS.md</code></li>
+<li class=""><code>docs/index.md</code></li>
+<li class=""><code>docs/role-index.md</code></li>
+<li class=""><code>docs/design-document-template.md</code></li>
+<li class=""><code>docs/contributor-handbook.md</code></li>
+<li class=""><code>docs/testing-guidelines.md</code></li>
+<li class=""><code>docs/shell-desktop-mcp.md</code></li>
+<li class=""><code>packages/docs/scripts/test-docs.mjs</code></li>
+<li class=""><code>packages/docs/sidebars.ts</code></li>
+<li class=""><code>packages/config-eslint/index.js</code></li>
+<li class=""><code>package.json</code></li>
+<li class=""><code>lefthook.yml</code></li>
+<li class=""><code>.github/workflows/ci.yml</code></li>
+</ul>
+</li>
+<li class=""><strong>Communication Cadence</strong>:<!-- -->
+<ul>
+<li class="">Each phase should land as one or more focused PRs.</li>
+<li class="">PR descriptions must list changed workflow commands and validation run.</li>
+<li class="">Boundary-rule PRs require explicit examples of allowed and disallowed imports.</li>
+<li class="">Shell MCP command PRs should attach or describe generated artifact paths.</li>
+</ul>
+</li>
+<li class=""><strong>Escalation Path</strong>:<!-- -->
+<ul>
+<li class="">Escalate to maintainers when a lint rule would require moving public API boundaries.</li>
+<li class="">Escalate when stale docs contradict shipped behavior and no source of truth is obvious.</li>
+<li class="">Escalate when shell MCP validation requires long-running processes the script cannot safely own.</li>
+</ul>
+</li>
+</ul>
+<h2 class="anchor anchorTargetStickyNavbar_pQUT" id="8-agent-guidance--guardrails">8. Agent Guidance &amp; Guardrails<a href="#8-agent-guidance--guardrails" class="hash-link" aria-label="Direct link to 8. Agent Guidance &amp; Guardrails" title="Direct link to 8. Agent Guidance &amp; Guardrails" translate="no">​</a></h2>
+<ul>
+<li class=""><strong>Context Packets</strong>:<!-- -->
+<ul>
+<li class="">For docs/navigation work: load <code>AGENTS.md</code>, <code>docs/index.md</code>, <code>docs/role-index.md</code>, <code>docs/design-document-template.md</code>, and <code>packages/docs/sidebars.ts</code>.</li>
+<li class="">For docs tests: load <code>packages/docs/scripts/test-docs.mjs</code>, <code>packages/docs/scripts/lint-docs.mjs</code>, and <code>packages/docs/package.json</code>.</li>
+<li class="">For architecture lint work: load <code>packages/config-eslint/index.js</code>, root <code>eslint.config.mjs</code>, and package-specific <code>eslint.config.js</code> files.</li>
+<li class="">For shell validation: load <code>docs/shell-desktop-mcp.md</code>, <code>packages/shell-desktop/README.md</code>, and <code>tools/scripts/shell-desktop-mcp-smoke.mjs</code>.</li>
+<li class="">For CI changes: load <code>.github/workflows/ci.yml</code>, <code>.github/workflows/docs-preview.yml</code>, <code>lefthook.yml</code>, and root <code>package.json</code>.</li>
+</ul>
+</li>
+<li class=""><strong>Prompting &amp; Constraints</strong>:<!-- -->
+<ul>
+<li class="">Keep <code>AGENTS.md</code> concise; move durable details into docs and link them.</li>
+<li class="">Prefer mechanical checks over prose when the rule is repeatable.</li>
+<li class="">Write lint/test failure messages with remediation instructions that an agent can act on.</li>
+<li class="">Preserve final JSON output contracts for Vitest reporter, benchmarks, content generation, and CLI tools.</li>
+<li class="">For shell validation commands, bound runtime, log volume, screenshot size, and retry count.</li>
+<li class="">Do not update generated coverage or performance pages unless the task explicitly targets those reports.</li>
+</ul>
+</li>
+<li class=""><strong>Safety Rails</strong>:<!-- -->
+<ul>
+<li class="">Do not commit secrets, <code>.env</code> files, local worktrees, agent scratch directories, or editor swap files.</li>
+<li class="">Do not disable lint/test/build checks to land workflow changes.</li>
+<li class="">Do not make broad architecture rules blocking until current violations are understood and either fixed or exempted with justification.</li>
+<li class="">Do not stop or kill long-running local processes unless the script started them.</li>
+<li class="">Do not rely on external chat, issue comments, or local-only notes as the durable source of truth; encode durable guidance in repository docs or tooling.</li>
+</ul>
+</li>
+<li class=""><strong>Validation Hooks</strong>:<!-- -->
+<ul>
+<li class="">Docs-only navigation changes: <code>pnpm --filter @idle-engine/docs test</code>, <code>pnpm docs:build</code>.</li>
+<li class=""><code>AGENTS.md</code> or root workflow guidance changes: <code>pnpm fast:check</code> plus any targeted docs tests.</li>
+<li class="">ESLint config changes: <code>pnpm lint</code>, <code>pnpm --filter @idle-engine/config-eslint test:ci</code> if tests are added.</li>
+<li class="">Shell MCP validation changes: <code>pnpm --filter @idle-engine/shell-desktop test:ci</code>, <code>pnpm shell:desktop:mcp:smoke</code>, and the new <code>pnpm agent:shell-smoke</code> once available.</li>
+<li class="">CI workflow changes: local focused command where possible plus PR CI confirmation.</li>
+</ul>
+</li>
+</ul>
+<h2 class="anchor anchorTargetStickyNavbar_pQUT" id="9-alternatives-considered">9. Alternatives Considered<a href="#9-alternatives-considered" class="hash-link" aria-label="Direct link to 9. Alternatives Considered" title="Direct link to 9. Alternatives Considered" translate="no">​</a></h2>
+<ul>
+<li class=""><strong>One large <code>AGENTS.md</code> manual</strong>:<!-- -->
+<ul>
+<li class="">Rejected because it would crowd out task context, duplicate docs, and become difficult to verify mechanically.</li>
+</ul>
+</li>
+<li class=""><strong>Docs-only workflow improvements</strong>:<!-- -->
+<ul>
+<li class="">Rejected as insufficient. Prose helps agents navigate, but boundary, freshness, and artifact rules need tests or scripts.</li>
+</ul>
+</li>
+<li class=""><strong>Adopt full local observability stack immediately</strong>:<!-- -->
+<ul>
+<li class="">Deferred. The repository already has diagnostics, MCP logs, benchmarks, and artifacts. A full logs/metrics/traces stack should follow only after local JSON artifacts and shell validation prove the need.</li>
+</ul>
+</li>
+<li class=""><strong>Block all oversized files immediately</strong>:<!-- -->
+<ul>
+<li class="">Rejected for initial rollout. Existing large files need planned refactors; the first step should report and prioritize rather than block unrelated work.</li>
+</ul>
+</li>
+<li class=""><strong>Put agent artifacts in tracked docs</strong>:<!-- -->
+<ul>
+<li class="">Rejected. Artifacts are run outputs and should remain ignored unless a specific report is intentionally committed.</li>
+</ul>
+</li>
+</ul>
+<h2 class="anchor anchorTargetStickyNavbar_pQUT" id="10-testing--validation-plan">10. Testing &amp; Validation Plan<a href="#10-testing--validation-plan" class="hash-link" aria-label="Direct link to 10. Testing &amp; Validation Plan" title="Direct link to 10. Testing &amp; Validation Plan" translate="no">​</a></h2>
+<ul>
+<li class=""><strong>Unit / Integration</strong>:<!-- -->
+<ul>
+<li class="">Add docs tests for sidebar/index coverage and required frontmatter.</li>
+<li class="">Add structural tests or ESLint fixtures for architecture-boundary rules.</li>
+<li class="">Add package README coverage tests if missing README drift becomes common.</li>
+</ul>
+</li>
+<li class=""><strong>Performance</strong>:<!-- -->
+<ul>
+<li class=""><code>agent:doctor</code> and docs checks should complete in seconds.</li>
+<li class=""><code>agent:shell-smoke</code> should use bounded startup and validation timeouts and should report timeout separately from validation failure.</li>
+<li class="">File-size report should scan tracked files without requiring TypeScript compilation.</li>
+</ul>
+</li>
+<li class=""><strong>Tooling / A11y</strong>:<!-- -->
+<ul>
+<li class=""><code>pnpm docs:build</code> remains the primary documentation rendering check.</li>
+<li class="">Shell screenshot artifacts should be review aids, not golden pixel tests in the initial rollout.</li>
+<li class="">If renderer UI validation grows, add explicit screenshot comparison thresholds in a later design.</li>
+</ul>
+</li>
+</ul>
+<h2 class="anchor anchorTargetStickyNavbar_pQUT" id="11-risks--mitigations">11. Risks &amp; Mitigations<a href="#11-risks--mitigations" class="hash-link" aria-label="Direct link to 11. Risks &amp; Mitigations" title="Direct link to 11. Risks &amp; Mitigations" translate="no">​</a></h2>
+<table><thead><tr><th>Risk</th><th>Impact</th><th>Probability</th><th>Mitigation</th></tr></thead><tbody><tr><td>New checks slow down routine work</td><td>Medium</td><td>Medium</td><td>Start with focused scripts and only wire stable checks into CI</td></tr><tr><td>Boundary rules block legitimate integration paths</td><td>High</td><td>Medium</td><td>Begin with documented allowed edges and fixture tests before enforcing broadly</td></tr><tr><td>Docs index check creates noisy churn</td><td>Medium</td><td>High</td><td>Allow explicit <code>archived</code> or <code>hidden</code> states and migrate docs in batches</td></tr><tr><td>Shell MCP smoke is flaky on headless hosts</td><td>Medium</td><td>Medium</td><td>Bound retries, separate startup failure from renderer failure, and preserve diagnostic artifacts</td></tr><tr><td>Agent artifacts accidentally capture sensitive data</td><td>High</td><td>Low</td><td>Bound artifact paths and contents; never dump full environment variables</td></tr><tr><td>Stale implementation docs keep misleading agents</td><td>High</td><td>High</td><td>Refresh or supersede stale roadmap docs in Phase 1</td></tr><tr><td>Large-file guardrail produces reports without cleanup</td><td>Medium</td><td>Medium</td><td>Require follow-up issue links for files over the threshold</td></tr></tbody></table>
+<h2 class="anchor anchorTargetStickyNavbar_pQUT" id="12-rollout-plan">12. Rollout Plan<a href="#12-rollout-plan" class="hash-link" aria-label="Direct link to 12. Rollout Plan" title="Direct link to 12. Rollout Plan" translate="no">​</a></h2>
+<ul>
+<li class=""><strong>Milestones</strong>:<!-- -->
+<ol>
+<li class="">Land this design document and sidebar entry.</li>
+<li class="">Implement Phase 1 navigation and freshness checks.</li>
+<li class="">Implement Phase 2 package README and local hygiene work.</li>
+<li class="">Implement Phase 3 architecture boundary checks.</li>
+<li class="">Implement Phase 4 shell validation and agent artifact commands.</li>
+<li class="">Implement Phase 5 recurring cleanup documentation/workflow.</li>
+</ol>
+</li>
+<li class=""><strong>Migration Strategy</strong>:<!-- -->
+<ul>
+<li class="">Treat existing docs as valid until the doc index check lands.</li>
+<li class="">Mark stale docs explicitly as <code>Status: Superseded</code> before deleting or moving them.</li>
+<li class="">Introduce boundary checks with current-repo fixture coverage.</li>
+<li class="">Add exemptions only with comments that identify the owner and removal condition.</li>
+</ul>
+</li>
+<li class=""><strong>Communication</strong>:<!-- -->
+<ul>
+<li class="">Announce new agent commands in <code>AGENTS.md</code>, <code>docs/agent-map.md</code>, and <code>docs/contributor-handbook.md</code>.</li>
+<li class="">Mention changed validation expectations in PR descriptions.</li>
+<li class="">Capture recurring cleanup outputs as small PRs with clear before/after evidence.</li>
+</ul>
+</li>
+</ul>
+<h2 class="anchor anchorTargetStickyNavbar_pQUT" id="13-open-questions">13. Open Questions<a href="#13-open-questions" class="hash-link" aria-label="Direct link to 13. Open Questions" title="Direct link to 13. Open Questions" translate="no">​</a></h2>
+<ol>
+<li class="">Should archived design docs stay under <code>docs/</code> with hidden frontmatter, or move into a dedicated <code>docs/archive/</code> folder?</li>
+<li class="">What exact file-size threshold should become blocking after the initial report phase?</li>
+<li class="">Which package dependency edges should be allowed for shell-desktop integration with core internals?</li>
+<li class="">Should agent artifacts use only ignored local files, or should selected summaries be uploaded as CI artifacts in workflow runs?</li>
+<li class="">Should <code>agent:shell-smoke</code> manage xpra/Electron lifecycle itself, or require callers to start the daemon first?</li>
+<li class="">Should recurring cleanup be a scheduled GitHub Actions workflow, a manual workflow, or a documented local task run by agents?</li>
+</ol>
+<h2 class="anchor anchorTargetStickyNavbar_pQUT" id="14-follow-up-work">14. Follow-Up Work<a href="#14-follow-up-work" class="hash-link" aria-label="Direct link to 14. Follow-Up Work" title="Direct link to 14. Follow-Up Work" translate="no">​</a></h2>
+<ol>
+<li class="">Add PR template prompts for agent artifacts, validation commands, and doc updates.</li>
+<li class="">Add a lightweight issue template for agent workflow improvements.</li>
+<li class="">Add examples of successful <code>agent:shell-smoke</code> artifacts once the command exists.</li>
+<li class="">Consider a local observability design after shell MCP artifacts and diagnostics expose concrete gaps.</li>
+<li class="">Consider a dedicated quality score document that tracks doc freshness, package README coverage, boundary rule coverage, and oversized-file count.</li>
+</ol>
+<h2 class="anchor anchorTargetStickyNavbar_pQUT" id="15-references">15. References<a href="#15-references" class="hash-link" aria-label="Direct link to 15. References" title="Direct link to 15. References" translate="no">​</a></h2>
+<ul>
+<li class=""><code>AGENTS.md</code> - Repository-level agent instructions.</li>
+<li class=""><code>docs/index.md</code> - Documentation hub.</li>
+<li class=""><code>docs/role-index.md</code> - Current role-based entry points.</li>
+<li class=""><code>docs/design-document-template.md</code> - Canonical design document template.</li>
+<li class=""><code>docs/contributor-handbook.md</code> - Development and CI workflow guidance.</li>
+<li class=""><code>docs/testing-guidelines.md</code> - Test organization and deterministic-output expectations.</li>
+<li class=""><code>docs/shell-desktop-mcp.md</code> - Shell desktop MCP quickstart, tool surface, and workflows.</li>
+<li class=""><code>packages/docs/scripts/test-docs.mjs</code> - Existing docs invariant checks.</li>
+<li class=""><code>packages/docs/sidebars.ts</code> - Docusaurus sidebar index.</li>
+<li class=""><code>packages/config-eslint/index.js</code> - Shared ESLint configuration and current internals restriction.</li>
+<li class=""><code>package.json</code> - Workspace command surface.</li>
+<li class=""><code>.github/workflows/ci.yml</code> - CI quality gate.</li>
+<li class=""><code>lefthook.yml</code> - Local pre-commit quality gates.</li>
+<li class="">OpenAI, &quot;Harness engineering: leveraging Codex in an agent-first world&quot; (2026-02-11), <a href="https://openai.com/index/harness-engineering/" target="_blank" rel="noopener noreferrer" class="">https://openai.com/index/harness-engineering/</a></li>
+</ul>
+<h2 class="anchor anchorTargetStickyNavbar_pQUT" id="appendix-a---glossary">Appendix A - Glossary<a href="#appendix-a---glossary" class="hash-link" aria-label="Direct link to Appendix A - Glossary" title="Direct link to Appendix A - Glossary" translate="no">​</a></h2>
+<ul>
+<li class=""><strong>Agent map</strong>: A repository-local task router that tells agents which docs, packages, commands, and validations apply to a task.</li>
+<li class=""><strong>Artifact contract</strong>: The expected local file layout and payloads produced by an agent validation run.</li>
+<li class=""><strong>Boundary rule</strong>: A lint or structural-test invariant that limits dependency direction between packages or domains.</li>
+<li class=""><strong>Doc freshness check</strong>: A script or test that detects stale, orphaned, superseded, or unindexed documentation.</li>
+<li class=""><strong>Shell MCP validation loop</strong>: A local workflow that uses shell-desktop MCP tools to inspect runtime, renderer, logs, WebGPU state, and screenshots.</li>
+</ul>
+<h2 class="anchor anchorTargetStickyNavbar_pQUT" id="appendix-b---change-log">Appendix B - Change Log<a href="#appendix-b---change-log" class="hash-link" aria-label="Direct link to Appendix B - Change Log" title="Direct link to Appendix B - Change Log" translate="no">​</a></h2>
+<table><thead><tr><th>Date</th><th>Author</th><th>Change Summary</th></tr></thead><tbody><tr><td>2026-04-28</td><td>Codex</td><td>Initial draft for agent-first workflow infrastructure</td></tr></tbody></table></div><footer class="theme-doc-footer docusaurus-mt-lg"><div class="row margin-top--sm theme-doc-footer-edit-meta-row"><div class="col noPrint_zkN7"><a href="https://github.com/hansjm10/Idle-Game-Engine/edit/main/docs/../../docs/agent-first-workflow-design.md" target="_blank" rel="noopener noreferrer" class="theme-edit-this-page"><svg fill="currentColor" height="20" width="20" viewBox="0 0 40 40" class="iconEdit_URLU" aria-hidden="true"><g><path d="m34.5 11.7l-3 3.1-6.3-6.3 3.1-3q0.5-0.5 1.2-0.5t1.1 0.5l3.9 3.9q0.5 0.4 0.5 1.1t-0.5 1.2z m-29.5 17.1l18.4-18.5 6.3 6.3-18.4 18.4h-6.3v-6.2z"></path></g></svg>Edit this page</a></div><div class="col lastUpdated_DCA4"></div></div></footer></article><nav class="docusaurus-mt-lg pagination-nav" aria-label="Docs pages"><a class="pagination-nav__link pagination-nav__link--prev" href="/Idle-Game-Engine/project-board-workflow"><div class="pagination-nav__sublabel">Previous</div><div class="pagination-nav__label">Project Board Workflow</div></a></nav></div></div><div class="col col--3"><div class="tableOfContents_7BTH thin-scrollbar theme-doc-toc-desktop"><ul class="table-of-contents table-of-contents__left-border"><li><a href="#document-control" class="table-of-contents__link toc-highlight">Document Control</a></li><li><a href="#1-summary" class="table-of-contents__link toc-highlight">1. Summary</a></li><li><a href="#2-context--problem-statement" class="table-of-contents__link toc-highlight">2. Context &amp; Problem Statement</a></li><li><a href="#3-goals--non-goals" class="table-of-contents__link toc-highlight">3. Goals &amp; Non-Goals</a></li><li><a href="#4-stakeholders-agents--impacted-surfaces" class="table-of-contents__link toc-highlight">4. Stakeholders, Agents &amp; Impacted Surfaces</a></li><li><a href="#5-current-state" class="table-of-contents__link toc-highlight">5. Current State</a></li><li><a href="#6-proposed-solution" class="table-of-contents__link toc-highlight">6. Proposed Solution</a><ul><li><a href="#61-architecture-overview" class="table-of-contents__link toc-highlight">6.1 Architecture Overview</a></li><li><a href="#62-detailed-design" class="table-of-contents__link toc-highlight">6.2 Detailed Design</a></li><li><a href="#63-operational-considerations" class="table-of-contents__link toc-highlight">6.3 Operational Considerations</a></li></ul></li><li><a href="#7-work-breakdown--delivery-plan" class="table-of-contents__link toc-highlight">7. Work Breakdown &amp; Delivery Plan</a><ul><li><a href="#71-issue-map" class="table-of-contents__link toc-highlight">7.1 Issue Map</a></li><li><a href="#72-milestones" class="table-of-contents__link toc-highlight">7.2 Milestones</a></li><li><a href="#73-coordination-notes" class="table-of-contents__link toc-highlight">7.3 Coordination Notes</a></li></ul></li><li><a href="#8-agent-guidance--guardrails" class="table-of-contents__link toc-highlight">8. Agent Guidance &amp; Guardrails</a></li><li><a href="#9-alternatives-considered" class="table-of-contents__link toc-highlight">9. Alternatives Considered</a></li><li><a href="#10-testing--validation-plan" class="table-of-contents__link toc-highlight">10. Testing &amp; Validation Plan</a></li><li><a href="#11-risks--mitigations" class="table-of-contents__link toc-highlight">11. Risks &amp; Mitigations</a></li><li><a href="#12-rollout-plan" class="table-of-contents__link toc-highlight">12. Rollout Plan</a></li><li><a href="#13-open-questions" class="table-of-contents__link toc-highlight">13. Open Questions</a></li><li><a href="#14-follow-up-work" class="table-of-contents__link toc-highlight">14. Follow-Up Work</a></li><li><a href="#15-references" class="table-of-contents__link toc-highlight">15. References</a></li><li><a href="#appendix-a---glossary" class="table-of-contents__link toc-highlight">Appendix A - Glossary</a></li><li><a href="#appendix-b---change-log" class="table-of-contents__link toc-highlight">Appendix B - Change Log</a></li></ul></div></div></div></div></main></div></div></div><footer class="theme-layout-footer footer footer--dark"><div class="container container-fluid"><div class="row footer__links"><div class="theme-layout-footer-column col footer__col"><div class="footer__title">Docs</div><ul class="footer__items clean-list"><li class="footer__item"><a class="footer__link-item" href="/Idle-Game-Engine/">Overview</a></li><li class="footer__item"><a class="footer__link-item" href="/Idle-Game-Engine/contributor-handbook">Contributor Handbook</a></li></ul></div><div class="theme-layout-footer-column col footer__col"><div class="footer__title">More</div><ul class="footer__items clean-list"><li class="footer__item"><a href="https://github.com/hansjm10/Idle-Game-Engine/issues" target="_blank" rel="noopener noreferrer" class="footer__link-item">Issue Tracker<svg width="13.5" height="13.5" aria-label="(opens in new tab)" class="iconExternalLink_zgE_"><use href="#theme-svg-external-link"></use></svg></a></li><li class="footer__item"><a href="https://github.com/hansjm10/Idle-Game-Engine" target="_blank" rel="noopener noreferrer" class="footer__link-item">GitHub<svg width="13.5" height="13.5" aria-label="(opens in new tab)" class="iconExternalLink_zgE_"><use href="#theme-svg-external-link"></use></svg></a></li></ul></div></div><div class="footer__bottom text--center"><div class="footer__copyright">Copyright © 2026 Idle Engine.</div></div></div></footer></div>
+</body>
+</html>
