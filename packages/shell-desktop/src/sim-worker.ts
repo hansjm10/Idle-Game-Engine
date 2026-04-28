@@ -61,6 +61,14 @@ const emitRequestError = (requestId: string, error: string): void => {
   emit({ kind: 'requestError', requestId, error });
 };
 
+const buildRuntimeBacklogPatch = (
+  runtimeBacklog: ReturnType<SimRuntime['getRuntimeBacklog']> | undefined,
+): Readonly<{ runtimeBacklog: ReturnType<SimRuntime['getRuntimeBacklog']> }> | Record<string, never> =>
+  runtimeBacklog === undefined ? {} : { runtimeBacklog };
+
+const getRuntimeBacklog = (activeRuntime: SimRuntime): ReturnType<SimRuntime['getRuntimeBacklog']> | undefined =>
+  activeRuntime.getRuntimeBacklog?.();
+
 parentPort.on('message', (message: unknown) => {
   try {
     if (typeof message !== 'object' || message === null || Array.isArray(message)) {
@@ -96,6 +104,7 @@ parentPort.on('message', (message: unknown) => {
         stepSizeMs: runtime.getStepSizeMs(),
         nextStep: runtime.getNextStep(),
         capabilities: getRuntimeCapabilities(runtime),
+        ...buildRuntimeBacklogPatch(getRuntimeBacklog(runtime)),
       });
       return;
     }
@@ -110,9 +119,20 @@ parentPort.on('message', (message: unknown) => {
       const droppedFrames = result.droppedFrames ?? Math.max(0, result.frames.length - 1);
       const frame = result.frame ?? result.frames.at(-1);
       if (frame) {
-        emit({ kind: 'frame', frame, droppedFrames, nextStep: result.nextStep });
+        emit({
+          kind: 'frame',
+          frame,
+          droppedFrames,
+          nextStep: result.nextStep,
+          ...buildRuntimeBacklogPatch(result.runtimeBacklog),
+        });
       } else {
-        emit({ kind: 'frame', droppedFrames, nextStep: result.nextStep });
+        emit({
+          kind: 'frame',
+          droppedFrames,
+          nextStep: result.nextStep,
+          ...buildRuntimeBacklogPatch(result.runtimeBacklog),
+        });
       }
       return;
     }
@@ -181,6 +201,7 @@ parentPort.on('message', (message: unknown) => {
           nextStep: runtime.getNextStep(),
           capabilities: getRuntimeCapabilities(runtime),
           frame: runtime.renderCurrentFrame?.(),
+          ...buildRuntimeBacklogPatch(getRuntimeBacklog(runtime)),
         });
       } catch (error: unknown) {
         emitRequestError(

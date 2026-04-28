@@ -4,6 +4,7 @@ import {
   type Command,
   type GameSnapshot,
   type InputEventCommandPayload,
+  type RuntimeAccumulatorBacklogState,
   type SerializedGameState,
 } from '@idle-engine/core';
 import {
@@ -52,6 +53,7 @@ export type SimTickResult = Readonly<{
   frame?: RenderCommandBuffer;
   droppedFrames: number;
   nextStep: number;
+  runtimeBacklog: RuntimeAccumulatorBacklogState;
 }>;
 
 export type SimRuntime = Readonly<{
@@ -60,6 +62,7 @@ export type SimRuntime = Readonly<{
   renderCurrentFrame?: () => RenderCommandBuffer | undefined;
   getStepSizeMs: () => number;
   getNextStep: () => number;
+  getRuntimeBacklog: () => RuntimeAccumulatorBacklogState;
   hasCommandHandler: (type: string) => boolean;
   serialize?: () => SerializedSimRuntimeState;
   getCapabilities?: () => SimRuntimeCapabilities;
@@ -535,6 +538,7 @@ export function createSimRuntime(options: SimRuntimeOptions = {}): SimRuntime {
       frame: lastFrame,
       droppedFrames: droppedFrames + Math.max(0, frameQueue.length - 1),
       nextStep: runtime.getNextExecutableStep(),
+      runtimeBacklog: runtime.getAccumulatorBacklogState(),
     };
   };
 
@@ -568,6 +572,7 @@ export function createSimRuntime(options: SimRuntimeOptions = {}): SimRuntime {
     renderCurrentFrame,
     getStepSizeMs: () => runtime.getStepSizeMs(),
     getNextStep: () => runtime.getNextExecutableStep(),
+    getRuntimeBacklog: () => runtime.getAccumulatorBacklogState(),
     hasCommandHandler,
     serialize,
     getCapabilities,

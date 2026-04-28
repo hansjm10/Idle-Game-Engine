@@ -2889,6 +2889,248 @@ describe('shell-desktop main process entrypoint', () => {
     await flushMicrotasks();
   });
 
+  it('blocks command ingress while offline catch-up backlog is pending', async () => {
+    vi.useFakeTimers();
+    setMonotonicNowSequence([0, 16]);
+    process.env.IDLE_ENGINE_ENABLE_MCP_SERVER = '1';
+    await import('./main.js');
+    await flushMicrotasks();
+
+    const { input, sim } = getRegisteredMcpControllers();
+    const worker = Worker.instances[0];
+    const mainWindow = BrowserWindow.windows[0];
+    expect(worker).toBeDefined();
+    expect(mainWindow).toBeDefined();
+
+    worker?.emitMessage({
+      kind: 'ready',
+      stepSizeMs: 20,
+      nextStep: 7,
+      capabilities: {
+        canSerialize: true,
+        canHydrate: true,
+        supportsOfflineCatchup: true,
+        saveFileStem: 'sample-pack',
+        saveSchemaVersion: 1,
+      },
+      runtimeBacklog: { totalMs: 0, hostFrameMs: 0, creditedMs: 0 },
+    });
+    await flushMicrotasks();
+
+    const controlEventCall = ipcMain.on.mock.calls.find((call) => call[0] === IPC_CHANNELS.controlEvent);
+    const controlEventHandler = controlEventCall?.[1] as undefined | ((event: unknown, payload: unknown) => void);
+    const inputEventCall = ipcMain.on.mock.calls.find((call) => call[0] === IPC_CHANNELS.inputEvent);
+    const inputEventHandler = inputEventCall?.[1] as undefined | ((event: unknown, payload: unknown) => void);
+    expect(controlEventHandler).toBeTypeOf('function');
+    expect(inputEventHandler).toBeTypeOf('function');
+
+    worker?.postMessage.mockClear();
+    getMenuEntry(['Simulation', 'Offline Catch-up: 5 Minutes']).click?.();
+    await flushMicrotasks();
+
+    expect(sim.getStatus()).toMatchObject({
+      state: 'running',
+      nextStep: 7,
+      busy: 'offline-catchup',
+    });
+    expect(mainWindow?.webContents.send).toHaveBeenCalledWith(
+      IPC_CHANNELS.simStatus,
+      { kind: 'running', busy: 'offline-catchup' },
+    );
+    expect(getMenuEntry(['Simulation', 'Save']).enabled).toBe(false);
+    expect(getMenuEntry(['Simulation', 'Offline Catch-up: 5 Minutes']).enabled).toBe(false);
+
+    controlEventHandler?.({}, { intent: 'collect', phase: 'start' });
+    inputEventHandler?.({}, {
+      schemaVersion: 1,
+      event: {
+        kind: 'pointer',
+        intent: 'mouse-down',
+        phase: 'start',
+        x: 100,
+        y: 200,
+        button: 0,
+        buttons: 1,
+        pointerType: 'mouse',
+        modifiers: { alt: false, ctrl: false, meta: false, shift: false },
+      },
+    });
+
+    expect(() => input.sendControlEvent({ intent: 'collect', phase: 'start' }))
+      .toThrow('Simulation offline catch-up is in progress.');
+    await expect(sim.step(1)).rejects.toThrow('Simulation offline catch-up is in progress.');
+    expect(() => sim.pause()).toThrow('Simulation offline catch-up is in progress.');
+    expect(() => sim.enqueue([
+      {
+        type: RUNTIME_COMMAND_TYPES.COLLECT_RESOURCE,
+        payload: { resourceId: 'sample-pack.energy', amount: 1 },
+        priority: CommandPriority.PLAYER,
+        step: 7,
+        timestamp: 140,
+      },
+    ])).toThrow('Simulation offline catch-up is in progress.');
+
+    const enqueueCallsWhileBusy = worker?.postMessage.mock.calls.filter(
+      (call) => (call[0] as { kind?: string } | undefined)?.kind === 'enqueueCommands',
+    ) ?? [];
+    expect(enqueueCallsWhileBusy).toHaveLength(1);
+    expect((enqueueCallsWhileBusy[0]?.[0] as { commands?: Array<{ type?: string }> }).commands?.[0]?.type)
+      .toBe(RUNTIME_COMMAND_TYPES.OFFLINE_CATCHUP);
+
+    worker?.emitMessage({
+      kind: 'frame',
+      droppedFrames: 0,
+      nextStep: 9,
+      runtimeBacklog: { totalMs: 120, hostFrameMs: 0, creditedMs: 120 },
+    });
+    await flushMicrotasks();
+    expect(sim.getStatus()).toMatchObject({ busy: 'offline-catchup' });
+
+    worker?.emitMessage({
+      kind: 'frame',
+      droppedFrames: 0,
+      nextStep: 30,
+      runtimeBacklog: { totalMs: 0, hostFrameMs: 0, creditedMs: 0 },
+    });
+    await flushMicrotasks();
+
+    expect(sim.getStatus()).not.toHaveProperty('busy');
+    expect(mainWindow?.webContents.send).toHaveBeenCalledWith(
+      IPC_CHANNELS.simStatus,
+      { kind: 'running' },
+    );
+
+    sim.enqueue([
+      {
+        type: RUNTIME_COMMAND_TYPES.COLLECT_RESOURCE,
+        payload: { resourceId: 'sample-pack.energy', amount: 1 },
+        priority: CommandPriority.PLAYER,
+        step: 30,
+        timestamp: 600,
+      },
+    ]);
+    const enqueueCallsAfterDrain = worker?.postMessage.mock.calls.filter(
+      (call) => (call[0] as { kind?: string } | undefined)?.kind === 'enqueueCommands',
+    ) ?? [];
+    expect(enqueueCallsAfterDrain).toHaveLength(2);
+
+    const windowAllClosedCall = app.on.mock.calls.find((call) => call[0] === 'window-all-closed');
+    const windowAllClosedHandler = windowAllClosedCall?.[1] as undefined | (() => void);
+    windowAllClosedHandler?.();
+    await flushMicrotasks();
+  });
+
+  it('keeps command ingress blocked after loading a save with credited catch-up backlog', async () => {
+    vi.useFakeTimers();
+    setMonotonicNowSequence([0, 16]);
+    process.env.IDLE_ENGINE_ENABLE_MCP_SERVER = '1';
+
+    const savedEnvelope = {
+      schemaVersion: 1,
+      metadata: {
+        savedAt: '2026-04-25T23:30:00.000Z',
+        appVersion: '0.1.0',
+        runtime: {
+          saveFileStem: 'sample-pack',
+          saveSchemaVersion: 1,
+        },
+      },
+      state: {
+        schemaVersion: 2,
+        nextStep: 12,
+        gameState: {
+          runtime: {
+            step: 12,
+            accumulatorBacklogMs: 80,
+            hostFrameBacklogMs: 0,
+            creditedBacklogMs: 80,
+          },
+          commandQueue: {
+            schemaVersion: 1,
+            entries: [],
+          },
+        },
+      },
+    };
+    fsPromises.readFile.mockResolvedValueOnce(`${JSON.stringify(savedEnvelope)}\n`);
+
+    await import('./main.js');
+    await flushMicrotasks();
+
+    const { sim } = getRegisteredMcpControllers();
+    const worker = Worker.instances[0];
+    expect(worker).toBeDefined();
+
+    worker?.emitMessage({
+      kind: 'ready',
+      stepSizeMs: 20,
+      nextStep: 4,
+      capabilities: {
+        canSerialize: true,
+        canHydrate: true,
+        supportsOfflineCatchup: true,
+        saveFileStem: 'sample-pack',
+        saveSchemaVersion: 1,
+      },
+      runtimeBacklog: { totalMs: 0, hostFrameMs: 0, creditedMs: 0 },
+    });
+    await flushMicrotasks();
+
+    worker?.postMessage.mockClear();
+    getMenuEntry(['Simulation', 'Load']).click?.();
+    await flushMicrotasks();
+
+    const hydrateCall = worker?.postMessage.mock.calls.find(
+      (call) => (call[0] as { kind?: string } | undefined)?.kind === 'hydrate',
+    );
+    expect(hydrateCall).toBeDefined();
+
+    worker?.emitMessage({
+      kind: 'hydrated',
+      requestId: (hydrateCall?.[0] as { requestId: string }).requestId,
+      nextStep: 12,
+      capabilities: {
+        canSerialize: true,
+        canHydrate: true,
+        supportsOfflineCatchup: true,
+        saveFileStem: 'sample-pack',
+        saveSchemaVersion: 1,
+      },
+      runtimeBacklog: { totalMs: 80, hostFrameMs: 0, creditedMs: 80 },
+    });
+    await flushMicrotasks(20);
+
+    expect(sim.getStatus()).toMatchObject({
+      state: 'running',
+      nextStep: 12,
+      busy: 'offline-catchup',
+    });
+    expect(() => sim.enqueue([
+      {
+        type: RUNTIME_COMMAND_TYPES.COLLECT_RESOURCE,
+        payload: { resourceId: 'sample-pack.energy', amount: 1 },
+        priority: CommandPriority.PLAYER,
+        step: 12,
+        timestamp: 240,
+      },
+    ])).toThrow('Simulation offline catch-up is in progress.');
+
+    worker?.emitMessage({
+      kind: 'frame',
+      droppedFrames: 0,
+      nextStep: 16,
+      runtimeBacklog: { totalMs: 0, hostFrameMs: 0, creditedMs: 0 },
+    });
+    await flushMicrotasks();
+
+    expect(sim.getStatus()).not.toHaveProperty('busy');
+
+    const windowAllClosedCall = app.on.mock.calls.find((call) => call[0] === 'window-all-closed');
+    const windowAllClosedHandler = windowAllClosedCall?.[1] as undefined | (() => void);
+    windowAllClosedHandler?.();
+    await flushMicrotasks();
+  });
+
   it('logs startup failures without crashing the process', async () => {
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
     app.whenReady.mockRejectedValueOnce(new Error('startup failed'));

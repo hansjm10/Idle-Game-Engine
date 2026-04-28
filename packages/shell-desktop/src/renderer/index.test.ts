@@ -227,6 +227,9 @@ describe('shell-desktop renderer entrypoint', () => {
     simStatusListener?.({ kind: 'running' });
     expect(outputElement.textContent).toContain('Sim running.');
 
+    simStatusListener?.({ kind: 'running', busy: 'offline-catchup' });
+    expect(outputElement.textContent).toContain('Sim applying offline catch-up.');
+
     simStatusListener?.({ kind: 'crashed', reason: 'boom' });
     expect(outputElement.textContent).not.toContain('exitCode=');
 

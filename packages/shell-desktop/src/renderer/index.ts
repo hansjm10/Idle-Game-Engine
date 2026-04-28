@@ -373,7 +373,9 @@ async function run(): Promise<void> {
         simStatus = 'Sim starting…';
         rendererState = 'starting';
       } else if (status.kind === 'running') {
-        simStatus = 'Sim running.';
+        simStatus = status.busy === 'offline-catchup'
+          ? 'Sim applying offline catch-up.'
+          : 'Sim running.';
         if (rendererState === 'starting') {
           rendererState = 'running';
         }

@@ -87,9 +87,11 @@ export type ShellRendererDiagnosticsPayload = Readonly<{
 
 export type ShellFramePayload = RenderCommandBuffer;
 
+export type ShellSimBusyStatus = 'offline-catchup';
+
 export type ShellSimStatusPayload =
   | Readonly<{ kind: 'starting' }>
-  | Readonly<{ kind: 'running' }>
+  | Readonly<{ kind: 'running'; busy?: ShellSimBusyStatus }>
   | Readonly<{
       kind: 'stopped' | 'crashed';
       reason: string;

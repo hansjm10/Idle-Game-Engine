@@ -10,6 +10,7 @@ import {
   type Command,
   type InputEvent,
   type InputEventCommandPayload,
+  type RuntimeAccumulatorBacklogState,
   type RuntimeCommand,
   type RuntimeCommandPayloads,
 } from '@idle-engine/core';
@@ -20,6 +21,7 @@ import {
   type ShellInputEventEnvelope,
   type ShellRendererDiagnosticsPayload,
   type ShellRendererLogPayload,
+  type ShellSimBusyStatus,
   type ShellSimStatusPayload,
 } from './ipc.js';
 import { monotonicNowMs } from './monotonic-time.js';
@@ -649,6 +651,7 @@ type SimWorkerController = Readonly<{
   sendControlEvent: (event: ShellControlEvent) => void;
   sendInputEvent: (envelope: ShellInputEventEnvelope) => void;
   enqueueCommands: (commands: readonly Command[]) => void;
+  enqueueOfflineCatchupCommand: (command: Command<OfflineCatchupPayload>) => void;
   serializeState: () => Promise<unknown>;
   hydrateState: (state: unknown) => Promise<void>;
   runWhileCommandIngressFrozen: <T>(
@@ -656,6 +659,7 @@ type SimWorkerController = Readonly<{
     options?: CommandIngressFreezeOptions,
   ) => Promise<T>;
   isCommandIngressFrozen: () => boolean;
+  isOfflineCatchupBusy: () => boolean;
   pause: () => void;
   resume: () => void;
   step: (steps: number) => Promise<SimMcpStatus>;
@@ -666,6 +670,7 @@ type SimWorkerController = Readonly<{
 
 type SimWorkerControllerOptions = Readonly<{
   onCapabilitiesChanged?: (capabilities: SimRuntimeCapabilities) => void;
+  onBusyChanged?: () => void;
 }>;
 
 type CommandIngressFreezeOptions = Readonly<{
@@ -680,7 +685,22 @@ let mcpServer: ShellDesktopMcpServer | undefined;
 let simRuntimeCapabilities: SimRuntimeCapabilities = DEFAULT_SIM_RUNTIME_CAPABILITIES;
 let simToolingBusy = false;
 const SIM_TOOLING_BUSY_ERROR = 'Simulation save/load is in progress.';
+const SIM_OFFLINE_CATCHUP_BUSY_ERROR = 'Simulation offline catch-up is in progress.';
 const SIM_STEP_INVALIDATED_BY_LOAD_ERROR = 'Simulation step was interrupted by state load.';
+
+function getSimControllerBusyError(controller: SimWorkerController): Error | undefined {
+  if (controller.isCommandIngressFrozen()) {
+    return new Error(SIM_TOOLING_BUSY_ERROR);
+  }
+  if (controller.isOfflineCatchupBusy()) {
+    return new Error(SIM_OFFLINE_CATCHUP_BUSY_ERROR);
+  }
+  return undefined;
+}
+
+function isSimToolingActionBusy(): boolean {
+  return simToolingBusy || (simWorkerController?.isOfflineCatchupBusy() ?? false);
+}
 
 function createSimWorkerController(
   mainWindow: BrowserWindow,
@@ -715,6 +735,9 @@ function createSimWorkerController(
   >();
   let requestSequence = 0;
   let commandIngressFreezeDepth = 0;
+  let offlineCatchupBarrierStep: number | undefined;
+  let offlineCatchupCreditedBacklogMs = 0;
+  let restorePausedAfterOfflineCatchup = false;
 
   const tickIntervalMs = 16;
   const MAX_TICK_DELTA_MS = 250;
@@ -743,6 +766,37 @@ function createSimWorkerController(
   };
 
   const isCommandIngressFrozen = (): boolean => commandIngressFreezeDepth > 0;
+
+  const hasCreditedOfflineCatchupBacklog = (): boolean =>
+    offlineCatchupCreditedBacklogMs >= stepSizeMs;
+
+  const isOfflineCatchupBusy = (): boolean =>
+    offlineCatchupBarrierStep !== undefined || hasCreditedOfflineCatchupBacklog();
+
+  const isCommandIngressBlocked = (): boolean =>
+    isCommandIngressFrozen() || isOfflineCatchupBusy();
+
+  const getCommandIngressBlockedError = (): Error | undefined => {
+    if (isCommandIngressFrozen()) {
+      return new Error(SIM_TOOLING_BUSY_ERROR);
+    }
+    if (isOfflineCatchupBusy()) {
+      return new Error(SIM_OFFLINE_CATCHUP_BUSY_ERROR);
+    }
+    return undefined;
+  };
+
+  const getBusyStatus = (): ShellSimBusyStatus | undefined =>
+    isOfflineCatchupBusy() ? 'offline-catchup' : undefined;
+
+  const buildBusyStatusPatch = (): Readonly<{ busy: ShellSimBusyStatus }> | Record<string, never> => {
+    const busy = getBusyStatus();
+    return busy === undefined ? {} : { busy };
+  };
+
+  const notifyBusyChanged = (): void => {
+    options.onBusyChanged?.();
+  };
 
   const publishFrame = (frame: Extract<SimWorkerOutboundMessage, { kind: 'frame' }>['frame']): void => {
     if (!frame) {
@@ -776,7 +830,12 @@ function createSimWorkerController(
       return { state: 'starting', stepSizeMs, nextStep };
     }
 
-    return { state: isPaused ? 'paused' : 'running', stepSizeMs, nextStep };
+    return {
+      state: isPaused ? 'paused' : 'running',
+      stepSizeMs,
+      nextStep,
+      ...buildBusyStatusPatch(),
+    };
   };
 
   const rejectPendingStepCompletions = (error: Error): void => {
@@ -827,6 +886,13 @@ function createSimWorkerController(
       // eslint-disable-next-line no-console
       console.error(error);
     }
+  };
+
+  const sendRunningStatus = (): void => {
+    sendSimStatus({
+      kind: 'running',
+      ...buildBusyStatusPatch(),
+    });
   };
 
   const handleWorkerFailure = (status: ShellSimFailureStatusPayload, details?: unknown): void => {
@@ -938,8 +1004,13 @@ function createSimWorkerController(
       return await operation();
     } finally {
       commandIngressFreezeDepth = Math.max(0, commandIngressFreezeDepth - 1);
-      isPaused = wasPaused;
-      if (!wasPaused && !isCommandIngressFrozen()) {
+      if (isOfflineCatchupBusy()) {
+        restorePausedAfterOfflineCatchup = wasPaused;
+        isPaused = false;
+      } else {
+        isPaused = wasPaused;
+      }
+      if (!isPaused && !isCommandIngressFrozen()) {
         startTickLoop();
       }
     }
@@ -962,6 +1033,72 @@ function createSimWorkerController(
     }, tickIntervalMs);
 
     tickTimer.unref?.();
+  };
+
+  const notifyOfflineCatchupBusyChanged = (wasBusy: boolean): void => {
+    if (wasBusy === isOfflineCatchupBusy()) {
+      return;
+    }
+
+    notifyBusyChanged();
+    if (isReady && !hasFailed && !isDisposing) {
+      sendRunningStatus();
+    }
+  };
+
+  const normalizeCreditedBacklogMs = (
+    runtimeBacklog: RuntimeAccumulatorBacklogState | undefined,
+  ): number => {
+    const creditedMs = runtimeBacklog?.creditedMs;
+    return typeof creditedMs === 'number' && Number.isFinite(creditedMs) && creditedMs >= 0
+      ? creditedMs
+      : 0;
+  };
+
+  const updateOfflineCatchupBusyState = (
+    runtimeBacklog: RuntimeAccumulatorBacklogState | undefined,
+  ): void => {
+    const wasBusy = isOfflineCatchupBusy();
+    offlineCatchupCreditedBacklogMs = normalizeCreditedBacklogMs(runtimeBacklog);
+
+    if (
+      offlineCatchupBarrierStep !== undefined &&
+      nextStep > offlineCatchupBarrierStep &&
+      !hasCreditedOfflineCatchupBacklog()
+    ) {
+      offlineCatchupBarrierStep = undefined;
+    }
+
+    if (isOfflineCatchupBusy()) {
+      if (!isCommandIngressFrozen()) {
+        if (isPaused) {
+          restorePausedAfterOfflineCatchup = true;
+          isPaused = false;
+        }
+        startTickLoop();
+      }
+    } else if (restorePausedAfterOfflineCatchup) {
+      restorePausedAfterOfflineCatchup = false;
+      isPaused = true;
+      stopTickLoop();
+    }
+
+    notifyOfflineCatchupBusyChanged(wasBusy);
+  };
+
+  const beginOfflineCatchupBarrier = (barrierStep: number): void => {
+    const wasBusy = isOfflineCatchupBusy();
+    offlineCatchupBarrierStep = Math.max(
+      offlineCatchupBarrierStep ?? barrierStep,
+      barrierStep,
+    );
+
+    if (isPaused) {
+      restorePausedAfterOfflineCatchup = true;
+      isPaused = false;
+    }
+    startTickLoop();
+    notifyOfflineCatchupBusyChanged(wasBusy);
   };
 
   safePostMessage({ kind: 'init', stepSizeMs, maxStepsPerFrame });
@@ -987,6 +1124,7 @@ function createSimWorkerController(
       nextStep = message.nextStep;
       isReady = true;
       runtimeCapabilities = message.capabilities ?? DEFAULT_SIM_RUNTIME_CAPABILITIES;
+      updateOfflineCatchupBusyState(message.runtimeBacklog);
       notifyCapabilitiesChanged();
       pushDiagnosticsLog({
         source: 'main',
@@ -997,13 +1135,14 @@ function createSimWorkerController(
       });
       resolvePendingStepCompletions();
       // Emit sim-status 'running' when the worker is ready
-      sendSimStatus({ kind: 'running' });
+      sendRunningStatus();
       startTickLoop();
       return;
     }
 
     if (message.kind === 'frame') {
       nextStep = message.nextStep;
+      updateOfflineCatchupBusyState(message.runtimeBacklog);
       resolvePendingStepCompletions();
       publishFrame(message.frame);
       return;
@@ -1018,6 +1157,7 @@ function createSimWorkerController(
       rejectPendingStepCompletions(new Error(SIM_STEP_INVALIDATED_BY_LOAD_ERROR));
       nextStep = message.nextStep;
       runtimeCapabilities = message.capabilities ?? runtimeCapabilities;
+      updateOfflineCatchupBusyState(message.runtimeBacklog);
       notifyCapabilitiesChanged();
       publishFrame(message.frame);
       takePendingRequest(message.requestId)?.resolve(undefined);
@@ -1065,7 +1205,7 @@ function createSimWorkerController(
 
   const sendControlEvent = (event: ShellControlEvent): void => {
     // Drop control events until worker is ready (design workflow rule)
-    if (!isReady || isCommandIngressFrozen()) {
+    if (!isReady || isCommandIngressBlocked()) {
       return;
     }
 
@@ -1106,7 +1246,7 @@ function createSimWorkerController(
    */
   const sendInputEvent = (envelope: ShellInputEventEnvelope): void => {
     // Drop input events until worker is ready (design workflow rule)
-    if (!isReady || isCommandIngressFrozen()) {
+    if (!isReady || isCommandIngressBlocked()) {
       return;
     }
 
@@ -1125,11 +1265,16 @@ function createSimWorkerController(
   };
 
   const enqueueCommands = (commands: readonly Command[]): void => {
-    if (isCommandIngressFrozen()) {
+    if (isCommandIngressBlocked()) {
       return;
     }
 
     safePostMessage({ kind: 'enqueueCommands', commands });
+  };
+
+  const enqueueOfflineCatchupCommand = (command: Command<OfflineCatchupPayload>): void => {
+    beginOfflineCatchupBarrier(command.step);
+    safePostMessage({ kind: 'enqueueCommands', commands: [command] });
   };
 
   const serializeState = async (): Promise<unknown> => {
@@ -1153,8 +1298,9 @@ function createSimWorkerController(
       return;
     }
 
-    if (isCommandIngressFrozen()) {
-      throw new Error(SIM_TOOLING_BUSY_ERROR);
+    const blockedError = getCommandIngressBlockedError();
+    if (blockedError) {
+      throw blockedError;
     }
 
     isPaused = true;
@@ -1166,8 +1312,9 @@ function createSimWorkerController(
       return;
     }
 
-    if (isCommandIngressFrozen()) {
-      throw new Error(SIM_TOOLING_BUSY_ERROR);
+    const blockedError = getCommandIngressBlockedError();
+    if (blockedError) {
+      throw blockedError;
     }
 
     isPaused = false;
@@ -1187,8 +1334,9 @@ function createSimWorkerController(
       throw new Error('Sim is not ready to step yet.');
     }
 
-    if (isCommandIngressFrozen()) {
-      throw new Error(SIM_TOOLING_BUSY_ERROR);
+    const blockedError = getCommandIngressBlockedError();
+    if (blockedError) {
+      throw blockedError;
     }
 
     isPaused = true;
@@ -1234,10 +1382,12 @@ function createSimWorkerController(
     sendControlEvent,
     sendInputEvent,
     enqueueCommands,
+    enqueueOfflineCatchupCommand,
     serializeState,
     hydrateState,
     runWhileCommandIngressFrozen,
     isCommandIngressFrozen,
+    isOfflineCatchupBusy,
     pause,
     resume,
     step,
@@ -1269,6 +1419,7 @@ const simMcpController: SimMcpController = {
 
     simWorkerController = createSimWorkerController(mainWindow, {
       onCapabilitiesChanged: updateSimRuntimeCapabilities,
+      onBusyChanged: installAppMenu,
     });
     pushDiagnosticsLog({
       source: 'main',
@@ -1309,8 +1460,9 @@ const simMcpController: SimMcpController = {
       throw new Error('Simulation is not running.');
     }
 
-    if (simWorkerController.isCommandIngressFrozen()) {
-      throw new Error(SIM_TOOLING_BUSY_ERROR);
+    const blockedError = getSimControllerBusyError(simWorkerController);
+    if (blockedError) {
+      throw blockedError;
     }
 
     simWorkerController.resume();
@@ -1328,8 +1480,9 @@ const simMcpController: SimMcpController = {
       throw new Error('Simulation is not running.');
     }
 
-    if (controller.isCommandIngressFrozen()) {
-      throw new Error(SIM_TOOLING_BUSY_ERROR);
+    const blockedError = getSimControllerBusyError(controller);
+    if (blockedError) {
+      throw blockedError;
     }
 
     return controller.step(steps);
@@ -1345,8 +1498,9 @@ const simMcpController: SimMcpController = {
       throw new Error(`Simulation is ${status.state}; cannot enqueue commands.`);
     }
 
-    if (controller.isCommandIngressFrozen()) {
-      throw new Error(SIM_TOOLING_BUSY_ERROR);
+    const blockedError = getSimControllerBusyError(controller);
+    if (blockedError) {
+      throw blockedError;
     }
 
     controller.enqueueCommands(commands);
@@ -1432,18 +1586,19 @@ function enqueueOfflineCatchup(elapsedMs: number): void {
   if (!controller || !capabilities.supportsOfflineCatchup) {
     throw new Error('Simulation runtime does not support offline catch-up.');
   }
+  if (controller.isOfflineCatchupBusy()) {
+    throw new Error(SIM_OFFLINE_CATCHUP_BUSY_ERROR);
+  }
 
   const status = controller.getStatus();
   const payload: OfflineCatchupPayload = { elapsedMs };
-  controller.enqueueCommands([
-    {
-      type: RUNTIME_COMMAND_TYPES.OFFLINE_CATCHUP,
-      priority: CommandPriority.SYSTEM,
-      payload,
-      step: status.nextStep,
-      timestamp: status.nextStep * status.stepSizeMs,
-    },
-  ]);
+  controller.enqueueOfflineCatchupCommand({
+    type: RUNTIME_COMMAND_TYPES.OFFLINE_CATCHUP,
+    priority: CommandPriority.SYSTEM,
+    payload,
+    step: status.nextStep,
+    timestamp: status.nextStep * status.stepSizeMs,
+  });
 
   pushDiagnosticsLog({
     source: 'main',
@@ -1458,7 +1613,7 @@ function enqueueOfflineCatchup(elapsedMs: number): void {
 }
 
 function runSimToolingAction(label: string, action: () => Promise<void> | void): void {
-  if (simToolingBusy) {
+  if (isSimToolingActionBusy()) {
     return;
   }
 
@@ -1540,8 +1695,9 @@ const inputMcpController: InputMcpController = {
       throw new Error('Simulation is not running.');
     }
 
-    if (simWorkerController.isCommandIngressFrozen()) {
-      throw new Error(SIM_TOOLING_BUSY_ERROR);
+    const blockedError = getSimControllerBusyError(simWorkerController);
+    if (blockedError) {
+      throw blockedError;
     }
 
     simWorkerController.sendControlEvent(event);
@@ -1661,17 +1817,18 @@ function registerIpcHandlers(): void {
 }
 
 function installAppMenu(): void {
+  const isBusy = isSimToolingActionBusy();
   const hasSaveSupport =
     simWorkerController !== undefined &&
-    !simToolingBusy &&
+    !isBusy &&
     simRuntimeCapabilities.canSerialize;
   const hasLoadSupport =
     simWorkerController !== undefined &&
-    !simToolingBusy &&
+    !isBusy &&
     simRuntimeCapabilities.canHydrate;
   const hasOfflineCatchupSupport =
     simWorkerController !== undefined &&
-    !simToolingBusy &&
+    !isBusy &&
     simRuntimeCapabilities.supportsOfflineCatchup;
 
   const simulationSubmenu: MenuItemConstructorOptions[] = [
@@ -1769,6 +1926,7 @@ async function createMainWindow(): Promise<BrowserWindow> {
     simWorkerController.dispose();
     simWorkerController = createSimWorkerController(mainWindow, {
       onCapabilitiesChanged: updateSimRuntimeCapabilities,
+      onBusyChanged: installAppMenu,
     });
   });
 
@@ -1804,6 +1962,7 @@ app
     mainWindow = await createMainWindow();
     simWorkerController = createSimWorkerController(mainWindow, {
       onCapabilitiesChanged: updateSimRuntimeCapabilities,
+      onBusyChanged: installAppMenu,
     });
   })
   .catch((error: unknown) => {
@@ -1845,6 +2004,7 @@ app.on('activate', () => {
         mainWindow = createdWindow;
         simWorkerController = createSimWorkerController(createdWindow, {
           onCapabilitiesChanged: updateSimRuntimeCapabilities,
+          onBusyChanged: installAppMenu,
         });
       })
       .catch((error: unknown) => {

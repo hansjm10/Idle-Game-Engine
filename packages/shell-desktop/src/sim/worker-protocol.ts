@@ -1,4 +1,4 @@
-import type { Command } from '@idle-engine/core';
+import type { Command, RuntimeAccumulatorBacklogState } from '@idle-engine/core';
 import type { RenderCommandBuffer } from '@idle-engine/renderer-contract';
 
 export type SimRuntimeCapabilities = Readonly<{
@@ -69,6 +69,7 @@ export type SimWorkerReadyMessage = Readonly<{
   stepSizeMs: number;
   nextStep: number;
   capabilities?: SimRuntimeCapabilities;
+  runtimeBacklog?: RuntimeAccumulatorBacklogState;
 }>;
 
 export type SimWorkerFrameMessage = Readonly<{
@@ -76,6 +77,7 @@ export type SimWorkerFrameMessage = Readonly<{
   frame?: RenderCommandBuffer;
   droppedFrames: number;
   nextStep: number;
+  runtimeBacklog?: RuntimeAccumulatorBacklogState;
 }>;
 
 export type SimWorkerErrorMessage = Readonly<{
@@ -95,6 +97,7 @@ export type SimWorkerHydratedMessage = Readonly<{
   nextStep: number;
   capabilities?: SimRuntimeCapabilities;
   frame?: RenderCommandBuffer;
+  runtimeBacklog?: RuntimeAccumulatorBacklogState;
 }>;
 
 export type SimWorkerRequestErrorMessage = Readonly<{

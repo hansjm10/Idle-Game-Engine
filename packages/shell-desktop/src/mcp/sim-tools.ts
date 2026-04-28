@@ -4,11 +4,13 @@ import type { AnySchema, ZodRawShapeCompat } from '@modelcontextprotocol/sdk/ser
 import * as z from 'zod/v4';
 
 export type SimMcpStatusState = 'starting' | 'running' | 'paused' | 'stopped' | 'crashed';
+export type SimMcpBusyStatus = 'offline-catchup';
 
 export type SimMcpStatus = Readonly<{
   state: SimMcpStatusState;
   stepSizeMs: number;
   nextStep: number;
+  busy?: SimMcpBusyStatus;
   reason?: string;
   exitCode?: number;
 }>;
