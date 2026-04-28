@@ -3163,6 +3163,82 @@ describe('shell-desktop main process entrypoint', () => {
     await flushMicrotasks();
   });
 
+  it('keeps paused offline catch-up to one in-flight tick before restoring pause', async () => {
+    vi.useFakeTimers();
+    setMonotonicNowSequence([0, 100, 116, 132, 148]);
+    process.env.IDLE_ENGINE_ENABLE_MCP_SERVER = '1';
+    await import('./main.js');
+    await flushMicrotasks();
+
+    const { sim } = getRegisteredMcpControllers();
+    const worker = Worker.instances[0];
+    expect(worker).toBeDefined();
+
+    worker?.emitMessage({
+      kind: 'ready',
+      stepSizeMs: 20,
+      nextStep: 7,
+      capabilities: {
+        canSerialize: true,
+        canHydrate: true,
+        supportsOfflineCatchup: true,
+        saveFileStem: 'sample-pack',
+        saveSchemaVersion: 1,
+      },
+      runtimeBacklog: { totalMs: 0, hostFrameMs: 0, creditedMs: 0 },
+    });
+    await flushMicrotasks();
+
+    sim.pause();
+    expect(sim.getStatus()).toMatchObject({
+      state: 'paused',
+      nextStep: 7,
+    });
+
+    worker?.postMessage.mockClear();
+    getMenuEntry(['Simulation', 'Offline Catch-up: 5 Minutes']).click?.();
+    await flushMicrotasks();
+
+    expect(sim.getStatus()).toMatchObject({
+      state: 'running',
+      nextStep: 7,
+      busy: 'offline-catchup',
+    });
+
+    await vi.advanceTimersByTimeAsync(48);
+
+    const tickCallsBeforeFrame = worker?.postMessage.mock.calls.filter(
+      (call) => (call[0] as { kind?: string } | undefined)?.kind === 'tick',
+    ) ?? [];
+    expect(tickCallsBeforeFrame).toHaveLength(1);
+    expect(tickCallsBeforeFrame[0]?.[0]).toMatchObject({ deltaMs: 16 });
+
+    worker?.emitMessage({
+      kind: 'frame',
+      droppedFrames: 0,
+      nextStep: 8,
+      runtimeBacklog: { totalMs: 0, hostFrameMs: 0, creditedMs: 0 },
+    });
+    await flushMicrotasks();
+
+    expect(sim.getStatus()).toMatchObject({
+      state: 'paused',
+      nextStep: 8,
+    });
+    expect(sim.getStatus()).not.toHaveProperty('busy');
+
+    await vi.advanceTimersByTimeAsync(64);
+    const tickCallsAfterPauseRestore = worker?.postMessage.mock.calls.filter(
+      (call) => (call[0] as { kind?: string } | undefined)?.kind === 'tick',
+    ) ?? [];
+    expect(tickCallsAfterPauseRestore).toHaveLength(1);
+
+    const windowAllClosedCall = app.on.mock.calls.find((call) => call[0] === 'window-all-closed');
+    const windowAllClosedHandler = windowAllClosedCall?.[1] as undefined | (() => void);
+    windowAllClosedHandler?.();
+    await flushMicrotasks();
+  });
+
   it('keeps command ingress blocked after loading a save with credited catch-up backlog', async () => {
     vi.useFakeTimers();
     setMonotonicNowSequence([0, 16]);

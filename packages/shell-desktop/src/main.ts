@@ -775,6 +775,9 @@ function createSimWorkerController(
   const isOfflineCatchupBusy = (): boolean =>
     offlineCatchupBarrierStep !== undefined || hasCreditedOfflineCatchupBacklog();
 
+  const shouldDeferPausedOfflineCatchupTick = (): boolean =>
+    restorePausedAfterOfflineCatchup && isOfflineCatchupBusy() && inFlightTickMessages > 0;
+
   const isCommandIngressBlocked = (): boolean =>
     isCommandIngressFrozen() || isOfflineCatchupBusy();
 
@@ -1050,6 +1053,9 @@ function createSimWorkerController(
       const nowMs = monotonicNowMs();
       const rawDeltaMs = nowMs - lastTickMs;
       lastTickMs = nowMs;
+      if (shouldDeferPausedOfflineCatchupTick()) {
+        return;
+      }
       const deltaMs = clampTickDeltaMs(rawDeltaMs);
       postTick(deltaMs);
     }, tickIntervalMs);
