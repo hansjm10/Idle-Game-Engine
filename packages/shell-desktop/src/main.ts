@@ -686,6 +686,8 @@ let simRuntimeCapabilities: SimRuntimeCapabilities = DEFAULT_SIM_RUNTIME_CAPABIL
 let simToolingBusy = false;
 const SIM_TOOLING_BUSY_ERROR = 'Simulation save/load is in progress.';
 const SIM_OFFLINE_CATCHUP_BUSY_ERROR = 'Simulation offline catch-up is in progress.';
+const SIM_OFFLINE_CATCHUP_MIXED_BATCH_ERROR =
+  'Offline catch-up commands must be enqueued separately from other commands.';
 const SIM_STEP_INVALIDATED_BY_LOAD_ERROR = 'Simulation step was interrupted by state load.';
 
 function getSimControllerBusyError(controller: SimWorkerController): Error | undefined {
@@ -1300,31 +1302,37 @@ function createSimWorkerController(
     postEnqueueCommands([inputEventCommand]);
   };
 
-  const findOfflineCatchupBarrierStep = (commands: readonly Command[]): number | undefined => {
-    if (!runtimeCapabilities.supportsOfflineCatchup) {
-      return undefined;
-    }
-
+  const inspectOfflineCatchupBatch = (
+    commands: readonly Command[],
+  ): Readonly<{ barrierStep?: number; hasMixedCommandTypes: boolean }> => {
     let barrierStep: number | undefined;
+    let hasOfflineCatchupCommand = false;
+    let hasOtherCommand = false;
     for (const command of commands) {
-      if (
-        command.type !== RUNTIME_COMMAND_TYPES.OFFLINE_CATCHUP ||
-        typeof command.step !== 'number' ||
-        !Number.isFinite(command.step)
-      ) {
+      if (runtimeCapabilities.supportsOfflineCatchup && command.type === RUNTIME_COMMAND_TYPES.OFFLINE_CATCHUP) {
+        hasOfflineCatchupCommand = true;
+        if (typeof command.step === 'number' && Number.isFinite(command.step)) {
+          barrierStep = Math.max(barrierStep ?? command.step, command.step);
+        }
         continue;
       }
 
-      barrierStep = Math.max(barrierStep ?? command.step, command.step);
+      hasOtherCommand = true;
     }
 
-    return barrierStep;
+    return {
+      barrierStep,
+      hasMixedCommandTypes: hasOfflineCatchupCommand && hasOtherCommand,
+    };
   };
 
   const postEnqueueCommands = (commands: readonly Command[]): void => {
-    const barrierStep = findOfflineCatchupBarrierStep(commands);
-    if (barrierStep !== undefined) {
-      beginOfflineCatchupBarrier(barrierStep);
+    const offlineCatchupBatch = inspectOfflineCatchupBatch(commands);
+    if (offlineCatchupBatch.hasMixedCommandTypes) {
+      throw new Error(SIM_OFFLINE_CATCHUP_MIXED_BATCH_ERROR);
+    }
+    if (offlineCatchupBatch.barrierStep !== undefined) {
+      beginOfflineCatchupBarrier(offlineCatchupBatch.barrierStep);
     }
     safePostMessage({ kind: 'enqueueCommands', commands });
   };

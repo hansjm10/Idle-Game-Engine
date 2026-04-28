@@ -3086,6 +3086,63 @@ describe('shell-desktop main process entrypoint', () => {
     await flushMicrotasks();
   });
 
+  it('rejects mixed offline catch-up command batches before posting to the worker', async () => {
+    vi.useFakeTimers();
+    setMonotonicNowSequence([0]);
+    process.env.IDLE_ENGINE_ENABLE_MCP_SERVER = '1';
+    await import('./main.js');
+    await flushMicrotasks();
+
+    const { sim } = getRegisteredMcpControllers();
+    const worker = Worker.instances[0];
+    expect(worker).toBeDefined();
+
+    worker?.emitMessage({
+      kind: 'ready',
+      stepSizeMs: 20,
+      nextStep: 7,
+      capabilities: {
+        canSerialize: true,
+        canHydrate: true,
+        supportsOfflineCatchup: true,
+        saveFileStem: 'sample-pack',
+        saveSchemaVersion: 1,
+      },
+      runtimeBacklog: { totalMs: 0, hostFrameMs: 0, creditedMs: 0 },
+    });
+    await flushMicrotasks();
+
+    worker?.postMessage.mockClear();
+
+    expect(() => sim.enqueue([
+      {
+        type: RUNTIME_COMMAND_TYPES.OFFLINE_CATCHUP,
+        payload: { elapsedMs: 5 * 60 * 1000 },
+        priority: CommandPriority.SYSTEM,
+        step: 7,
+        timestamp: 140,
+      },
+      {
+        type: RUNTIME_COMMAND_TYPES.COLLECT_RESOURCE,
+        payload: { resourceId: 'sample-pack.energy', amount: 1 },
+        priority: CommandPriority.PLAYER,
+        step: 7,
+        timestamp: 140,
+      },
+    ])).toThrow('Offline catch-up commands must be enqueued separately from other commands.');
+
+    expect(sim.getStatus()).not.toHaveProperty('busy');
+    const enqueueCalls = worker?.postMessage.mock.calls.filter(
+      (call) => (call[0] as { kind?: string } | undefined)?.kind === 'enqueueCommands',
+    ) ?? [];
+    expect(enqueueCalls).toHaveLength(0);
+
+    const windowAllClosedCall = app.on.mock.calls.find((call) => call[0] === 'window-all-closed');
+    const windowAllClosedHandler = windowAllClosedCall?.[1] as undefined | (() => void);
+    windowAllClosedHandler?.();
+    await flushMicrotasks();
+  });
+
   it('keeps offline catch-up busy for frames already in flight when catch-up is enqueued', async () => {
     vi.useFakeTimers();
     setMonotonicNowSequence([0, 16]);
