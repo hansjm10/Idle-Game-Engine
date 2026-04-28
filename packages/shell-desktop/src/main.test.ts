@@ -3086,6 +3086,55 @@ describe('shell-desktop main process entrypoint', () => {
     await flushMicrotasks();
   });
 
+  it('blocks generic offline catch-up enqueues before worker capabilities load', async () => {
+    process.env.IDLE_ENGINE_ENABLE_MCP_SERVER = '1';
+    await import('./main.js');
+    await flushMicrotasks();
+
+    const { sim } = getRegisteredMcpControllers();
+    const worker = Worker.instances[0];
+    expect(worker).toBeDefined();
+
+    expect(sim.getStatus()).toMatchObject({
+      state: 'starting',
+      nextStep: 0,
+    });
+
+    worker?.postMessage.mockClear();
+
+    expect(sim.enqueue([
+      {
+        type: RUNTIME_COMMAND_TYPES.OFFLINE_CATCHUP,
+        payload: { elapsedMs: 5 * 60 * 1000 },
+        priority: CommandPriority.SYSTEM,
+        step: 0,
+        timestamp: 0,
+      },
+    ])).toEqual({ enqueued: 1 });
+
+    expect(() => sim.enqueue([
+      {
+        type: RUNTIME_COMMAND_TYPES.COLLECT_RESOURCE,
+        payload: { resourceId: 'sample-pack.energy', amount: 1 },
+        priority: CommandPriority.PLAYER,
+        step: 0,
+        timestamp: 0,
+      },
+    ])).toThrow('Simulation offline catch-up is in progress.');
+
+    const enqueueCalls = worker?.postMessage.mock.calls.filter(
+      (call) => (call[0] as { kind?: string } | undefined)?.kind === 'enqueueCommands',
+    ) ?? [];
+    expect(enqueueCalls).toHaveLength(1);
+    expect((enqueueCalls[0]?.[0] as { commands?: Array<{ type?: string }> }).commands?.[0]?.type)
+      .toBe(RUNTIME_COMMAND_TYPES.OFFLINE_CATCHUP);
+
+    const windowAllClosedCall = app.on.mock.calls.find((call) => call[0] === 'window-all-closed');
+    const windowAllClosedHandler = windowAllClosedCall?.[1] as undefined | (() => void);
+    windowAllClosedHandler?.();
+    await flushMicrotasks();
+  });
+
   it('rejects mixed offline catch-up command batches before posting to the worker', async () => {
     vi.useFakeTimers();
     setMonotonicNowSequence([0]);

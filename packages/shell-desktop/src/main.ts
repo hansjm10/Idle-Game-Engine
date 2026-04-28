@@ -1309,7 +1309,8 @@ function createSimWorkerController(
     let hasOfflineCatchupCommand = false;
     let hasOtherCommand = false;
     for (const command of commands) {
-      if (runtimeCapabilities.supportsOfflineCatchup && command.type === RUNTIME_COMMAND_TYPES.OFFLINE_CATCHUP) {
+      // Detect by command type so startup catch-up enqueues open the barrier before capabilities load.
+      if (command.type === RUNTIME_COMMAND_TYPES.OFFLINE_CATCHUP) {
         hasOfflineCatchupCommand = true;
         if (typeof command.step === 'number' && Number.isFinite(command.step)) {
           barrierStep = Math.max(barrierStep ?? command.step, command.step);
