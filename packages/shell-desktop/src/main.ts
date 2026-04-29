@@ -765,6 +765,30 @@ function createSimWorkerController(
     return Math.min(deltaMs, MAX_TICK_DELTA_MS);
   };
 
+  const getEarliestOfflineCatchupBarrierStep = (): number | undefined =>
+    offlineCatchupBarriers[0]?.step;
+
+  const getEarliestFutureOfflineCatchupBarrierStep = (): number | undefined =>
+    offlineCatchupBarriers.find((barrier) => barrier.step > nextStep)?.step;
+
+  const capStepCountAtOfflineCatchupBarrier = (stepCount: number): number => {
+    const barrierStep = getEarliestFutureOfflineCatchupBarrierStep();
+    if (barrierStep === undefined) {
+      return stepCount;
+    }
+
+    return Math.min(stepCount, Math.max(0, barrierStep - nextStep));
+  };
+
+  const capTickDeltaAtOfflineCatchupBarrier = (deltaMs: number): number => {
+    const barrierStep = getEarliestFutureOfflineCatchupBarrierStep();
+    if (barrierStep === undefined) {
+      return deltaMs;
+    }
+
+    return Math.min(deltaMs, Math.max(0, barrierStep - nextStep) * stepSizeMs);
+  };
+
   const stopTickLoop = (): void => {
     if (tickTimer) {
       clearInterval(tickTimer);
@@ -973,6 +997,32 @@ function createSimWorkerController(
     }
   };
 
+  const postPendingStepBatches = (): void => {
+    if (
+      stepCompletionWaiters.length === 0 ||
+      inFlightTickMessages > 0 ||
+      hasFailed ||
+      isDisposing ||
+      isCommandIngressFrozen() ||
+      isOfflineCatchupBusy()
+    ) {
+      return;
+    }
+
+    const targetStep = stepCompletionWaiters.at(-1)?.targetStep;
+    if (targetStep === undefined || targetStep <= nextStep) {
+      return;
+    }
+
+    const uncappedSteps = targetStep - nextStep;
+    let remainingSteps = capStepCountAtOfflineCatchupBarrier(uncappedSteps);
+    while (remainingSteps > 0 && !hasFailed && !isDisposing) {
+      const batchStepCount = Math.min(remainingSteps, maxStepsPerFrame);
+      postTick(batchStepCount * stepSizeMs);
+      remainingSteps -= batchStepCount;
+    }
+  };
+
   const recordFrameMessage = (): ReadonlySet<number> => {
     const clearableOfflineCatchupBarrierSteps = new Set(
       offlineCatchupBarriers
@@ -1086,7 +1136,7 @@ function createSimWorkerController(
         return;
       }
       const deltaMs = clampTickDeltaMs(rawDeltaMs);
-      postTick(deltaMs);
+      postTick(capTickDeltaAtOfflineCatchupBarrier(deltaMs));
     }, tickIntervalMs);
 
     tickTimer.unref?.();
@@ -1199,6 +1249,7 @@ function createSimWorkerController(
     }
 
     notifyOfflineCatchupBusyChanged(wasBusy);
+    postPendingStepBatches();
   };
 
   const beginOfflineCatchupBarriers = (barrierSteps: readonly number[]): void => {
@@ -1406,10 +1457,33 @@ function createSimWorkerController(
     };
   };
 
+  const getEffectiveCommandStep = (command: Command): number => {
+    if (typeof command.step !== 'number' || !Number.isFinite(command.step)) {
+      return nextStep;
+    }
+
+    return Math.max(nextStep, Math.floor(command.step));
+  };
+
+  const hasCommandAtOrAfterOfflineCatchupBarrier = (commands: readonly Command[]): boolean => {
+    const barrierStep = getEarliestOfflineCatchupBarrierStep();
+    if (barrierStep === undefined) {
+      return false;
+    }
+
+    return commands.some((command) =>
+      command.type !== RUNTIME_COMMAND_TYPES.OFFLINE_CATCHUP &&
+      getEffectiveCommandStep(command) >= barrierStep,
+    );
+  };
+
   const postEnqueueCommands = (commands: readonly Command[]): void => {
     const offlineCatchupBatch = inspectOfflineCatchupBatch(commands);
     if (offlineCatchupBatch.hasMixedCommandTypes) {
       throw new Error(SIM_OFFLINE_CATCHUP_MIXED_BATCH_ERROR);
+    }
+    if (hasCommandAtOrAfterOfflineCatchupBarrier(commands)) {
+      throw new Error(SIM_OFFLINE_CATCHUP_BUSY_ERROR);
     }
     if (offlineCatchupBatch.barrierSteps.length > 0) {
       beginOfflineCatchupBarriers(offlineCatchupBatch.barrierSteps);
@@ -1499,13 +1573,7 @@ function createSimWorkerController(
       stepCompletionWaiters.push({ targetStep, resolve, reject });
     });
 
-    let remainingSteps = steps;
-    while (remainingSteps > 0 && !hasFailed && !isDisposing) {
-      const batchStepCount = Math.min(remainingSteps, maxStepsPerFrame);
-      postTick(batchStepCount * stepSizeMs);
-      remainingSteps -= batchStepCount;
-    }
-
+    postPendingStepBatches();
     resolvePendingStepCompletions();
     return completionPromise;
   };

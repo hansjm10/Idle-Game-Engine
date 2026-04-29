@@ -3454,6 +3454,230 @@ describe('shell-desktop main process entrypoint', () => {
     await flushMicrotasks();
   });
 
+  it('rejects commands scheduled at or after a future offline catch-up barrier', async () => {
+    vi.useFakeTimers();
+    setMonotonicNowSequence([0]);
+    process.env.IDLE_ENGINE_ENABLE_MCP_SERVER = '1';
+    await import('./main.js');
+    await flushMicrotasks();
+
+    const { sim } = getRegisteredMcpControllers();
+    const worker = Worker.instances[0];
+    expect(worker).toBeDefined();
+
+    worker?.emitMessage({
+      kind: 'ready',
+      stepSizeMs: 20,
+      nextStep: 7,
+      capabilities: {
+        canSerialize: true,
+        canHydrate: true,
+        supportsOfflineCatchup: true,
+        saveFileStem: 'sample-pack',
+        saveSchemaVersion: 1,
+      },
+      runtimeBacklog: { totalMs: 0, hostFrameMs: 0, creditedMs: 0 },
+    });
+    await flushMicrotasks();
+
+    worker?.postMessage.mockClear();
+
+    expect(sim.enqueue([
+      {
+        type: RUNTIME_COMMAND_TYPES.OFFLINE_CATCHUP,
+        payload: { elapsedMs: 5 * 60 * 1000 },
+        priority: CommandPriority.SYSTEM,
+        step: 9,
+        timestamp: 180,
+      },
+    ])).toEqual({ enqueued: 1 });
+
+    expect(sim.getStatus()).not.toHaveProperty('busy');
+    expect(sim.enqueue([
+      {
+        type: RUNTIME_COMMAND_TYPES.COLLECT_RESOURCE,
+        payload: { resourceId: 'sample-pack.energy', amount: 1 },
+        priority: CommandPriority.PLAYER,
+        step: 8,
+        timestamp: 160,
+      },
+    ])).toEqual({ enqueued: 1 });
+
+    for (const step of [9, 12]) {
+      expect(() => sim.enqueue([
+        {
+          type: RUNTIME_COMMAND_TYPES.COLLECT_RESOURCE,
+          payload: { resourceId: 'sample-pack.energy', amount: 1 },
+          priority: CommandPriority.PLAYER,
+          step,
+          timestamp: step * 20,
+        },
+      ])).toThrow('Simulation offline catch-up is in progress.');
+    }
+
+    const enqueueCalls = worker?.postMessage.mock.calls.filter(
+      (call) => (call[0] as { kind?: string } | undefined)?.kind === 'enqueueCommands',
+    ) ?? [];
+    expect(enqueueCalls).toHaveLength(2);
+    expect((enqueueCalls[0]?.[0] as { commands?: Array<{ type?: string }> }).commands?.[0]?.type)
+      .toBe(RUNTIME_COMMAND_TYPES.OFFLINE_CATCHUP);
+    expect((enqueueCalls[1]?.[0] as { commands?: Array<{ step?: number }> }).commands?.[0]?.step)
+      .toBe(8);
+
+    const windowAllClosedCall = app.on.mock.calls.find((call) => call[0] === 'window-all-closed');
+    const windowAllClosedHandler = windowAllClosedCall?.[1] as undefined | (() => void);
+    windowAllClosedHandler?.();
+    await flushMicrotasks();
+  });
+
+  it('splits manual step batches around queued offline catch-up barriers', async () => {
+    vi.useFakeTimers();
+    setMonotonicNowSequence([0, 100]);
+    process.env.IDLE_ENGINE_ENABLE_MCP_SERVER = '1';
+    await import('./main.js');
+    await flushMicrotasks();
+
+    const { sim } = getRegisteredMcpControllers();
+    const worker = Worker.instances[0];
+    expect(worker).toBeDefined();
+
+    worker?.emitMessage({
+      kind: 'ready',
+      stepSizeMs: 20,
+      nextStep: 7,
+      capabilities: {
+        canSerialize: true,
+        canHydrate: true,
+        supportsOfflineCatchup: true,
+        saveFileStem: 'sample-pack',
+        saveSchemaVersion: 1,
+      },
+      runtimeBacklog: { totalMs: 0, hostFrameMs: 0, creditedMs: 0 },
+    });
+    await flushMicrotasks();
+
+    worker?.postMessage.mockClear();
+
+    expect(sim.enqueue([
+      {
+        type: RUNTIME_COMMAND_TYPES.OFFLINE_CATCHUP,
+        payload: { elapsedMs: 5 * 60 * 1000 },
+        priority: CommandPriority.SYSTEM,
+        step: 9,
+        timestamp: 180,
+      },
+    ])).toEqual({ enqueued: 1 });
+
+    const stepPromise = sim.step(10);
+
+    let tickCalls = worker?.postMessage.mock.calls.filter(
+      (call) => (call[0] as { kind?: string } | undefined)?.kind === 'tick',
+    ) ?? [];
+    expect(tickCalls).toHaveLength(1);
+    expect(tickCalls[0]?.[0]).toMatchObject({ deltaMs: 40 });
+
+    worker?.emitMessage({
+      kind: 'frame',
+      droppedFrames: 0,
+      nextStep: 9,
+      runtimeBacklog: { totalMs: 0, hostFrameMs: 0, creditedMs: 0 },
+      offlineCatchup: { busy: false, pendingSteps: 0 },
+    });
+    await flushMicrotasks();
+
+    expect(sim.getStatus()).toMatchObject({
+      state: 'running',
+      nextStep: 9,
+      busy: 'offline-catchup',
+    });
+
+    worker?.emitMessage({
+      kind: 'frame',
+      droppedFrames: 0,
+      nextStep: 12,
+      runtimeBacklog: { totalMs: 0, hostFrameMs: 0, creditedMs: 0 },
+      offlineCatchup: { busy: false, pendingSteps: 0 },
+    });
+    await flushMicrotasks();
+
+    tickCalls = worker?.postMessage.mock.calls.filter(
+      (call) => (call[0] as { kind?: string } | undefined)?.kind === 'tick',
+    ) ?? [];
+    expect(tickCalls).toHaveLength(2);
+    expect(tickCalls[1]?.[0]).toMatchObject({ deltaMs: 100 });
+
+    worker?.emitMessage({
+      kind: 'frame',
+      droppedFrames: 0,
+      nextStep: 17,
+      runtimeBacklog: { totalMs: 0, hostFrameMs: 0, creditedMs: 0 },
+      offlineCatchup: { busy: false, pendingSteps: 0 },
+    });
+    await flushMicrotasks();
+
+    await expect(stepPromise).resolves.toMatchObject({
+      state: 'paused',
+      nextStep: 17,
+    });
+
+    const windowAllClosedCall = app.on.mock.calls.find((call) => call[0] === 'window-all-closed');
+    const windowAllClosedHandler = windowAllClosedCall?.[1] as undefined | (() => void);
+    windowAllClosedHandler?.();
+    await flushMicrotasks();
+  });
+
+  it('caps live tick deltas before queued offline catch-up barriers', async () => {
+    vi.useFakeTimers();
+    setMonotonicNowSequence([0, 100]);
+    process.env.IDLE_ENGINE_ENABLE_MCP_SERVER = '1';
+    await import('./main.js');
+    await flushMicrotasks();
+
+    const { sim } = getRegisteredMcpControllers();
+    const worker = Worker.instances[0];
+    expect(worker).toBeDefined();
+
+    worker?.emitMessage({
+      kind: 'ready',
+      stepSizeMs: 20,
+      nextStep: 7,
+      capabilities: {
+        canSerialize: true,
+        canHydrate: true,
+        supportsOfflineCatchup: true,
+        saveFileStem: 'sample-pack',
+        saveSchemaVersion: 1,
+      },
+      runtimeBacklog: { totalMs: 0, hostFrameMs: 0, creditedMs: 0 },
+    });
+    await flushMicrotasks();
+
+    worker?.postMessage.mockClear();
+
+    expect(sim.enqueue([
+      {
+        type: RUNTIME_COMMAND_TYPES.OFFLINE_CATCHUP,
+        payload: { elapsedMs: 5 * 60 * 1000 },
+        priority: CommandPriority.SYSTEM,
+        step: 9,
+        timestamp: 180,
+      },
+    ])).toEqual({ enqueued: 1 });
+
+    await vi.advanceTimersByTimeAsync(16);
+
+    const tickCalls = worker?.postMessage.mock.calls.filter(
+      (call) => (call[0] as { kind?: string } | undefined)?.kind === 'tick',
+    ) ?? [];
+    expect(tickCalls).toHaveLength(1);
+    expect(tickCalls[0]?.[0]).toMatchObject({ deltaMs: 40 });
+
+    const windowAllClosedCall = app.on.mock.calls.find((call) => call[0] === 'window-all-closed');
+    const windowAllClosedHandler = windowAllClosedCall?.[1] as undefined | (() => void);
+    windowAllClosedHandler?.();
+    await flushMicrotasks();
+  });
+
   it('blocks generic offline catch-up enqueues before worker capabilities load', async () => {
     process.env.IDLE_ENGINE_ENABLE_MCP_SERVER = '1';
     await import('./main.js');

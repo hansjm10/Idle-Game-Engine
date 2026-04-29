@@ -464,6 +464,68 @@ describe('shell-desktop sim runtime', () => {
     });
   });
 
+  it('caps positive ticks before future queued offline catch-up commands', () => {
+    const sim = createSimRuntime({ stepSizeMs: 10, maxStepsPerFrame: 50 });
+
+    sim.enqueueCommands([
+      {
+        type: RUNTIME_COMMAND_TYPES.OFFLINE_CATCHUP,
+        priority: CommandPriority.SYSTEM,
+        payload: { elapsedMs: 60 },
+        timestamp: 20,
+        step: 2,
+      },
+    ]);
+
+    const result = sim.tick(50);
+
+    expect(result.frames).toHaveLength(2);
+    expect(result.frame?.frame.step).toBe(1);
+    expect(result.nextStep).toBe(2);
+    expect(result.offlineCatchup).toEqual({
+      busy: false,
+      pendingSteps: 0,
+      queuedCommandSteps: [2],
+    });
+  });
+
+  it('rejects commands scheduled into future queued offline catch-up commands', () => {
+    const sim = createSimRuntime({ stepSizeMs: 10, maxStepsPerFrame: 50 });
+
+    sim.enqueueCommands([
+      {
+        type: RUNTIME_COMMAND_TYPES.OFFLINE_CATCHUP,
+        priority: CommandPriority.SYSTEM,
+        payload: { elapsedMs: 60 },
+        timestamp: 20,
+        step: 2,
+      },
+    ]);
+
+    expect(() => sim.enqueueCommands([collectEnergyCommand(1)])).not.toThrow();
+    expect(() => sim.enqueueCommands([collectEnergyCommand(2)])).toThrow(
+      'Cannot enqueue commands at or after a queued offline catch-up command.',
+    );
+    expect(() => sim.enqueueCommands([collectEnergyCommand(5)])).toThrow(
+      'Cannot enqueue commands at or after a queued offline catch-up command.',
+    );
+  });
+
+  it('rejects mixed offline catch-up command batches', () => {
+    const sim = createSimRuntime({ stepSizeMs: 10, maxStepsPerFrame: 50 });
+
+    expect(() => sim.enqueueCommands([
+      {
+        type: RUNTIME_COMMAND_TYPES.OFFLINE_CATCHUP,
+        priority: CommandPriority.SYSTEM,
+        payload: { elapsedMs: 60 },
+        timestamp: 20,
+        step: 2,
+      },
+      collectEnergyCommand(2),
+    ])).toThrow('Offline catch-up commands must be enqueued separately from other commands.');
+  });
+
   it('applies offline catch-up payloads without requiring resourceDeltas', () => {
     const sim = createSimRuntime({ stepSizeMs: 10, maxStepsPerFrame: 50 });
 

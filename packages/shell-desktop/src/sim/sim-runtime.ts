@@ -80,6 +80,10 @@ const SAMPLE_COLLECT_ACTION_ID = 'collect';
 const SAMPLE_FONT_ASSET_ID = 'sample-pack.ui-font' as AssetId;
 const SIM_RUNTIME_SAVE_FILE_STEM = 'sample-pack';
 const MAX_RETAINED_TICK_FRAMES = 128;
+const OFFLINE_CATCHUP_MIXED_BATCH_ERROR =
+  'Offline catch-up commands must be enqueued separately from other commands.';
+const OFFLINE_CATCHUP_QUEUED_COMMAND_ERROR =
+  'Cannot enqueue commands at or after a queued offline catch-up command.';
 
 const SAMPLE_UI_PANEL = {
   x: 16,
@@ -545,6 +549,20 @@ export function createSimRuntime(options: SimRuntimeOptions = {}): SimRuntime {
     return Array.from(steps).sort((left, right) => left - right);
   };
 
+  const getEarliestQueuedOfflineCatchupCommandStep = (): number | undefined =>
+    getQueuedOfflineCatchupCommandSteps()[0];
+
+  const capLiveTickDeltaAtQueuedOfflineCatchup = (deltaMs: number): number => {
+    const barrierStep = getEarliestQueuedOfflineCatchupCommandStep();
+    const nextStep = runtime.getNextExecutableStep();
+    if (barrierStep === undefined || barrierStep <= nextStep) {
+      return deltaMs;
+    }
+
+    const maxDeltaMs = Math.max(0, barrierStep - nextStep) * runtime.getStepSizeMs();
+    return Math.min(deltaMs, maxDeltaMs);
+  };
+
   const getOfflineCatchupStatus = (): SimOfflineCatchupStatus => {
     const stepSize = runtime.getStepSizeMs();
     const creditedMs = runtime.getCreditedBacklogMs();
@@ -581,7 +599,7 @@ export function createSimRuntime(options: SimRuntimeOptions = {}): SimRuntime {
   const tick = (deltaMs: number): SimTickResult => {
     resetTickFrames();
 
-    processTickBudget(deltaMs);
+    processTickBudget(capLiveTickDeltaAtQueuedOfflineCatchup(deltaMs));
 
     if (getOfflineCatchupStatus().busy) {
       drainOfflineCatchupBacklog();
@@ -604,13 +622,39 @@ export function createSimRuntime(options: SimRuntimeOptions = {}): SimRuntime {
     const nextStep = runtime.getNextExecutableStep();
     const stepSizeMs = runtime.getStepSizeMs();
     const queue = game.internals.commandQueue;
+    const normalizedCommands: Command[] = [];
 
     for (const command of commands) {
       const normalized = normalizeCommand(command, { nextStep, stepSizeMs });
       if (!normalized) {
         continue;
       }
-      queue.enqueue(normalized);
+      normalizedCommands.push(normalized);
+    }
+
+    const hasOfflineCatchupCommand = normalizedCommands.some(
+      (command) => command.type === RUNTIME_COMMAND_TYPES.OFFLINE_CATCHUP,
+    );
+    const hasOtherCommand = normalizedCommands.some(
+      (command) => command.type !== RUNTIME_COMMAND_TYPES.OFFLINE_CATCHUP,
+    );
+    if (hasOfflineCatchupCommand && hasOtherCommand) {
+      throw new Error(OFFLINE_CATCHUP_MIXED_BATCH_ERROR);
+    }
+
+    const barrierStep = getEarliestQueuedOfflineCatchupCommandStep();
+    if (
+      barrierStep !== undefined &&
+      normalizedCommands.some((command) =>
+        command.type !== RUNTIME_COMMAND_TYPES.OFFLINE_CATCHUP &&
+        command.step >= barrierStep,
+      )
+    ) {
+      throw new Error(OFFLINE_CATCHUP_QUEUED_COMMAND_ERROR);
+    }
+
+    for (const command of normalizedCommands) {
+      queue.enqueue(command);
     }
   };
 
