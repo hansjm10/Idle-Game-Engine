@@ -742,6 +742,7 @@ function createSimWorkerController(
   let requestSequence = 0;
   let commandIngressFreezeDepth = 0;
   let inFlightTickMessages = 0;
+  let inFlightTickStepBudgets: number[] = [];
   let offlineCatchupBarriers: OfflineCatchupBarrier[] = [];
   let offlineCatchupStatus: SimOfflineCatchupStatus = { busy: false, pendingSteps: 0 };
   let restorePausedAfterOfflineCatchup = false;
@@ -770,6 +771,17 @@ function createSimWorkerController(
 
   const getEarliestFutureOfflineCatchupBarrierStep = (): number | undefined =>
     offlineCatchupBarriers.find((barrier) => barrier.step > nextStep)?.step;
+
+  const calculatePostedTickStepBudget = (deltaMs: number): number => {
+    if (!Number.isFinite(deltaMs) || deltaMs <= 0 || stepSizeMs <= 0) {
+      return 0;
+    }
+
+    return Math.ceil(deltaMs / stepSizeMs);
+  };
+
+  const getProjectedNextStepAfterInFlightTicks = (): number =>
+    nextStep + inFlightTickStepBudgets.reduce((sum, stepBudget) => sum + stepBudget, 0);
 
   const capStepCountAtOfflineCatchupBarrier = (stepCount: number): number => {
     const barrierStep = getEarliestFutureOfflineCatchupBarrierStep();
@@ -801,12 +813,24 @@ function createSimWorkerController(
   const hasExecutableOfflineCatchupBacklog = (): boolean => offlineCatchupStatus.busy;
 
   // Future offline catch-up commands are scheduled work; they should not freeze ingress
-  // or auto-drive a paused simulation until their step becomes executable.
+  // or auto-drive a paused simulation until their step becomes executable, unless already
+  // posted ticks can reach the barrier before the worker observes later commands.
   const hasExecutableOfflineCatchupBarrier = (): boolean =>
     offlineCatchupBarriers.some((barrier) => nextStep >= barrier.step);
 
+  const hasInFlightTickAtOrAfterOfflineCatchupBarrier = (): boolean => {
+    const barrierStep = getEarliestOfflineCatchupBarrierStep();
+    return (
+      inFlightTickMessages > 0 &&
+      barrierStep !== undefined &&
+      getProjectedNextStepAfterInFlightTicks() >= barrierStep
+    );
+  };
+
   const isOfflineCatchupBusy = (): boolean =>
-    hasExecutableOfflineCatchupBarrier() || hasExecutableOfflineCatchupBacklog();
+    hasExecutableOfflineCatchupBarrier() ||
+    hasInFlightTickAtOrAfterOfflineCatchupBarrier() ||
+    hasExecutableOfflineCatchupBacklog();
 
   const shouldDrivePausedOfflineCatchup = (): boolean =>
     restorePausedAfterOfflineCatchup && isOfflineCatchupBusy();
@@ -988,12 +1012,14 @@ function createSimWorkerController(
   const postTick = (deltaMs: number): void => {
     if (safePostMessage({ kind: 'tick', deltaMs })) {
       inFlightTickMessages += 1;
+      inFlightTickStepBudgets.push(calculatePostedTickStepBudget(deltaMs));
     }
   };
 
   const postOfflineCatchupDrain = (): void => {
     if (safePostMessage({ kind: 'drainOfflineCatchup' })) {
       inFlightTickMessages += 1;
+      inFlightTickStepBudgets.push(0);
     }
   };
 
@@ -1031,6 +1057,7 @@ function createSimWorkerController(
     );
     if (inFlightTickMessages > 0) {
       inFlightTickMessages -= 1;
+      inFlightTickStepBudgets = inFlightTickStepBudgets.slice(1);
     }
     for (const barrier of offlineCatchupBarriers) {
       if (barrier.framesBeforeCommand > 0) {
@@ -1133,6 +1160,9 @@ function createSimWorkerController(
           return;
         }
         postTick(stepSizeMs);
+        return;
+      }
+      if (hasInFlightTickAtOrAfterOfflineCatchupBarrier()) {
         return;
       }
       const deltaMs = clampTickDeltaMs(rawDeltaMs);
@@ -1458,11 +1488,12 @@ function createSimWorkerController(
   };
 
   const getEffectiveCommandStep = (command: Command): number => {
+    const projectedNextStep = getProjectedNextStepAfterInFlightTicks();
     if (typeof command.step !== 'number' || !Number.isFinite(command.step)) {
-      return nextStep;
+      return projectedNextStep;
     }
 
-    return Math.max(nextStep, Math.floor(command.step));
+    return Math.max(projectedNextStep, Math.floor(command.step));
   };
 
   const hasCommandAtOrAfterOfflineCatchupBarrier = (commands: readonly Command[]): boolean => {
