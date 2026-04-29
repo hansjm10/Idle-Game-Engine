@@ -227,6 +227,17 @@ describe('shell-desktop renderer entrypoint', () => {
     simStatusListener?.({ kind: 'running' });
     expect(outputElement.textContent).toContain('Sim running.');
 
+    simStatusListener?.({ kind: 'running', busy: 'offline-catchup' });
+    expect(outputElement.textContent).toContain('Sim applying offline catch-up.');
+
+    frameListener?.({ frame: { step: 7, simTimeMs: 112 } });
+    expect(outputElement.textContent).toContain('Sim applying offline catch-up.');
+    expect(outputElement.textContent).not.toContain('Sim step=7 simTimeMs=112');
+
+    simStatusListener?.({ kind: 'running' });
+    frameListener?.({ frame: { step: 8, simTimeMs: 128 } });
+    expect(outputElement.textContent).toContain('Sim step=8 simTimeMs=128');
+
     simStatusListener?.({ kind: 'crashed', reason: 'boom' });
     expect(outputElement.textContent).not.toContain('exitCode=');
 
@@ -235,8 +246,8 @@ describe('shell-desktop renderer entrypoint', () => {
     expect(outputElement.textContent).toContain('exitCode=1');
     expect(outputElement.textContent).toContain('boom');
 
-    frameListener?.({ frame: { step: 7, simTimeMs: 112 } });
-    expect(outputElement.textContent).toContain('Sim step=7 simTimeMs=112');
+    frameListener?.({ frame: { step: 9, simTimeMs: 144 } });
+    expect(outputElement.textContent).toContain('Sim step=9 simTimeMs=144');
 
     expect(keydownHandler).toBeTypeOf('function');
     keydownHandler?.({ code: 'KeyA', repeat: false });

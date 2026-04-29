@@ -342,6 +342,41 @@ function createTestContent() {
   });
 }
 
+function createCappedOfflineCatchupContent() {
+  return createContentPack({
+    resources: [
+      createResourceDefinition('resource.energy', {
+        startAmount: 90,
+        capacity: 100,
+      }),
+    ],
+    generators: [
+      createGeneratorDefinition('generator.reactor', {
+        initialLevel: 1,
+        purchase: {
+          currencyId: 'resource.energy',
+          costMultiplier: 10,
+          costCurve: literalOne,
+        },
+        produces: [{ resourceId: 'resource.energy', rate: literalOne }],
+        consumes: [],
+        baseUnlock: { kind: 'always' },
+      }),
+      createGeneratorDefinition('generator.sink', {
+        initialLevel: 0,
+        purchase: {
+          currencyId: 'resource.energy',
+          costMultiplier: 10,
+          costCurve: literalOne,
+        },
+        produces: [],
+        consumes: [],
+        baseUnlock: { kind: 'always' },
+      }),
+    ],
+  });
+}
+
 function createTestContentWithPrestige() {
   const layerId = 'prestige.test';
 
@@ -993,6 +1028,44 @@ describe('createGame', () => {
 
     restored.stop();
     source.stop();
+  });
+
+  it('keeps capped offline catch-up reconciliation separate from a deferred spend', () => {
+    const content = createCappedOfflineCatchupContent();
+    const game = createGame(content, {
+      stepSizeMs: 1000,
+      maxStepsPerFrame: 2,
+    });
+
+    const runtime = game.internals.runtime;
+    const readEnergy = (): number =>
+      game.getSnapshot().resources.find((resource) => resource.id === 'resource.energy')?.amount ?? Number.NaN;
+
+    game.internals.commandQueue.enqueue({
+      type: RUNTIME_COMMAND_TYPES.OFFLINE_CATCHUP,
+      priority: CommandPriority.SYSTEM,
+      payload: { elapsedMs: 20_000 },
+      timestamp: 0,
+      step: runtime.getNextExecutableStep(),
+    });
+
+    game.tick(1000);
+    expect(readEnergy()).toBe(93);
+    expect(runtime.getCreditedBacklogMs()).toBe(18_000);
+
+    while (runtime.getCreditedBacklogMs() >= runtime.getStepSizeMs()) {
+      runtime.drainCreditedBacklog();
+    }
+
+    expect(readEnergy()).toBe(100);
+    expect(runtime.getCreditedBacklogMs()).toBe(0);
+
+    expect(game.purchaseGenerator('generator.sink', 1)).toEqual({ success: true });
+    game.tick(1000);
+
+    expect(readEnergy()).toBe(91);
+
+    game.stop();
   });
 
   it('restarts the scheduler after hydrate when it was running', () => {

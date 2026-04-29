@@ -432,6 +432,100 @@ describe('shell-desktop sim runtime', () => {
     );
   });
 
+  it('reports queued offline catch-up command steps after restore', () => {
+    const source = createSimRuntime({ stepSizeMs: 10, maxStepsPerFrame: 50 });
+    const catchupCommand = {
+      type: RUNTIME_COMMAND_TYPES.OFFLINE_CATCHUP,
+      priority: CommandPriority.SYSTEM,
+      payload: { elapsedMs: 30 },
+      timestamp: 30,
+      step: 3,
+    };
+
+    source.enqueueCommands([catchupCommand]);
+
+    expect(source.getOfflineCatchupStatus()).toEqual({
+      busy: false,
+      pendingSteps: 0,
+      queuedCommandSteps: [3],
+    });
+
+    const savedState = loadSerializedSimRuntimeState(source.serialize?.());
+    const restored = createSimRuntime({
+      stepSizeMs: 10,
+      maxStepsPerFrame: 50,
+      initialSerializedState: savedState,
+    });
+
+    expect(restored.getOfflineCatchupStatus()).toEqual({
+      busy: false,
+      pendingSteps: 0,
+      queuedCommandSteps: [3],
+    });
+  });
+
+  it('caps positive ticks before future queued offline catch-up commands', () => {
+    const sim = createSimRuntime({ stepSizeMs: 10, maxStepsPerFrame: 50 });
+
+    sim.enqueueCommands([
+      {
+        type: RUNTIME_COMMAND_TYPES.OFFLINE_CATCHUP,
+        priority: CommandPriority.SYSTEM,
+        payload: { elapsedMs: 60 },
+        timestamp: 20,
+        step: 2,
+      },
+    ]);
+
+    const result = sim.tick(50);
+
+    expect(result.frames).toHaveLength(2);
+    expect(result.frame?.frame.step).toBe(1);
+    expect(result.nextStep).toBe(2);
+    expect(result.offlineCatchup).toEqual({
+      busy: false,
+      pendingSteps: 0,
+      queuedCommandSteps: [2],
+    });
+  });
+
+  it('rejects commands scheduled into future queued offline catch-up commands', () => {
+    const sim = createSimRuntime({ stepSizeMs: 10, maxStepsPerFrame: 50 });
+
+    sim.enqueueCommands([
+      {
+        type: RUNTIME_COMMAND_TYPES.OFFLINE_CATCHUP,
+        priority: CommandPriority.SYSTEM,
+        payload: { elapsedMs: 60 },
+        timestamp: 20,
+        step: 2,
+      },
+    ]);
+
+    expect(() => sim.enqueueCommands([collectEnergyCommand(1)])).not.toThrow();
+    expect(() => sim.enqueueCommands([collectEnergyCommand(2)])).toThrow(
+      'Cannot enqueue commands at or after a queued offline catch-up command.',
+    );
+    expect(() => sim.enqueueCommands([collectEnergyCommand(5)])).toThrow(
+      'Cannot enqueue commands at or after a queued offline catch-up command.',
+    );
+  });
+
+  it('rejects mixed offline catch-up command batches', () => {
+    const sim = createSimRuntime({ stepSizeMs: 10, maxStepsPerFrame: 50 });
+
+    expect(() => sim.enqueueCommands([
+      {
+        type: RUNTIME_COMMAND_TYPES.OFFLINE_CATCHUP,
+        priority: CommandPriority.SYSTEM,
+        payload: { elapsedMs: 60 },
+        timestamp: 20,
+        step: 2,
+      },
+      collectEnergyCommand(2),
+    ])).toThrow('Offline catch-up commands must be enqueued separately from other commands.');
+  });
+
   it('applies offline catch-up payloads without requiring resourceDeltas', () => {
     const sim = createSimRuntime({ stepSizeMs: 10, maxStepsPerFrame: 50 });
 
@@ -508,6 +602,7 @@ describe('shell-desktop sim runtime', () => {
       expect(result.droppedFrames).toBe(3);
       expect(result.nextStep).toBe(4);
       expect(sim.getNextStep()).toBe(4);
+      expect(result.offlineCatchup).toEqual({ busy: true, pendingSteps: 2 });
       expect(drainCreditedBacklog).toHaveBeenCalledTimes(1);
 
       const savedState = loadSerializedSimRuntimeState(sim.serialize?.());
@@ -519,10 +614,57 @@ describe('shell-desktop sim runtime', () => {
       expect(continued.frames).toHaveLength(2);
       expect(continued.frame?.frame.step).toBe(5);
       expect(continued.nextStep).toBe(6);
+      expect(continued.offlineCatchup).toEqual({ busy: false, pendingSteps: 0 });
       expect(drainCreditedBacklog).toHaveBeenCalledTimes(2);
     } finally {
       drainCreditedBacklog.mockRestore();
     }
+  });
+
+  it('reports fractional credited remainders as non-busy catch-up status', () => {
+    const sim = createSimRuntime({ stepSizeMs: 10, maxStepsPerFrame: 2 });
+
+    sim.enqueueCommands([
+      {
+        type: RUNTIME_COMMAND_TYPES.OFFLINE_CATCHUP,
+        priority: CommandPriority.SYSTEM,
+        payload: { elapsedMs: 25 },
+        timestamp: 0,
+        step: sim.getNextStep(),
+      },
+    ]);
+
+    const result = sim.tick(10);
+    expect(result.offlineCatchup).toEqual({ busy: false, pendingSteps: 0 });
+
+    const savedState = loadSerializedSimRuntimeState(sim.serialize?.());
+    expect(getRuntimeBacklog(savedState).creditedBacklogMs).toBe(5);
+  });
+
+  it('drains offline catch-up through the explicit drain path', () => {
+    const sim = createSimRuntime({ stepSizeMs: 10, maxStepsPerFrame: 2 });
+
+    sim.enqueueCommands([
+      {
+        type: RUNTIME_COMMAND_TYPES.OFFLINE_CATCHUP,
+        priority: CommandPriority.SYSTEM,
+        payload: { elapsedMs: 60 },
+        timestamp: 0,
+        step: sim.getNextStep(),
+      },
+    ]);
+
+    const captured = sim.tick(10);
+    expect(captured.offlineCatchup).toEqual({ busy: true, pendingSteps: 2 });
+
+    const drained = sim.drainOfflineCatchup();
+    expect(drained.frames).toHaveLength(2);
+    expect(drained.nextStep).toBe(6);
+    expect(drained.offlineCatchup).toEqual({ busy: false, pendingSteps: 0 });
+
+    const savedState = loadSerializedSimRuntimeState(sim.serialize?.());
+    expect(getRuntimeBacklog(savedState).hostFrameBacklogMs).toBe(0);
+    expect(getRuntimeBacklog(savedState).creditedBacklogMs).toBe(0);
   });
 
   it('keeps live backlog out of offline drains after multi-step positive frame ticks', () => {

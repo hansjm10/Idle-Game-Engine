@@ -1,4 +1,4 @@
-import type { Command } from '@idle-engine/core';
+import type { Command, RuntimeAccumulatorBacklogState } from '@idle-engine/core';
 import type { RenderCommandBuffer } from '@idle-engine/renderer-contract';
 
 export type SimRuntimeCapabilities = Readonly<{
@@ -17,6 +17,17 @@ export const DEFAULT_SIM_RUNTIME_CAPABILITIES = Object.freeze({
   supportsOfflineCatchup: false,
 }) satisfies SimRuntimeCapabilities;
 
+export type SimOfflineCatchupStatus = Readonly<{
+  busy: boolean;
+  pendingSteps: number;
+  /**
+   * Steps for queued OFFLINE_CATCHUP commands that have not yet produced
+   * credited backlog. The main process uses these to rebuild ingress barriers
+   * after worker-owned state is hydrated.
+   */
+  queuedCommandSteps?: readonly number[];
+}>;
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Inbound messages (main -> worker)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -30,6 +41,10 @@ export type SimWorkerInitMessage = Readonly<{
 export type SimWorkerTickMessage = Readonly<{
   kind: 'tick';
   deltaMs: number;
+}>;
+
+export type SimWorkerDrainOfflineCatchupMessage = Readonly<{
+  kind: 'drainOfflineCatchup';
 }>;
 
 export type SimWorkerEnqueueCommandsMessage = Readonly<{
@@ -55,6 +70,7 @@ export type SimWorkerShutdownMessage = Readonly<{
 export type SimWorkerInboundMessage =
   | SimWorkerInitMessage
   | SimWorkerTickMessage
+  | SimWorkerDrainOfflineCatchupMessage
   | SimWorkerEnqueueCommandsMessage
   | SimWorkerSerializeMessage
   | SimWorkerHydrateMessage
@@ -69,6 +85,8 @@ export type SimWorkerReadyMessage = Readonly<{
   stepSizeMs: number;
   nextStep: number;
   capabilities?: SimRuntimeCapabilities;
+  runtimeBacklog?: RuntimeAccumulatorBacklogState;
+  offlineCatchup?: SimOfflineCatchupStatus;
 }>;
 
 export type SimWorkerFrameMessage = Readonly<{
@@ -76,6 +94,8 @@ export type SimWorkerFrameMessage = Readonly<{
   frame?: RenderCommandBuffer;
   droppedFrames: number;
   nextStep: number;
+  runtimeBacklog?: RuntimeAccumulatorBacklogState;
+  offlineCatchup?: SimOfflineCatchupStatus;
 }>;
 
 export type SimWorkerErrorMessage = Readonly<{
@@ -95,6 +115,8 @@ export type SimWorkerHydratedMessage = Readonly<{
   nextStep: number;
   capabilities?: SimRuntimeCapabilities;
   frame?: RenderCommandBuffer;
+  runtimeBacklog?: RuntimeAccumulatorBacklogState;
+  offlineCatchup?: SimOfflineCatchupStatus;
 }>;
 
 export type SimWorkerRequestErrorMessage = Readonly<{

@@ -4,6 +4,7 @@ import {
   type Command,
   type GameSnapshot,
   type InputEventCommandPayload,
+  type RuntimeAccumulatorBacklogState,
   type SerializedGameState,
 } from '@idle-engine/core';
 import {
@@ -21,6 +22,7 @@ import {
 import {
   DEFAULT_SIM_RUNTIME_CAPABILITIES,
   type SimRuntimeCapabilities,
+  type SimOfflineCatchupStatus,
 } from './worker-protocol.js';
 import type {
   AssetId,
@@ -52,14 +54,19 @@ export type SimTickResult = Readonly<{
   frame?: RenderCommandBuffer;
   droppedFrames: number;
   nextStep: number;
+  runtimeBacklog: RuntimeAccumulatorBacklogState;
+  offlineCatchup: SimOfflineCatchupStatus;
 }>;
 
 export type SimRuntime = Readonly<{
   tick: (deltaMs: number) => SimTickResult;
+  drainOfflineCatchup: () => SimTickResult;
   enqueueCommands: (commands: readonly Command[]) => void;
   renderCurrentFrame?: () => RenderCommandBuffer | undefined;
   getStepSizeMs: () => number;
   getNextStep: () => number;
+  getRuntimeBacklog: () => RuntimeAccumulatorBacklogState;
+  getOfflineCatchupStatus: () => SimOfflineCatchupStatus;
   hasCommandHandler: (type: string) => boolean;
   serialize?: () => SerializedSimRuntimeState;
   getCapabilities?: () => SimRuntimeCapabilities;
@@ -73,6 +80,10 @@ const SAMPLE_COLLECT_ACTION_ID = 'collect';
 const SAMPLE_FONT_ASSET_ID = 'sample-pack.ui-font' as AssetId;
 const SIM_RUNTIME_SAVE_FILE_STEM = 'sample-pack';
 const MAX_RETAINED_TICK_FRAMES = 128;
+const OFFLINE_CATCHUP_MIXED_BATCH_ERROR =
+  'Offline catch-up commands must be enqueued separately from other commands.';
+const OFFLINE_CATCHUP_QUEUED_COMMAND_ERROR =
+  'Cannot enqueue commands at or after a queued offline catch-up command.';
 
 const SAMPLE_UI_PANEL = {
   x: 16,
@@ -519,36 +530,131 @@ export function createSimRuntime(options: SimRuntimeOptions = {}): SimRuntime {
     return Math.max(0, runtime.getNextExecutableStep() - nextStepBeforeDrain);
   };
 
-  const tick = (deltaMs: number): SimTickResult => {
+  const getQueuedOfflineCatchupCommandSteps = (): readonly number[] => {
+    const queue = game.internals.commandQueue;
+    if (queue.size === 0) {
+      return [];
+    }
+
+    const steps = new Set<number>();
+    for (const entry of queue.exportForSave().entries) {
+      if (entry.type !== RUNTIME_COMMAND_TYPES.OFFLINE_CATCHUP) {
+        continue;
+      }
+      if (Number.isFinite(entry.step)) {
+        steps.add(Math.floor(entry.step));
+      }
+    }
+
+    return Array.from(steps).sort((left, right) => left - right);
+  };
+
+  const getEarliestQueuedOfflineCatchupCommandStep = (): number | undefined =>
+    getQueuedOfflineCatchupCommandSteps()[0];
+
+  const capLiveTickDeltaAtQueuedOfflineCatchup = (deltaMs: number): number => {
+    const barrierStep = getEarliestQueuedOfflineCatchupCommandStep();
+    const nextStep = runtime.getNextExecutableStep();
+    if (barrierStep === undefined || barrierStep <= nextStep) {
+      return deltaMs;
+    }
+
+    const maxDeltaMs = Math.max(0, barrierStep - nextStep) * runtime.getStepSizeMs();
+    return Math.min(deltaMs, maxDeltaMs);
+  };
+
+  const getOfflineCatchupStatus = (): SimOfflineCatchupStatus => {
+    const stepSize = runtime.getStepSizeMs();
+    const creditedMs = runtime.getCreditedBacklogMs();
+    const pendingSteps =
+      Number.isFinite(stepSize) && stepSize > 0 && Number.isFinite(creditedMs) && creditedMs > 0
+        ? Math.floor(creditedMs / stepSize)
+        : 0;
+    const queuedCommandSteps = getQueuedOfflineCatchupCommandSteps();
+    const status = {
+      busy: pendingSteps > 0,
+      pendingSteps,
+    };
+
+    return queuedCommandSteps.length === 0
+      ? status
+      : { ...status, queuedCommandSteps };
+  };
+
+  const resetTickFrames = (): void => {
     frameQueue.length = 0;
     droppedFrames = 0;
     lastFrame = undefined;
+  };
 
-    processTickBudget(deltaMs);
+  const buildTickResult = (): SimTickResult => ({
+    frames: Array.from(frameQueue),
+    frame: lastFrame,
+    droppedFrames: droppedFrames + Math.max(0, frameQueue.length - 1),
+    nextStep: runtime.getNextExecutableStep(),
+    runtimeBacklog: runtime.getAccumulatorBacklogState(),
+    offlineCatchup: getOfflineCatchupStatus(),
+  });
 
-    if (runtime.getCreditedBacklogMs() >= runtime.getStepSizeMs()) {
+  const tick = (deltaMs: number): SimTickResult => {
+    resetTickFrames();
+
+    processTickBudget(capLiveTickDeltaAtQueuedOfflineCatchup(deltaMs));
+
+    if (getOfflineCatchupStatus().busy) {
       drainOfflineCatchupBacklog();
     }
 
-    return {
-      frames: Array.from(frameQueue),
-      frame: lastFrame,
-      droppedFrames: droppedFrames + Math.max(0, frameQueue.length - 1),
-      nextStep: runtime.getNextExecutableStep(),
-    };
+    return buildTickResult();
+  };
+
+  const drainOfflineCatchup = (): SimTickResult => {
+    resetTickFrames();
+
+    if (getOfflineCatchupStatus().busy) {
+      drainOfflineCatchupBacklog();
+    }
+
+    return buildTickResult();
   };
 
   const enqueueCommands = (commands: readonly Command[]): void => {
     const nextStep = runtime.getNextExecutableStep();
     const stepSizeMs = runtime.getStepSizeMs();
     const queue = game.internals.commandQueue;
+    const normalizedCommands: Command[] = [];
 
     for (const command of commands) {
       const normalized = normalizeCommand(command, { nextStep, stepSizeMs });
       if (!normalized) {
         continue;
       }
-      queue.enqueue(normalized);
+      normalizedCommands.push(normalized);
+    }
+
+    const hasOfflineCatchupCommand = normalizedCommands.some(
+      (command) => command.type === RUNTIME_COMMAND_TYPES.OFFLINE_CATCHUP,
+    );
+    const hasOtherCommand = normalizedCommands.some(
+      (command) => command.type !== RUNTIME_COMMAND_TYPES.OFFLINE_CATCHUP,
+    );
+    if (hasOfflineCatchupCommand && hasOtherCommand) {
+      throw new Error(OFFLINE_CATCHUP_MIXED_BATCH_ERROR);
+    }
+
+    const barrierStep = getEarliestQueuedOfflineCatchupCommandStep();
+    if (
+      barrierStep !== undefined &&
+      normalizedCommands.some((command) =>
+        command.type !== RUNTIME_COMMAND_TYPES.OFFLINE_CATCHUP &&
+        command.step >= barrierStep,
+      )
+    ) {
+      throw new Error(OFFLINE_CATCHUP_QUEUED_COMMAND_ERROR);
+    }
+
+    for (const command of normalizedCommands) {
+      queue.enqueue(command);
     }
   };
 
@@ -564,10 +670,13 @@ export function createSimRuntime(options: SimRuntimeOptions = {}): SimRuntime {
 
   return {
     tick,
+    drainOfflineCatchup,
     enqueueCommands,
     renderCurrentFrame,
     getStepSizeMs: () => runtime.getStepSizeMs(),
     getNextStep: () => runtime.getNextExecutableStep(),
+    getRuntimeBacklog: () => runtime.getAccumulatorBacklogState(),
+    getOfflineCatchupStatus,
     hasCommandHandler,
     serialize,
     getCapabilities,
