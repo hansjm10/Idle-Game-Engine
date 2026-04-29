@@ -526,6 +526,25 @@ export function createSimRuntime(options: SimRuntimeOptions = {}): SimRuntime {
     return Math.max(0, runtime.getNextExecutableStep() - nextStepBeforeDrain);
   };
 
+  const getQueuedOfflineCatchupCommandSteps = (): readonly number[] => {
+    const queue = game.internals.commandQueue;
+    if (queue.size === 0) {
+      return [];
+    }
+
+    const steps = new Set<number>();
+    for (const entry of queue.exportForSave().entries) {
+      if (entry.type !== RUNTIME_COMMAND_TYPES.OFFLINE_CATCHUP) {
+        continue;
+      }
+      if (Number.isFinite(entry.step)) {
+        steps.add(Math.floor(entry.step));
+      }
+    }
+
+    return Array.from(steps).sort((left, right) => left - right);
+  };
+
   const getOfflineCatchupStatus = (): SimOfflineCatchupStatus => {
     const stepSize = runtime.getStepSizeMs();
     const creditedMs = runtime.getCreditedBacklogMs();
@@ -533,11 +552,15 @@ export function createSimRuntime(options: SimRuntimeOptions = {}): SimRuntime {
       Number.isFinite(stepSize) && stepSize > 0 && Number.isFinite(creditedMs) && creditedMs > 0
         ? Math.floor(creditedMs / stepSize)
         : 0;
-
-    return {
+    const queuedCommandSteps = getQueuedOfflineCatchupCommandSteps();
+    const status = {
       busy: pendingSteps > 0,
       pendingSteps,
     };
+
+    return queuedCommandSteps.length === 0
+      ? status
+      : { ...status, queuedCommandSteps };
   };
 
   const resetTickFrames = (): void => {

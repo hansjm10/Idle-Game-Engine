@@ -20,6 +20,12 @@ export const DEFAULT_SIM_RUNTIME_CAPABILITIES = Object.freeze({
 export type SimOfflineCatchupStatus = Readonly<{
   busy: boolean;
   pendingSteps: number;
+  /**
+   * Steps for queued OFFLINE_CATCHUP commands that have not yet produced
+   * credited backlog. The main process uses these to rebuild ingress barriers
+   * after worker-owned state is hydrated.
+   */
+  queuedCommandSteps?: readonly number[];
 }>;
 
 // ─────────────────────────────────────────────────────────────────────────────

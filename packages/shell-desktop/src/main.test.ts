@@ -3153,6 +3153,127 @@ describe('shell-desktop main process entrypoint', () => {
     await flushMicrotasks();
   });
 
+  it('rebuilds offline catch-up barriers from hydrated worker status', async () => {
+    vi.useFakeTimers();
+    setMonotonicNowSequence([0, 16]);
+    process.env.IDLE_ENGINE_ENABLE_MCP_SERVER = '1';
+    await import('./main.js');
+    await flushMicrotasks();
+
+    const { sim } = getRegisteredMcpControllers();
+    const worker = Worker.instances[0];
+    const mainWindow = BrowserWindow.windows[0];
+    expect(worker).toBeDefined();
+    expect(mainWindow).toBeDefined();
+
+    const capabilities = {
+      canSerialize: true,
+      canHydrate: true,
+      supportsOfflineCatchup: true,
+      saveFileStem: 'sample-pack',
+      saveSchemaVersion: 2,
+      contentHash: 'content:dev',
+      contentVersion: 'dev',
+    };
+
+    worker?.emitMessage({
+      kind: 'ready',
+      stepSizeMs: 20,
+      nextStep: 7,
+      capabilities,
+      runtimeBacklog: { totalMs: 0, hostFrameMs: 0, creditedMs: 0 },
+      offlineCatchup: { busy: false, pendingSteps: 0 },
+    });
+    await flushMicrotasks();
+
+    fsPromises.readFile.mockImplementationOnce(
+      async () =>
+        JSON.stringify({
+          schemaVersion: 1,
+          metadata: {
+            savedAt: '2026-03-12T21:00:00.000Z',
+            appVersion: '0.1.0',
+            runtime: {
+              saveFileStem: 'sample-pack',
+              saveSchemaVersion: 2,
+              contentHash: 'content:dev',
+              contentVersion: 'dev',
+            },
+          },
+          state: {
+            schemaVersion: 2,
+            nextStep: 9,
+            gameState: {
+              runtime: { step: 9 },
+              commandQueue: {
+                schemaVersion: 1,
+                entries: [
+                  {
+                    type: RUNTIME_COMMAND_TYPES.OFFLINE_CATCHUP,
+                    priority: CommandPriority.SYSTEM,
+                    timestamp: 180,
+                    step: 9,
+                    payload: { elapsedMs: 5 * 60 * 1000 },
+                  },
+                ],
+              },
+            },
+          },
+        }) as unknown as Buffer,
+    );
+
+    worker?.postMessage.mockClear();
+    getMenuEntry(['Simulation', 'Load']).click?.();
+    await flushMicrotasks(20);
+
+    const hydrateCall = worker?.postMessage.mock.calls.find(
+      (call) => (call[0] as { kind?: string } | undefined)?.kind === 'hydrate',
+    );
+    expect(hydrateCall).toBeDefined();
+
+    worker?.emitMessage({
+      kind: 'hydrated',
+      requestId: (hydrateCall?.[0] as { requestId?: string }).requestId ?? '',
+      nextStep: 9,
+      capabilities,
+      offlineCatchup: {
+        busy: false,
+        pendingSteps: 0,
+        queuedCommandSteps: [9],
+      },
+    });
+    await flushMicrotasks(20);
+
+    expect(sim.getStatus()).toMatchObject({
+      state: 'running',
+      nextStep: 9,
+      busy: 'offline-catchup',
+    });
+    expect(mainWindow?.webContents.send).toHaveBeenCalledWith(
+      IPC_CHANNELS.simStatus,
+      { kind: 'running', busy: 'offline-catchup' },
+    );
+    expect(() => sim.enqueue([
+      {
+        type: RUNTIME_COMMAND_TYPES.COLLECT_RESOURCE,
+        payload: { resourceId: 'sample-pack.energy', amount: 1 },
+        priority: CommandPriority.PLAYER,
+        step: 9,
+        timestamp: 180,
+      },
+    ])).toThrow('Simulation offline catch-up is in progress.');
+
+    const enqueueCalls = worker?.postMessage.mock.calls.filter(
+      (call) => (call[0] as { kind?: string } | undefined)?.kind === 'enqueueCommands',
+    ) ?? [];
+    expect(enqueueCalls).toHaveLength(0);
+
+    const windowAllClosedCall = app.on.mock.calls.find((call) => call[0] === 'window-all-closed');
+    const windowAllClosedHandler = windowAllClosedCall?.[1] as undefined | (() => void);
+    windowAllClosedHandler?.();
+    await flushMicrotasks();
+  });
+
   it('keeps paused sims paused for future offline catch-up enqueues', async () => {
     vi.useFakeTimers();
     setMonotonicNowSequence([0, 100, 116, 132, 148]);

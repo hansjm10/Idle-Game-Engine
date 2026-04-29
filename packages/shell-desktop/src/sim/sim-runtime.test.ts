@@ -432,6 +432,38 @@ describe('shell-desktop sim runtime', () => {
     );
   });
 
+  it('reports queued offline catch-up command steps after restore', () => {
+    const source = createSimRuntime({ stepSizeMs: 10, maxStepsPerFrame: 50 });
+    const catchupCommand = {
+      type: RUNTIME_COMMAND_TYPES.OFFLINE_CATCHUP,
+      priority: CommandPriority.SYSTEM,
+      payload: { elapsedMs: 30 },
+      timestamp: 30,
+      step: 3,
+    };
+
+    source.enqueueCommands([catchupCommand]);
+
+    expect(source.getOfflineCatchupStatus()).toEqual({
+      busy: false,
+      pendingSteps: 0,
+      queuedCommandSteps: [3],
+    });
+
+    const savedState = loadSerializedSimRuntimeState(source.serialize?.());
+    const restored = createSimRuntime({
+      stepSizeMs: 10,
+      maxStepsPerFrame: 50,
+      initialSerializedState: savedState,
+    });
+
+    expect(restored.getOfflineCatchupStatus()).toEqual({
+      busy: false,
+      pendingSteps: 0,
+      queuedCommandSteps: [3],
+    });
+  });
+
   it('applies offline catch-up payloads without requiring resourceDeltas', () => {
     const sim = createSimRuntime({ stepSizeMs: 10, maxStepsPerFrame: 50 });
 

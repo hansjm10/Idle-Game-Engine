@@ -1131,11 +1131,50 @@ function createSimWorkerController(
     };
   };
 
+  const normalizeOfflineCatchupBarrierSteps = (
+    barrierSteps: readonly number[] | undefined,
+  ): readonly number[] => Array.from(new Set(
+    (barrierSteps ?? [])
+      .filter((step) => Number.isFinite(step))
+      .map((step) => Math.floor(step)),
+  )).sort((left, right) => left - right);
+
+  const upsertOfflineCatchupBarriers = (
+    barrierSteps: readonly number[],
+    framesBeforeCommand: number,
+  ): void => {
+    for (const step of barrierSteps) {
+      const existingBarrier = offlineCatchupBarriers.find((barrier) => barrier.step === step);
+      if (existingBarrier) {
+        existingBarrier.framesBeforeCommand = Math.max(
+          existingBarrier.framesBeforeCommand,
+          framesBeforeCommand,
+        );
+      } else {
+        offlineCatchupBarriers.push({ step, framesBeforeCommand });
+      }
+    }
+    offlineCatchupBarriers.sort((left, right) => left.step - right.step);
+  };
+
   const updateOfflineCatchupBusyState = (
     status: SimOfflineCatchupStatus | undefined,
-    options: Readonly<{ clearableBarrierSteps?: ReadonlySet<number> }> = {},
+    options: Readonly<{
+      clearableBarrierSteps?: ReadonlySet<number>;
+      replaceBarriersFromStatus?: boolean;
+    }> = {},
   ): void => {
     const wasBusy = isOfflineCatchupBusy();
+    const reportedBarrierSteps = normalizeOfflineCatchupBarrierSteps(status?.queuedCommandSteps);
+    if (options.replaceBarriersFromStatus) {
+      offlineCatchupBarriers = reportedBarrierSteps.map((step) => ({
+        step,
+        framesBeforeCommand: 0,
+      }));
+    } else if (reportedBarrierSteps.length > 0) {
+      upsertOfflineCatchupBarriers(reportedBarrierSteps, 0);
+    }
+
     offlineCatchupStatus = normalizeOfflineCatchupStatus(status);
 
     if (!hasExecutableOfflineCatchupBacklog()) {
@@ -1163,29 +1202,14 @@ function createSimWorkerController(
   };
 
   const beginOfflineCatchupBarriers = (barrierSteps: readonly number[]): void => {
-    const normalizedBarrierSteps = Array.from(new Set(
-      barrierSteps
-        .filter((step) => Number.isFinite(step))
-        .map((step) => Math.floor(step)),
-    ));
+    const normalizedBarrierSteps = normalizeOfflineCatchupBarrierSteps(barrierSteps);
     if (normalizedBarrierSteps.length === 0) {
       return;
     }
 
     const wasBusy = isOfflineCatchupBusy();
 
-    for (const step of normalizedBarrierSteps) {
-      const existingBarrier = offlineCatchupBarriers.find((barrier) => barrier.step === step);
-      if (existingBarrier) {
-        existingBarrier.framesBeforeCommand = Math.max(
-          existingBarrier.framesBeforeCommand,
-          inFlightTickMessages,
-        );
-      } else {
-        offlineCatchupBarriers.push({ step, framesBeforeCommand: inFlightTickMessages });
-      }
-    }
-    offlineCatchupBarriers.sort((left, right) => left.step - right.step);
+    upsertOfflineCatchupBarriers(normalizedBarrierSteps, inFlightTickMessages);
 
     driveOfflineCatchupIfBusy();
     notifyOfflineCatchupBusyChanged(wasBusy);
@@ -1248,8 +1272,9 @@ function createSimWorkerController(
       rejectPendingStepCompletions(new Error(SIM_STEP_INVALIDATED_BY_LOAD_ERROR));
       nextStep = message.nextStep;
       runtimeCapabilities = message.capabilities ?? runtimeCapabilities;
-      offlineCatchupBarriers = [];
-      updateOfflineCatchupBusyState(message.offlineCatchup);
+      updateOfflineCatchupBusyState(message.offlineCatchup, {
+        replaceBarriersFromStatus: true,
+      });
       notifyCapabilitiesChanged();
       publishFrame(message.frame);
       takePendingRequest(message.requestId)?.resolve(undefined);

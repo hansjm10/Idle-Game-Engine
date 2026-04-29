@@ -113,7 +113,11 @@ describe('shell-desktop sim worker', () => {
       enqueueCommands: vi.fn(),
       getStepSizeMs: vi.fn(() => 20),
       getNextStep: vi.fn(() => 12),
-      getOfflineCatchupStatus: vi.fn(() => ({ busy: true, pendingSteps: 3 })),
+      getOfflineCatchupStatus: vi.fn(() => ({
+        busy: true,
+        pendingSteps: 3,
+        queuedCommandSteps: [12],
+      })),
       getCapabilities: vi.fn(() => ({
         canSerialize: true,
         canHydrate: true,
@@ -212,7 +216,7 @@ describe('shell-desktop sim worker', () => {
         saveSchemaVersion: 1,
       },
       frame: hydratedFrame,
-      offlineCatchup: { busy: true, pendingSteps: 3 },
+      offlineCatchup: { busy: true, pendingSteps: 3, queuedCommandSteps: [12] },
     });
   });
 
