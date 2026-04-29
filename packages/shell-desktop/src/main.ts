@@ -772,7 +772,7 @@ function createSimWorkerController(
   const isCommandIngressFrozen = (): boolean => commandIngressFreezeDepth > 0;
 
   const hasCreditedOfflineCatchupBacklog = (): boolean =>
-    offlineCatchupCreditedBacklogMs >= stepSizeMs;
+    offlineCatchupCreditedBacklogMs > 0;
 
   const isOfflineCatchupBusy = (): boolean =>
     offlineCatchupBarrierStep !== undefined || hasCreditedOfflineCatchupBacklog();
