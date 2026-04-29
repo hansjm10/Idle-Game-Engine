@@ -22,6 +22,7 @@ import {
 import {
   DEFAULT_SIM_RUNTIME_CAPABILITIES,
   type SimRuntimeCapabilities,
+  type SimOfflineCatchupStatus,
 } from './worker-protocol.js';
 import type {
   AssetId,
@@ -54,15 +55,18 @@ export type SimTickResult = Readonly<{
   droppedFrames: number;
   nextStep: number;
   runtimeBacklog: RuntimeAccumulatorBacklogState;
+  offlineCatchup: SimOfflineCatchupStatus;
 }>;
 
 export type SimRuntime = Readonly<{
   tick: (deltaMs: number) => SimTickResult;
+  drainOfflineCatchup: () => SimTickResult;
   enqueueCommands: (commands: readonly Command[]) => void;
   renderCurrentFrame?: () => RenderCommandBuffer | undefined;
   getStepSizeMs: () => number;
   getNextStep: () => number;
   getRuntimeBacklog: () => RuntimeAccumulatorBacklogState;
+  getOfflineCatchupStatus: () => SimOfflineCatchupStatus;
   hasCommandHandler: (type: string) => boolean;
   serialize?: () => SerializedSimRuntimeState;
   getCapabilities?: () => SimRuntimeCapabilities;
@@ -522,24 +526,55 @@ export function createSimRuntime(options: SimRuntimeOptions = {}): SimRuntime {
     return Math.max(0, runtime.getNextExecutableStep() - nextStepBeforeDrain);
   };
 
-  const tick = (deltaMs: number): SimTickResult => {
+  const getOfflineCatchupStatus = (): SimOfflineCatchupStatus => {
+    const stepSize = runtime.getStepSizeMs();
+    const creditedMs = runtime.getCreditedBacklogMs();
+    const pendingSteps =
+      Number.isFinite(stepSize) && stepSize > 0 && Number.isFinite(creditedMs) && creditedMs > 0
+        ? Math.floor(creditedMs / stepSize)
+        : 0;
+
+    return {
+      busy: pendingSteps > 0,
+      pendingSteps,
+    };
+  };
+
+  const resetTickFrames = (): void => {
     frameQueue.length = 0;
     droppedFrames = 0;
     lastFrame = undefined;
+  };
+
+  const buildTickResult = (): SimTickResult => ({
+    frames: Array.from(frameQueue),
+    frame: lastFrame,
+    droppedFrames: droppedFrames + Math.max(0, frameQueue.length - 1),
+    nextStep: runtime.getNextExecutableStep(),
+    runtimeBacklog: runtime.getAccumulatorBacklogState(),
+    offlineCatchup: getOfflineCatchupStatus(),
+  });
+
+  const tick = (deltaMs: number): SimTickResult => {
+    resetTickFrames();
 
     processTickBudget(deltaMs);
 
-    if (runtime.getCreditedBacklogMs() >= runtime.getStepSizeMs()) {
+    if (getOfflineCatchupStatus().busy) {
       drainOfflineCatchupBacklog();
     }
 
-    return {
-      frames: Array.from(frameQueue),
-      frame: lastFrame,
-      droppedFrames: droppedFrames + Math.max(0, frameQueue.length - 1),
-      nextStep: runtime.getNextExecutableStep(),
-      runtimeBacklog: runtime.getAccumulatorBacklogState(),
-    };
+    return buildTickResult();
+  };
+
+  const drainOfflineCatchup = (): SimTickResult => {
+    resetTickFrames();
+
+    if (getOfflineCatchupStatus().busy) {
+      drainOfflineCatchupBacklog();
+    }
+
+    return buildTickResult();
   };
 
   const enqueueCommands = (commands: readonly Command[]): void => {
@@ -568,11 +603,13 @@ export function createSimRuntime(options: SimRuntimeOptions = {}): SimRuntime {
 
   return {
     tick,
+    drainOfflineCatchup,
     enqueueCommands,
     renderCurrentFrame,
     getStepSizeMs: () => runtime.getStepSizeMs(),
     getNextStep: () => runtime.getNextExecutableStep(),
     getRuntimeBacklog: () => runtime.getAccumulatorBacklogState(),
+    getOfflineCatchupStatus,
     hasCommandHandler,
     serialize,
     getCapabilities,

@@ -27,6 +27,7 @@ describe('shell-desktop sim worker', () => {
       enqueueCommands: vi.fn(),
       getStepSizeMs: vi.fn(() => 25),
       getNextStep: vi.fn(() => 7),
+      getOfflineCatchupStatus: vi.fn(() => ({ busy: false, pendingSteps: 0 })),
       getCapabilities: vi.fn(() => ({
         canSerialize: true,
         canHydrate: true,
@@ -64,6 +65,7 @@ describe('shell-desktop sim worker', () => {
         saveFileStem: 'sample-pack',
         saveSchemaVersion: 1,
       },
+      offlineCatchup: { busy: false, pendingSteps: 0 },
     });
   });
 
@@ -111,6 +113,7 @@ describe('shell-desktop sim worker', () => {
       enqueueCommands: vi.fn(),
       getStepSizeMs: vi.fn(() => 20),
       getNextStep: vi.fn(() => 12),
+      getOfflineCatchupStatus: vi.fn(() => ({ busy: true, pendingSteps: 3 })),
       getCapabilities: vi.fn(() => ({
         canSerialize: true,
         canHydrate: true,
@@ -209,6 +212,7 @@ describe('shell-desktop sim worker', () => {
         saveSchemaVersion: 1,
       },
       frame: hydratedFrame,
+      offlineCatchup: { busy: true, pendingSteps: 3 },
     });
   });
 
@@ -853,6 +857,49 @@ describe('shell-desktop sim worker', () => {
       kind: 'frame',
       droppedFrames: 0,
       nextStep: 3,
+    });
+  });
+
+  it('drains offline catch-up without posting a live tick delta', async () => {
+    const runtime = {
+      tick: vi.fn(),
+      drainOfflineCatchup: vi.fn().mockReturnValueOnce({
+        frames: [],
+        droppedFrames: 0,
+        nextStep: 7,
+        runtimeBacklog: { totalMs: 5, hostFrameMs: 0, creditedMs: 5 },
+        offlineCatchup: { busy: false, pendingSteps: 0 },
+      }),
+      enqueueCommands: vi.fn(),
+      getStepSizeMs: vi.fn(() => 16),
+      getNextStep: vi.fn(() => 0),
+    };
+    const createSimRuntime = vi.fn(() => runtime);
+
+    let messageHandler: MessageHandler;
+    const parentPort = {
+      on: vi.fn((_event: string, handler: (message: unknown) => void) => {
+        messageHandler = handler;
+      }),
+      postMessage: vi.fn(),
+      close: vi.fn(),
+    };
+
+    vi.doMock('node:worker_threads', () => ({ parentPort }));
+    vi.doMock('./sim/sim-runtime.js', () => ({ createSimRuntime }));
+
+    await import('./sim-worker.js');
+
+    messageHandler?.({ kind: 'drainOfflineCatchup' });
+
+    expect(runtime.tick).not.toHaveBeenCalled();
+    expect(runtime.drainOfflineCatchup).toHaveBeenCalledTimes(1);
+    expect(parentPort.postMessage).toHaveBeenCalledWith({
+      kind: 'frame',
+      droppedFrames: 0,
+      nextStep: 7,
+      runtimeBacklog: { totalMs: 5, hostFrameMs: 0, creditedMs: 5 },
+      offlineCatchup: { busy: false, pendingSteps: 0 },
     });
   });
 

@@ -508,6 +508,7 @@ describe('shell-desktop sim runtime', () => {
       expect(result.droppedFrames).toBe(3);
       expect(result.nextStep).toBe(4);
       expect(sim.getNextStep()).toBe(4);
+      expect(result.offlineCatchup).toEqual({ busy: true, pendingSteps: 2 });
       expect(drainCreditedBacklog).toHaveBeenCalledTimes(1);
 
       const savedState = loadSerializedSimRuntimeState(sim.serialize?.());
@@ -519,10 +520,57 @@ describe('shell-desktop sim runtime', () => {
       expect(continued.frames).toHaveLength(2);
       expect(continued.frame?.frame.step).toBe(5);
       expect(continued.nextStep).toBe(6);
+      expect(continued.offlineCatchup).toEqual({ busy: false, pendingSteps: 0 });
       expect(drainCreditedBacklog).toHaveBeenCalledTimes(2);
     } finally {
       drainCreditedBacklog.mockRestore();
     }
+  });
+
+  it('reports fractional credited remainders as non-busy catch-up status', () => {
+    const sim = createSimRuntime({ stepSizeMs: 10, maxStepsPerFrame: 2 });
+
+    sim.enqueueCommands([
+      {
+        type: RUNTIME_COMMAND_TYPES.OFFLINE_CATCHUP,
+        priority: CommandPriority.SYSTEM,
+        payload: { elapsedMs: 25 },
+        timestamp: 0,
+        step: sim.getNextStep(),
+      },
+    ]);
+
+    const result = sim.tick(10);
+    expect(result.offlineCatchup).toEqual({ busy: false, pendingSteps: 0 });
+
+    const savedState = loadSerializedSimRuntimeState(sim.serialize?.());
+    expect(getRuntimeBacklog(savedState).creditedBacklogMs).toBe(5);
+  });
+
+  it('drains offline catch-up through the explicit drain path', () => {
+    const sim = createSimRuntime({ stepSizeMs: 10, maxStepsPerFrame: 2 });
+
+    sim.enqueueCommands([
+      {
+        type: RUNTIME_COMMAND_TYPES.OFFLINE_CATCHUP,
+        priority: CommandPriority.SYSTEM,
+        payload: { elapsedMs: 60 },
+        timestamp: 0,
+        step: sim.getNextStep(),
+      },
+    ]);
+
+    const captured = sim.tick(10);
+    expect(captured.offlineCatchup).toEqual({ busy: true, pendingSteps: 2 });
+
+    const drained = sim.drainOfflineCatchup();
+    expect(drained.frames).toHaveLength(2);
+    expect(drained.nextStep).toBe(6);
+    expect(drained.offlineCatchup).toEqual({ busy: false, pendingSteps: 0 });
+
+    const savedState = loadSerializedSimRuntimeState(sim.serialize?.());
+    expect(getRuntimeBacklog(savedState).hostFrameBacklogMs).toBe(0);
+    expect(getRuntimeBacklog(savedState).creditedBacklogMs).toBe(0);
   });
 
   it('keeps live backlog out of offline drains after multi-step positive frame ticks', () => {

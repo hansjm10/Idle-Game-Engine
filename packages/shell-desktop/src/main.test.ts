@@ -2982,6 +2982,7 @@ describe('shell-desktop main process entrypoint', () => {
       droppedFrames: 0,
       nextStep: 9,
       runtimeBacklog: { totalMs: 120, hostFrameMs: 0, creditedMs: 120 },
+      offlineCatchup: { busy: true, pendingSteps: 6 },
     });
     await flushMicrotasks();
     expect(sim.getStatus()).toMatchObject({ busy: 'offline-catchup' });
@@ -2991,6 +2992,7 @@ describe('shell-desktop main process entrypoint', () => {
       droppedFrames: 0,
       nextStep: 30,
       runtimeBacklog: { totalMs: 0, hostFrameMs: 0, creditedMs: 0 },
+      offlineCatchup: { busy: false, pendingSteps: 0 },
     });
     await flushMicrotasks();
 
@@ -3020,7 +3022,7 @@ describe('shell-desktop main process entrypoint', () => {
     await flushMicrotasks();
   });
 
-  it('keeps command ingress blocked for sub-step credited offline catch-up backlog', async () => {
+  it('clears command ingress for sub-step credited offline catch-up remainders', async () => {
     vi.useFakeTimers();
     setMonotonicNowSequence([0, 16]);
     process.env.IDLE_ENGINE_ENABLE_MCP_SERVER = '1';
@@ -3055,40 +3057,22 @@ describe('shell-desktop main process entrypoint', () => {
       droppedFrames: 0,
       nextStep: 9,
       runtimeBacklog: { totalMs: 9, hostFrameMs: 0, creditedMs: 9 },
+      offlineCatchup: { busy: false, pendingSteps: 0 },
     });
     await flushMicrotasks();
 
     expect(sim.getStatus()).toMatchObject({
       state: 'running',
       nextStep: 9,
-      busy: 'offline-catchup',
     });
-    expect(() => sim.enqueue([
-      {
-        type: RUNTIME_COMMAND_TYPES.COLLECT_RESOURCE,
-        payload: { resourceId: 'sample-pack.energy', amount: 1 },
-        priority: CommandPriority.PLAYER,
-        step: 9,
-        timestamp: 144,
-      },
-    ])).toThrow('Simulation offline catch-up is in progress.');
-
-    worker?.emitMessage({
-      kind: 'frame',
-      droppedFrames: 0,
-      nextStep: 10,
-      runtimeBacklog: { totalMs: 0, hostFrameMs: 0, creditedMs: 0 },
-    });
-    await flushMicrotasks();
-
     expect(sim.getStatus()).not.toHaveProperty('busy');
     expect(sim.enqueue([
       {
         type: RUNTIME_COMMAND_TYPES.COLLECT_RESOURCE,
         payload: { resourceId: 'sample-pack.energy', amount: 1 },
         priority: CommandPriority.PLAYER,
-        step: 10,
-        timestamp: 160,
+        step: 9,
+        timestamp: 144,
       },
     ])).toEqual({ enqueued: 1 });
 
@@ -3322,6 +3306,7 @@ describe('shell-desktop main process entrypoint', () => {
       droppedFrames: 0,
       nextStep: 8,
       runtimeBacklog: { totalMs: 0, hostFrameMs: 0, creditedMs: 0 },
+      offlineCatchup: { busy: false, pendingSteps: 0 },
     });
     await flushMicrotasks();
 
@@ -3341,6 +3326,7 @@ describe('shell-desktop main process entrypoint', () => {
       droppedFrames: 0,
       nextStep: 30,
       runtimeBacklog: { totalMs: 0, hostFrameMs: 0, creditedMs: 0 },
+      offlineCatchup: { busy: false, pendingSteps: 0 },
     });
     await flushMicrotasks();
 
@@ -3352,9 +3338,9 @@ describe('shell-desktop main process entrypoint', () => {
     await flushMicrotasks();
   });
 
-  it('keeps paused offline catch-up to one in-flight tick before restoring pause', async () => {
+  it('drains paused offline catch-up without adding live tick deltas', async () => {
     vi.useFakeTimers();
-    setMonotonicNowSequence([0, 100, 116, 132, 148]);
+    setMonotonicNowSequence([0, 100, 116, 132, 148, 164, 180, 196]);
     process.env.IDLE_ENGINE_ENABLE_MCP_SERVER = '1';
     await import('./main.js');
     await flushMicrotasks();
@@ -3400,19 +3386,45 @@ describe('shell-desktop main process entrypoint', () => {
       (call) => (call[0] as { kind?: string } | undefined)?.kind === 'tick',
     ) ?? [];
     expect(tickCallsBeforeFrame).toHaveLength(1);
-    expect(tickCallsBeforeFrame[0]?.[0]).toMatchObject({ deltaMs: 16 });
+    expect(tickCallsBeforeFrame[0]?.[0]).toMatchObject({ deltaMs: 20 });
 
     worker?.emitMessage({
       kind: 'frame',
       droppedFrames: 0,
       nextStep: 8,
+      runtimeBacklog: { totalMs: 80, hostFrameMs: 0, creditedMs: 80 },
+      offlineCatchup: { busy: true, pendingSteps: 4 },
+    });
+    await flushMicrotasks();
+
+    expect(sim.getStatus()).toMatchObject({
+      state: 'running',
+      nextStep: 8,
+      busy: 'offline-catchup',
+    });
+
+    await vi.advanceTimersByTimeAsync(48);
+    const tickCallsWhileDraining = worker?.postMessage.mock.calls.filter(
+      (call) => (call[0] as { kind?: string } | undefined)?.kind === 'tick',
+    ) ?? [];
+    const drainCalls = worker?.postMessage.mock.calls.filter(
+      (call) => (call[0] as { kind?: string } | undefined)?.kind === 'drainOfflineCatchup',
+    ) ?? [];
+    expect(tickCallsWhileDraining).toHaveLength(1);
+    expect(drainCalls).toHaveLength(1);
+
+    worker?.emitMessage({
+      kind: 'frame',
+      droppedFrames: 0,
+      nextStep: 12,
       runtimeBacklog: { totalMs: 0, hostFrameMs: 0, creditedMs: 0 },
+      offlineCatchup: { busy: false, pendingSteps: 0 },
     });
     await flushMicrotasks();
 
     expect(sim.getStatus()).toMatchObject({
       state: 'paused',
-      nextStep: 8,
+      nextStep: 12,
     });
     expect(sim.getStatus()).not.toHaveProperty('busy');
 
@@ -3420,7 +3432,11 @@ describe('shell-desktop main process entrypoint', () => {
     const tickCallsAfterPauseRestore = worker?.postMessage.mock.calls.filter(
       (call) => (call[0] as { kind?: string } | undefined)?.kind === 'tick',
     ) ?? [];
+    const drainCallsAfterPauseRestore = worker?.postMessage.mock.calls.filter(
+      (call) => (call[0] as { kind?: string } | undefined)?.kind === 'drainOfflineCatchup',
+    ) ?? [];
     expect(tickCallsAfterPauseRestore).toHaveLength(1);
+    expect(drainCallsAfterPauseRestore).toHaveLength(1);
 
     const windowAllClosedCall = app.on.mock.calls.find((call) => call[0] === 'window-all-closed');
     const windowAllClosedHandler = windowAllClosedCall?.[1] as undefined | (() => void);
@@ -3505,6 +3521,7 @@ describe('shell-desktop main process entrypoint', () => {
         saveSchemaVersion: 1,
       },
       runtimeBacklog: { totalMs: 80, hostFrameMs: 0, creditedMs: 80 },
+      offlineCatchup: { busy: true, pendingSteps: 4 },
     });
     await flushMicrotasks(20);
 
@@ -3528,6 +3545,7 @@ describe('shell-desktop main process entrypoint', () => {
       droppedFrames: 0,
       nextStep: 16,
       runtimeBacklog: { totalMs: 0, hostFrameMs: 0, creditedMs: 0 },
+      offlineCatchup: { busy: false, pendingSteps: 0 },
     });
     await flushMicrotasks();
 
