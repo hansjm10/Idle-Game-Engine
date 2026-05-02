@@ -76,6 +76,11 @@ type ShellControlEventCommandPayload = Readonly<{
   event: ShellControlEvent;
 }>;
 
+type LiveTickBudget = Readonly<{
+  deltaMs: number;
+  maxSteps?: number;
+}>;
+
 const SAMPLE_COLLECT_ACTION_ID = 'collect';
 const SAMPLE_FONT_ASSET_ID = 'sample-pack.ui-font' as AssetId;
 const SIM_RUNTIME_SAVE_FILE_STEM = 'sample-pack';
@@ -515,9 +520,13 @@ export function createSimRuntime(options: SimRuntimeOptions = {}): SimRuntime {
     }
   };
 
-  const processTickBudget = (deltaMs: number): number => {
+  const processTickBudget = (budget: LiveTickBudget): number => {
     const nextStepBeforeTick = runtime.getNextExecutableStep();
-    game.tick(deltaMs);
+    if (budget.maxSteps === undefined) {
+      game.tick(budget.deltaMs);
+    } else {
+      runtime.tick(budget.deltaMs, { maxSteps: budget.maxSteps });
+    }
     rethrowFatalCommandFailures();
     return Math.max(0, runtime.getNextExecutableStep() - nextStepBeforeTick);
   };
@@ -552,15 +561,76 @@ export function createSimRuntime(options: SimRuntimeOptions = {}): SimRuntime {
   const getEarliestQueuedOfflineCatchupCommandStep = (): number | undefined =>
     getQueuedOfflineCatchupCommandSteps()[0];
 
-  const capLiveTickDeltaAtQueuedOfflineCatchup = (deltaMs: number): number => {
-    const barrierStep = getEarliestQueuedOfflineCatchupCommandStep();
-    const nextStep = runtime.getNextExecutableStep();
-    if (barrierStep === undefined || barrierStep <= nextStep) {
-      return deltaMs;
+  const getEarliestQueuedNonOfflineCatchupCommandStepAtOrAfter = (
+    candidateStep: number,
+  ): number | undefined => {
+    const queue = game.internals.commandQueue;
+    if (queue.size === 0) {
+      return undefined;
     }
 
-    const maxDeltaMs = Math.max(0, barrierStep - nextStep) * runtime.getStepSizeMs();
-    return Math.min(deltaMs, maxDeltaMs);
+    let earliestStep: number | undefined;
+    for (const entry of queue.exportForSave().entries) {
+      if (
+        entry.type === RUNTIME_COMMAND_TYPES.OFFLINE_CATCHUP ||
+        !Number.isFinite(entry.step)
+      ) {
+        continue;
+      }
+
+      const step = Math.floor(entry.step);
+      if (step < candidateStep) {
+        continue;
+      }
+      earliestStep = earliestStep === undefined ? step : Math.min(earliestStep, step);
+    }
+
+    return earliestStep;
+  };
+
+  const getEarliestOfflineCatchupCommandStep = (
+    commands: readonly Command[],
+  ): number | undefined => {
+    let earliestStep: number | undefined;
+    for (const command of commands) {
+      if (command.type !== RUNTIME_COMMAND_TYPES.OFFLINE_CATCHUP) {
+        continue;
+      }
+
+      earliestStep =
+        earliestStep === undefined ? command.step : Math.min(earliestStep, command.step);
+    }
+
+    return earliestStep;
+  };
+
+  const buildLiveTickBudgetAtQueuedOfflineCatchup = (deltaMs: number): LiveTickBudget => {
+    const barrierStep = getEarliestQueuedOfflineCatchupCommandStep();
+    const nextStep = runtime.getNextExecutableStep();
+    if (barrierStep === undefined || barrierStep < nextStep) {
+      return { deltaMs };
+    }
+
+    const stepSizeMs = runtime.getStepSizeMs();
+    if (barrierStep === nextStep) {
+      const hostFrameMs = runtime.getAccumulatorBacklogState().hostFrameMs;
+      const liveBudgetMs =
+        hostFrameMs + (Number.isFinite(deltaMs) && deltaMs > 0 ? deltaMs : 0);
+      const liveSteps =
+        Number.isFinite(stepSizeMs) && stepSizeMs > 0
+          ? Math.floor(liveBudgetMs / stepSizeMs)
+          : 0;
+      return hostFrameMs > 0 && liveSteps > 1
+        ? { deltaMs, maxSteps: 1 }
+        : { deltaMs };
+    }
+
+    const maxSteps = barrierStep - nextStep;
+    const maxDeltaMs = maxSteps * runtime.getStepSizeMs();
+    return {
+      deltaMs: Math.min(deltaMs, maxDeltaMs),
+      maxSteps,
+    };
   };
 
   const getOfflineCatchupStatus = (): SimOfflineCatchupStatus => {
@@ -599,7 +669,7 @@ export function createSimRuntime(options: SimRuntimeOptions = {}): SimRuntime {
   const tick = (deltaMs: number): SimTickResult => {
     resetTickFrames();
 
-    processTickBudget(capLiveTickDeltaAtQueuedOfflineCatchup(deltaMs));
+    processTickBudget(buildLiveTickBudgetAtQueuedOfflineCatchup(deltaMs));
 
     if (getOfflineCatchupStatus().busy) {
       drainOfflineCatchupBacklog();
@@ -640,6 +710,18 @@ export function createSimRuntime(options: SimRuntimeOptions = {}): SimRuntime {
     );
     if (hasOfflineCatchupCommand && hasOtherCommand) {
       throw new Error(OFFLINE_CATCHUP_MIXED_BATCH_ERROR);
+    }
+
+    const newOfflineCatchupBarrierStep = getEarliestOfflineCatchupCommandStep(
+      normalizedCommands,
+    );
+    if (
+      newOfflineCatchupBarrierStep !== undefined &&
+      getEarliestQueuedNonOfflineCatchupCommandStepAtOrAfter(
+        newOfflineCatchupBarrierStep,
+      ) !== undefined
+    ) {
+      throw new Error(OFFLINE_CATCHUP_QUEUED_COMMAND_ERROR);
     }
 
     const barrierStep = getEarliestQueuedOfflineCatchupCommandStep();

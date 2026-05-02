@@ -489,6 +489,77 @@ describe('shell-desktop sim runtime', () => {
     });
   });
 
+  it('stops existing host backlog before future queued offline catch-up commands', () => {
+    const sim = createSimRuntime({
+      stepSizeMs: 10,
+      maxStepsPerFrame: 50,
+      initialHostFrameBacklogMs: 60,
+    });
+
+    sim.enqueueCommands([
+      {
+        type: RUNTIME_COMMAND_TYPES.OFFLINE_CATCHUP,
+        priority: CommandPriority.SYSTEM,
+        payload: { elapsedMs: 60 },
+        timestamp: 50,
+        step: 5,
+      },
+    ]);
+
+    const result = sim.tick(10);
+
+    expect(result.frames).toHaveLength(5);
+    expect(result.frame?.frame.step).toBe(4);
+    expect(result.nextStep).toBe(5);
+    expect(result.runtimeBacklog).toEqual({
+      totalMs: 20,
+      hostFrameMs: 20,
+      creditedMs: 0,
+    });
+    expect(result.offlineCatchup).toEqual({
+      busy: false,
+      pendingSteps: 0,
+      queuedCommandSteps: [5],
+    });
+  });
+
+  it('executes current offline catch-up barriers before draining host backlog past them', () => {
+    const sim = createSimRuntime({
+      stepSizeMs: 10,
+      maxStepsPerFrame: 50,
+      initialStep: 5,
+      initialHostFrameBacklogMs: 20,
+    });
+
+    sim.enqueueCommands([
+      {
+        type: RUNTIME_COMMAND_TYPES.OFFLINE_CATCHUP,
+        priority: CommandPriority.SYSTEM,
+        payload: { elapsedMs: 60 },
+        timestamp: 50,
+        step: 5,
+      },
+    ]);
+
+    const result = sim.tick(10);
+
+    expect(result.frames.map((frame) => frame.frame.step)).toEqual([
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+    ]);
+    expect(result.nextStep).toBe(11);
+    expect(result.runtimeBacklog).toEqual({
+      totalMs: 20,
+      hostFrameMs: 20,
+      creditedMs: 0,
+    });
+    expect(result.offlineCatchup).toEqual({ busy: false, pendingSteps: 0 });
+  });
+
   it('rejects commands scheduled into future queued offline catch-up commands', () => {
     const sim = createSimRuntime({ stepSizeMs: 10, maxStepsPerFrame: 50 });
 
@@ -509,6 +580,37 @@ describe('shell-desktop sim runtime', () => {
     expect(() => sim.enqueueCommands([collectEnergyCommand(5)])).toThrow(
       'Cannot enqueue commands at or after a queued offline catch-up command.',
     );
+  });
+
+  it('rejects offline catch-up commands scheduled behind queued future commands', () => {
+    const sim = createSimRuntime({ stepSizeMs: 10, maxStepsPerFrame: 50 });
+
+    sim.enqueueCommands([collectEnergyCommand(6)]);
+
+    expect(() => sim.enqueueCommands([
+      {
+        type: RUNTIME_COMMAND_TYPES.OFFLINE_CATCHUP,
+        priority: CommandPriority.SYSTEM,
+        payload: { elapsedMs: 60 },
+        timestamp: 50,
+        step: 5,
+      },
+    ])).toThrow(
+      'Cannot enqueue commands at or after a queued offline catch-up command.',
+    );
+
+    const allowed = createSimRuntime({ stepSizeMs: 10, maxStepsPerFrame: 50 });
+    allowed.enqueueCommands([collectEnergyCommand(4)]);
+
+    expect(() => allowed.enqueueCommands([
+      {
+        type: RUNTIME_COMMAND_TYPES.OFFLINE_CATCHUP,
+        priority: CommandPriority.SYSTEM,
+        payload: { elapsedMs: 60 },
+        timestamp: 50,
+        step: 5,
+      },
+    ])).not.toThrow();
   });
 
   it('rejects mixed offline catch-up command batches', () => {

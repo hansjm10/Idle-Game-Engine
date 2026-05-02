@@ -28,6 +28,7 @@ export type {
   IdleEngineRuntimeOptions,
   RuntimeAccumulatorBacklogSourceState,
   RuntimeAccumulatorBacklogState,
+  RuntimeTickOptions,
   System,
   SystemRegistrationContext,
   TickContext,
