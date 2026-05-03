@@ -20,6 +20,7 @@ import {
   type ShellInputEventEnvelope,
   type ShellRendererDiagnosticsPayload,
   type ShellRendererLogPayload,
+  type ShellSimBusyStatus,
   type ShellSimStatusPayload,
 } from './ipc.js';
 import { monotonicNowMs } from './monotonic-time.js';
@@ -40,6 +41,7 @@ import { SIM_MCP_MAX_STEP_COUNT, type SimMcpController, type SimMcpStatus } from
 import type { WindowMcpController } from './mcp/window-tools.js';
 import {
   DEFAULT_SIM_RUNTIME_CAPABILITIES,
+  type SimOfflineCatchupStatus,
   type SimRuntimeCapabilities,
   type SimWorkerInboundMessage,
   type SimWorkerOutboundMessage,
@@ -649,6 +651,7 @@ type SimWorkerController = Readonly<{
   sendControlEvent: (event: ShellControlEvent) => void;
   sendInputEvent: (envelope: ShellInputEventEnvelope) => void;
   enqueueCommands: (commands: readonly Command[]) => void;
+  enqueueOfflineCatchupCommand: (command: Command<OfflineCatchupPayload>) => void;
   serializeState: () => Promise<unknown>;
   hydrateState: (state: unknown) => Promise<void>;
   runWhileCommandIngressFrozen: <T>(
@@ -656,6 +659,7 @@ type SimWorkerController = Readonly<{
     options?: CommandIngressFreezeOptions,
   ) => Promise<T>;
   isCommandIngressFrozen: () => boolean;
+  isOfflineCatchupBusy: () => boolean;
   pause: () => void;
   resume: () => void;
   step: (steps: number) => Promise<SimMcpStatus>;
@@ -666,6 +670,7 @@ type SimWorkerController = Readonly<{
 
 type SimWorkerControllerOptions = Readonly<{
   onCapabilitiesChanged?: (capabilities: SimRuntimeCapabilities) => void;
+  onBusyChanged?: () => void;
 }>;
 
 type CommandIngressFreezeOptions = Readonly<{
@@ -680,7 +685,24 @@ let mcpServer: ShellDesktopMcpServer | undefined;
 let simRuntimeCapabilities: SimRuntimeCapabilities = DEFAULT_SIM_RUNTIME_CAPABILITIES;
 let simToolingBusy = false;
 const SIM_TOOLING_BUSY_ERROR = 'Simulation save/load is in progress.';
+const SIM_OFFLINE_CATCHUP_BUSY_ERROR = 'Simulation offline catch-up is in progress.';
+const SIM_OFFLINE_CATCHUP_MIXED_BATCH_ERROR =
+  'Offline catch-up commands must be enqueued separately from other commands.';
 const SIM_STEP_INVALIDATED_BY_LOAD_ERROR = 'Simulation step was interrupted by state load.';
+
+function getSimControllerBusyError(controller: SimWorkerController): Error | undefined {
+  if (controller.isCommandIngressFrozen()) {
+    return new Error(SIM_TOOLING_BUSY_ERROR);
+  }
+  if (controller.isOfflineCatchupBusy()) {
+    return new Error(SIM_OFFLINE_CATCHUP_BUSY_ERROR);
+  }
+  return undefined;
+}
+
+function isSimToolingActionBusy(): boolean {
+  return simToolingBusy || (simWorkerController?.isOfflineCatchupBusy() ?? false);
+}
 
 function createSimWorkerController(
   mainWindow: BrowserWindow,
@@ -705,6 +727,10 @@ function createSimWorkerController(
     resolve: (status: SimMcpStatus) => void;
     reject: (error: Error) => void;
   }>;
+  type OfflineCatchupBarrier = {
+    step: number;
+    framesBeforeCommand: number;
+  };
   let stepCompletionWaiters: StepCompletionWaiter[] = [];
   const pendingRequests = new Map<
     string,
@@ -715,6 +741,12 @@ function createSimWorkerController(
   >();
   let requestSequence = 0;
   let commandIngressFreezeDepth = 0;
+  let inFlightTickMessages = 0;
+  let inFlightTickStepBudgets: number[] = [];
+  let offlineCatchupBarriers: OfflineCatchupBarrier[] = [];
+  let queuedNonOfflineCommandSteps = new Set<number>();
+  let offlineCatchupStatus: SimOfflineCatchupStatus = { busy: false, pendingSteps: 0 };
+  let restorePausedAfterOfflineCatchup = false;
 
   const tickIntervalMs = 16;
   const MAX_TICK_DELTA_MS = 250;
@@ -735,6 +767,50 @@ function createSimWorkerController(
     return Math.min(deltaMs, MAX_TICK_DELTA_MS);
   };
 
+  const getEarliestOfflineCatchupBarrierStep = (): number | undefined =>
+    offlineCatchupBarriers[0]?.step;
+
+  const getEarliestFutureOfflineCatchupBarrierStep = (): number | undefined =>
+    offlineCatchupBarriers.find((barrier) => barrier.step > nextStep)?.step;
+
+  const calculatePostedTickStepBudget = (deltaMs: number): number => {
+    if (!Number.isFinite(deltaMs) || deltaMs <= 0 || stepSizeMs <= 0) {
+      return 0;
+    }
+
+    return Math.ceil(deltaMs / stepSizeMs);
+  };
+
+  const getProjectedNextStepAfterInFlightTicks = (): number =>
+    nextStep + inFlightTickStepBudgets.reduce((sum, stepBudget) => sum + stepBudget, 0);
+
+  const capStepCountAtOfflineCatchupBarrier = (stepCount: number): number => {
+    const barrierStep = getEarliestFutureOfflineCatchupBarrierStep();
+    if (barrierStep === undefined) {
+      return stepCount;
+    }
+
+    return Math.min(stepCount, Math.max(0, barrierStep - nextStep));
+  };
+
+  const capTickDeltaAtOfflineCatchupBarrier = (deltaMs: number): number => {
+    const barrierStep = getEarliestFutureOfflineCatchupBarrierStep();
+    if (barrierStep === undefined) {
+      return deltaMs;
+    }
+
+    return Math.min(deltaMs, Math.max(0, barrierStep - nextStep) * stepSizeMs);
+  };
+
+  const advanceLastTickAfterLiveDelta = (
+    nowMs: number,
+    availableDeltaMs: number,
+    postedDeltaMs: number,
+  ): void => {
+    const retainedDeltaMs = Math.max(0, availableDeltaMs - postedDeltaMs);
+    lastTickMs = retainedDeltaMs > 0 ? nowMs - retainedDeltaMs : nowMs;
+  };
+
   const stopTickLoop = (): void => {
     if (tickTimer) {
       clearInterval(tickTimer);
@@ -743,6 +819,56 @@ function createSimWorkerController(
   };
 
   const isCommandIngressFrozen = (): boolean => commandIngressFreezeDepth > 0;
+
+  const hasExecutableOfflineCatchupBacklog = (): boolean => offlineCatchupStatus.busy;
+
+  // Future offline catch-up commands are scheduled work; they should not freeze ingress
+  // or auto-drive a paused simulation until their step becomes executable, unless already
+  // posted ticks can reach the barrier before the worker observes later commands.
+  const hasExecutableOfflineCatchupBarrier = (): boolean =>
+    offlineCatchupBarriers.some((barrier) => nextStep >= barrier.step);
+
+  const hasInFlightTickAtOrAfterOfflineCatchupBarrier = (): boolean => {
+    const barrierStep = getEarliestOfflineCatchupBarrierStep();
+    return (
+      inFlightTickMessages > 0 &&
+      barrierStep !== undefined &&
+      getProjectedNextStepAfterInFlightTicks() >= barrierStep
+    );
+  };
+
+  const isOfflineCatchupBusy = (): boolean =>
+    hasExecutableOfflineCatchupBarrier() ||
+    hasInFlightTickAtOrAfterOfflineCatchupBarrier() ||
+    hasExecutableOfflineCatchupBacklog();
+
+  const shouldDrivePausedOfflineCatchup = (): boolean =>
+    restorePausedAfterOfflineCatchup && isOfflineCatchupBusy();
+
+  const isCommandIngressBlocked = (): boolean =>
+    isCommandIngressFrozen() || isOfflineCatchupBusy();
+
+  const getCommandIngressBlockedError = (): Error | undefined => {
+    if (isCommandIngressFrozen()) {
+      return new Error(SIM_TOOLING_BUSY_ERROR);
+    }
+    if (isOfflineCatchupBusy()) {
+      return new Error(SIM_OFFLINE_CATCHUP_BUSY_ERROR);
+    }
+    return undefined;
+  };
+
+  const getBusyStatus = (): ShellSimBusyStatus | undefined =>
+    isOfflineCatchupBusy() ? 'offline-catchup' : undefined;
+
+  const buildBusyStatusPatch = (): Readonly<{ busy: ShellSimBusyStatus }> | Record<string, never> => {
+    const busy = getBusyStatus();
+    return busy === undefined ? {} : { busy };
+  };
+
+  const notifyBusyChanged = (): void => {
+    options.onBusyChanged?.();
+  };
 
   const publishFrame = (frame: Extract<SimWorkerOutboundMessage, { kind: 'frame' }>['frame']): void => {
     if (!frame) {
@@ -776,7 +902,12 @@ function createSimWorkerController(
       return { state: 'starting', stepSizeMs, nextStep };
     }
 
-    return { state: isPaused ? 'paused' : 'running', stepSizeMs, nextStep };
+    return {
+      state: isPaused ? 'paused' : 'running',
+      stepSizeMs,
+      nextStep,
+      ...buildBusyStatusPatch(),
+    };
   };
 
   const rejectPendingStepCompletions = (error: Error): void => {
@@ -829,6 +960,13 @@ function createSimWorkerController(
     }
   };
 
+  const sendRunningStatus = (): void => {
+    sendSimStatus({
+      kind: 'running',
+      ...buildBusyStatusPatch(),
+    });
+  };
+
   const handleWorkerFailure = (status: ShellSimFailureStatusPayload, details?: unknown): void => {
     if (hasFailed || isDisposing) {
       return;
@@ -866,17 +1004,78 @@ function createSimWorkerController(
     });
   };
 
-  const safePostMessage = (message: SimWorkerInboundMessage): void => {
+  const safePostMessage = (message: SimWorkerInboundMessage): boolean => {
     if (hasFailed || isDisposing) {
-      return;
+      return false;
     }
 
     try {
       worker.postMessage(message);
+      return true;
     } catch (error: unknown) {
       const reason = error instanceof Error ? error.message : stringifyUnknown(error);
       handleWorkerFailure({ kind: 'crashed', reason }, error);
+      return false;
     }
+  };
+
+  const postTick = (deltaMs: number): void => {
+    if (safePostMessage({ kind: 'tick', deltaMs })) {
+      inFlightTickMessages += 1;
+      inFlightTickStepBudgets.push(calculatePostedTickStepBudget(deltaMs));
+    }
+  };
+
+  const postOfflineCatchupDrain = (): void => {
+    if (safePostMessage({ kind: 'drainOfflineCatchup' })) {
+      inFlightTickMessages += 1;
+      inFlightTickStepBudgets.push(0);
+    }
+  };
+
+  const postPendingStepBatches = (): void => {
+    if (
+      stepCompletionWaiters.length === 0 ||
+      inFlightTickMessages > 0 ||
+      hasFailed ||
+      isDisposing ||
+      isCommandIngressFrozen() ||
+      isOfflineCatchupBusy()
+    ) {
+      return;
+    }
+
+    const targetStep = stepCompletionWaiters.at(-1)?.targetStep;
+    if (targetStep === undefined || targetStep <= nextStep) {
+      return;
+    }
+
+    const uncappedSteps = targetStep - nextStep;
+    let remainingSteps = capStepCountAtOfflineCatchupBarrier(uncappedSteps);
+    while (remainingSteps > 0 && !hasFailed && !isDisposing) {
+      const batchStepCount = Math.min(remainingSteps, maxStepsPerFrame);
+      postTick(batchStepCount * stepSizeMs);
+      remainingSteps -= batchStepCount;
+    }
+  };
+
+  const recordFrameMessage = (): ReadonlySet<number> => {
+    const clearableOfflineCatchupBarrierSteps = new Set(
+      offlineCatchupBarriers
+        .filter((barrier) => barrier.framesBeforeCommand === 0)
+        .map((barrier) => barrier.step),
+    );
+    if (inFlightTickMessages > 0) {
+      inFlightTickMessages -= 1;
+      inFlightTickStepBudgets = inFlightTickStepBudgets.slice(1);
+    }
+    for (const barrier of offlineCatchupBarriers) {
+      if (barrier.framesBeforeCommand > 0) {
+        barrier.framesBeforeCommand -= 1;
+      }
+    }
+
+    return clearableOfflineCatchupBarrierSteps;
   };
 
   const takePendingRequest = (
@@ -938,8 +1137,13 @@ function createSimWorkerController(
       return await operation();
     } finally {
       commandIngressFreezeDepth = Math.max(0, commandIngressFreezeDepth - 1);
-      isPaused = wasPaused;
-      if (!wasPaused && !isCommandIngressFrozen()) {
+      if (isOfflineCatchupBusy()) {
+        restorePausedAfterOfflineCatchup = wasPaused;
+        isPaused = false;
+      } else {
+        isPaused = wasPaused;
+      }
+      if (!isPaused && !isCommandIngressFrozen()) {
         startTickLoop();
       }
     }
@@ -956,12 +1160,152 @@ function createSimWorkerController(
     tickTimer = setInterval(() => {
       const nowMs = monotonicNowMs();
       const rawDeltaMs = nowMs - lastTickMs;
-      lastTickMs = nowMs;
+      if (shouldDrivePausedOfflineCatchup()) {
+        lastTickMs = nowMs;
+        if (inFlightTickMessages > 0) {
+          return;
+        }
+        if (hasExecutableOfflineCatchupBacklog()) {
+          postOfflineCatchupDrain();
+          return;
+        }
+        postTick(stepSizeMs);
+        return;
+      }
+      if (hasInFlightTickAtOrAfterOfflineCatchupBarrier()) {
+        return;
+      }
       const deltaMs = clampTickDeltaMs(rawDeltaMs);
-      safePostMessage({ kind: 'tick', deltaMs });
+      const postedDeltaMs = capTickDeltaAtOfflineCatchupBarrier(deltaMs);
+      advanceLastTickAfterLiveDelta(nowMs, deltaMs, postedDeltaMs);
+      postTick(postedDeltaMs);
     }, tickIntervalMs);
 
     tickTimer.unref?.();
+  };
+
+  const driveOfflineCatchupIfBusy = (): void => {
+    if (!isOfflineCatchupBusy() || isCommandIngressFrozen()) {
+      return;
+    }
+
+    if (isPaused) {
+      restorePausedAfterOfflineCatchup = true;
+      isPaused = false;
+    }
+    startTickLoop();
+  };
+
+  const notifyOfflineCatchupBusyChanged = (wasBusy: boolean): void => {
+    if (wasBusy === isOfflineCatchupBusy()) {
+      return;
+    }
+
+    notifyBusyChanged();
+    if (isReady && !hasFailed && !isDisposing) {
+      sendRunningStatus();
+    }
+  };
+
+  const normalizeOfflineCatchupStatus = (
+    status: SimOfflineCatchupStatus | undefined,
+  ): SimOfflineCatchupStatus => {
+    const pendingSteps =
+      typeof status?.pendingSteps === 'number' &&
+      Number.isFinite(status.pendingSteps) &&
+      status.pendingSteps > 0
+        ? Math.floor(status.pendingSteps)
+        : 0;
+
+    return {
+      busy: status?.busy === true && pendingSteps > 0,
+      pendingSteps,
+    };
+  };
+
+  const normalizeOfflineCatchupBarrierSteps = (
+    barrierSteps: readonly number[] | undefined,
+  ): readonly number[] => Array.from(new Set(
+    (barrierSteps ?? [])
+      .filter((step) => Number.isFinite(step))
+      .map((step) => Math.floor(step)),
+  )).sort((left, right) => left - right);
+
+  const upsertOfflineCatchupBarriers = (
+    barrierSteps: readonly number[],
+    framesBeforeCommand: number,
+  ): void => {
+    for (const step of barrierSteps) {
+      const existingBarrier = offlineCatchupBarriers.find((barrier) => barrier.step === step);
+      if (existingBarrier) {
+        existingBarrier.framesBeforeCommand = Math.max(
+          existingBarrier.framesBeforeCommand,
+          framesBeforeCommand,
+        );
+      } else {
+        offlineCatchupBarriers.push({ step, framesBeforeCommand });
+      }
+    }
+    offlineCatchupBarriers.sort((left, right) => left.step - right.step);
+  };
+
+  const updateOfflineCatchupBusyState = (
+    status: SimOfflineCatchupStatus | undefined,
+    options: Readonly<{
+      clearableBarrierSteps?: ReadonlySet<number>;
+      replaceBarriersFromStatus?: boolean;
+    }> = {},
+  ): void => {
+    const wasBusy = isOfflineCatchupBusy();
+    const reportedBarrierSteps = normalizeOfflineCatchupBarrierSteps(status?.queuedCommandSteps);
+    if (options.replaceBarriersFromStatus) {
+      offlineCatchupBarriers = reportedBarrierSteps.map((step) => ({
+        step,
+        framesBeforeCommand: 0,
+      }));
+    } else if (reportedBarrierSteps.length > 0) {
+      upsertOfflineCatchupBarriers(reportedBarrierSteps, 0);
+    }
+
+    offlineCatchupStatus = normalizeOfflineCatchupStatus(status);
+
+    if (!hasExecutableOfflineCatchupBacklog()) {
+      const clearableBarrierSteps = options.clearableBarrierSteps;
+      offlineCatchupBarriers = offlineCatchupBarriers.filter((barrier) => {
+        if (nextStep <= barrier.step || barrier.framesBeforeCommand > 0) {
+          return true;
+        }
+        if (clearableBarrierSteps !== undefined && !clearableBarrierSteps.has(barrier.step)) {
+          return true;
+        }
+        return false;
+      });
+    }
+
+    if (isOfflineCatchupBusy()) {
+      driveOfflineCatchupIfBusy();
+    } else if (restorePausedAfterOfflineCatchup) {
+      restorePausedAfterOfflineCatchup = false;
+      isPaused = true;
+      stopTickLoop();
+    }
+
+    notifyOfflineCatchupBusyChanged(wasBusy);
+    postPendingStepBatches();
+  };
+
+  const beginOfflineCatchupBarriers = (barrierSteps: readonly number[]): void => {
+    const normalizedBarrierSteps = normalizeOfflineCatchupBarrierSteps(barrierSteps);
+    if (normalizedBarrierSteps.length === 0) {
+      return;
+    }
+
+    const wasBusy = isOfflineCatchupBusy();
+
+    upsertOfflineCatchupBarriers(normalizedBarrierSteps, inFlightTickMessages);
+
+    driveOfflineCatchupIfBusy();
+    notifyOfflineCatchupBusyChanged(wasBusy);
   };
 
   safePostMessage({ kind: 'init', stepSizeMs, maxStepsPerFrame });
@@ -985,8 +1329,10 @@ function createSimWorkerController(
     if (message.kind === 'ready') {
       stepSizeMs = message.stepSizeMs;
       nextStep = message.nextStep;
+      queuedNonOfflineCommandSteps.clear();
       isReady = true;
       runtimeCapabilities = message.capabilities ?? DEFAULT_SIM_RUNTIME_CAPABILITIES;
+      updateOfflineCatchupBusyState(message.offlineCatchup);
       notifyCapabilitiesChanged();
       pushDiagnosticsLog({
         source: 'main',
@@ -997,13 +1343,16 @@ function createSimWorkerController(
       });
       resolvePendingStepCompletions();
       // Emit sim-status 'running' when the worker is ready
-      sendSimStatus({ kind: 'running' });
+      sendRunningStatus();
       startTickLoop();
       return;
     }
 
     if (message.kind === 'frame') {
+      const clearableBarrierSteps = recordFrameMessage();
       nextStep = message.nextStep;
+      pruneQueuedNonOfflineCommandSteps();
+      updateOfflineCatchupBusyState(message.offlineCatchup, { clearableBarrierSteps });
       resolvePendingStepCompletions();
       publishFrame(message.frame);
       return;
@@ -1017,7 +1366,11 @@ function createSimWorkerController(
     if (message.kind === 'hydrated') {
       rejectPendingStepCompletions(new Error(SIM_STEP_INVALIDATED_BY_LOAD_ERROR));
       nextStep = message.nextStep;
+      queuedNonOfflineCommandSteps.clear();
       runtimeCapabilities = message.capabilities ?? runtimeCapabilities;
+      updateOfflineCatchupBusyState(message.offlineCatchup, {
+        replaceBarriersFromStatus: true,
+      });
       notifyCapabilitiesChanged();
       publishFrame(message.frame);
       takePendingRequest(message.requestId)?.resolve(undefined);
@@ -1065,7 +1418,7 @@ function createSimWorkerController(
 
   const sendControlEvent = (event: ShellControlEvent): void => {
     // Drop control events until worker is ready (design workflow rule)
-    if (!isReady || isCommandIngressFrozen()) {
+    if (!isReady || isCommandIngressBlocked()) {
       return;
     }
 
@@ -1087,7 +1440,7 @@ function createSimWorkerController(
     }
 
     if (commands.length > 0) {
-      safePostMessage({ kind: 'enqueueCommands', commands });
+      postEnqueueCommands(commands);
     }
     // Note: passthrough SHELL_CONTROL_EVENT is no longer emitted from renderer inputs.
     // Legacy passthrough behavior is removed per issue #850.
@@ -1106,7 +1459,7 @@ function createSimWorkerController(
    */
   const sendInputEvent = (envelope: ShellInputEventEnvelope): void => {
     // Drop input events until worker is ready (design workflow rule)
-    if (!isReady || isCommandIngressFrozen()) {
+    if (!isReady || isCommandIngressBlocked()) {
       return;
     }
 
@@ -1121,15 +1474,112 @@ function createSimWorkerController(
       step: nextStep,
     };
 
-    safePostMessage({ kind: 'enqueueCommands', commands: [inputEventCommand] });
+    postEnqueueCommands([inputEventCommand]);
+  };
+
+  const inspectOfflineCatchupBatch = (
+    commands: readonly Command[],
+  ): Readonly<{ barrierSteps: readonly number[]; hasMixedCommandTypes: boolean }> => {
+    const barrierSteps: number[] = [];
+    let hasOfflineCatchupCommand = false;
+    let hasOtherCommand = false;
+    for (const command of commands) {
+      // Detect by command type so startup catch-up enqueues open the barrier before capabilities load.
+      if (command.type === RUNTIME_COMMAND_TYPES.OFFLINE_CATCHUP) {
+        hasOfflineCatchupCommand = true;
+        if (typeof command.step === 'number' && Number.isFinite(command.step)) {
+          barrierSteps.push(getEffectiveCommandStep(command));
+        }
+        continue;
+      }
+
+      hasOtherCommand = true;
+    }
+
+    return {
+      barrierSteps,
+      hasMixedCommandTypes: hasOfflineCatchupCommand && hasOtherCommand,
+    };
+  };
+
+  const getEffectiveCommandStep = (command: Command): number => {
+    const projectedNextStep = getProjectedNextStepAfterInFlightTicks();
+    if (typeof command.step !== 'number' || !Number.isFinite(command.step)) {
+      return projectedNextStep;
+    }
+
+    return Math.max(projectedNextStep, Math.floor(command.step));
+  };
+
+  const pruneQueuedNonOfflineCommandSteps = (): void => {
+    queuedNonOfflineCommandSteps = new Set(
+      Array.from(queuedNonOfflineCommandSteps).filter((step) => step >= nextStep),
+    );
+  };
+
+  const trackQueuedNonOfflineCommandSteps = (commands: readonly Command[]): void => {
+    for (const command of commands) {
+      if (command.type === RUNTIME_COMMAND_TYPES.OFFLINE_CATCHUP) {
+        continue;
+      }
+
+      queuedNonOfflineCommandSteps.add(getEffectiveCommandStep(command));
+    }
+  };
+
+  const hasQueuedNonOfflineCommandAtOrAfter = (candidateStep: number): boolean =>
+    Array.from(queuedNonOfflineCommandSteps).some((queuedStep) => queuedStep >= candidateStep);
+
+  const hasCommandAtOrAfterOfflineCatchupBarrier = (commands: readonly Command[]): boolean => {
+    const barrierStep = getEarliestOfflineCatchupBarrierStep();
+    if (barrierStep === undefined) {
+      return false;
+    }
+
+    return commands.some((command) =>
+      command.type !== RUNTIME_COMMAND_TYPES.OFFLINE_CATCHUP &&
+      getEffectiveCommandStep(command) >= barrierStep,
+    );
+  };
+
+  const hasQueuedCommandAtOrAfterOfflineCatchupBatchBarrier = (
+    barrierSteps: readonly number[],
+  ): boolean => barrierSteps.some((barrierStep) =>
+    hasQueuedNonOfflineCommandAtOrAfter(barrierStep),
+  );
+
+  const postEnqueueCommands = (commands: readonly Command[]): void => {
+    const offlineCatchupBatch = inspectOfflineCatchupBatch(commands);
+    if (offlineCatchupBatch.hasMixedCommandTypes) {
+      throw new Error(SIM_OFFLINE_CATCHUP_MIXED_BATCH_ERROR);
+    }
+    if (hasCommandAtOrAfterOfflineCatchupBarrier(commands)) {
+      throw new Error(SIM_OFFLINE_CATCHUP_BUSY_ERROR);
+    }
+    if (
+      hasQueuedCommandAtOrAfterOfflineCatchupBatchBarrier(offlineCatchupBatch.barrierSteps)
+    ) {
+      throw new Error(SIM_OFFLINE_CATCHUP_BUSY_ERROR);
+    }
+    if (!safePostMessage({ kind: 'enqueueCommands', commands })) {
+      return;
+    }
+    if (offlineCatchupBatch.barrierSteps.length > 0) {
+      beginOfflineCatchupBarriers(offlineCatchupBatch.barrierSteps);
+    }
+    trackQueuedNonOfflineCommandSteps(commands);
   };
 
   const enqueueCommands = (commands: readonly Command[]): void => {
-    if (isCommandIngressFrozen()) {
+    if (isCommandIngressBlocked()) {
       return;
     }
 
-    safePostMessage({ kind: 'enqueueCommands', commands });
+    postEnqueueCommands(commands);
+  };
+
+  const enqueueOfflineCatchupCommand = (command: Command<OfflineCatchupPayload>): void => {
+    postEnqueueCommands([command]);
   };
 
   const serializeState = async (): Promise<unknown> => {
@@ -1153,8 +1603,9 @@ function createSimWorkerController(
       return;
     }
 
-    if (isCommandIngressFrozen()) {
-      throw new Error(SIM_TOOLING_BUSY_ERROR);
+    const blockedError = getCommandIngressBlockedError();
+    if (blockedError) {
+      throw blockedError;
     }
 
     isPaused = true;
@@ -1166,8 +1617,9 @@ function createSimWorkerController(
       return;
     }
 
-    if (isCommandIngressFrozen()) {
-      throw new Error(SIM_TOOLING_BUSY_ERROR);
+    const blockedError = getCommandIngressBlockedError();
+    if (blockedError) {
+      throw blockedError;
     }
 
     isPaused = false;
@@ -1187,8 +1639,9 @@ function createSimWorkerController(
       throw new Error('Sim is not ready to step yet.');
     }
 
-    if (isCommandIngressFrozen()) {
-      throw new Error(SIM_TOOLING_BUSY_ERROR);
+    const blockedError = getCommandIngressBlockedError();
+    if (blockedError) {
+      throw blockedError;
     }
 
     isPaused = true;
@@ -1199,13 +1652,7 @@ function createSimWorkerController(
       stepCompletionWaiters.push({ targetStep, resolve, reject });
     });
 
-    let remainingSteps = steps;
-    while (remainingSteps > 0 && !hasFailed && !isDisposing) {
-      const batchStepCount = Math.min(remainingSteps, maxStepsPerFrame);
-      safePostMessage({ kind: 'tick', deltaMs: batchStepCount * stepSizeMs });
-      remainingSteps -= batchStepCount;
-    }
-
+    postPendingStepBatches();
     resolvePendingStepCompletions();
     return completionPromise;
   };
@@ -1234,10 +1681,12 @@ function createSimWorkerController(
     sendControlEvent,
     sendInputEvent,
     enqueueCommands,
+    enqueueOfflineCatchupCommand,
     serializeState,
     hydrateState,
     runWhileCommandIngressFrozen,
     isCommandIngressFrozen,
+    isOfflineCatchupBusy,
     pause,
     resume,
     step,
@@ -1269,6 +1718,7 @@ const simMcpController: SimMcpController = {
 
     simWorkerController = createSimWorkerController(mainWindow, {
       onCapabilitiesChanged: updateSimRuntimeCapabilities,
+      onBusyChanged: installAppMenu,
     });
     pushDiagnosticsLog({
       source: 'main',
@@ -1309,8 +1759,9 @@ const simMcpController: SimMcpController = {
       throw new Error('Simulation is not running.');
     }
 
-    if (simWorkerController.isCommandIngressFrozen()) {
-      throw new Error(SIM_TOOLING_BUSY_ERROR);
+    const blockedError = getSimControllerBusyError(simWorkerController);
+    if (blockedError) {
+      throw blockedError;
     }
 
     simWorkerController.resume();
@@ -1328,8 +1779,9 @@ const simMcpController: SimMcpController = {
       throw new Error('Simulation is not running.');
     }
 
-    if (controller.isCommandIngressFrozen()) {
-      throw new Error(SIM_TOOLING_BUSY_ERROR);
+    const blockedError = getSimControllerBusyError(controller);
+    if (blockedError) {
+      throw blockedError;
     }
 
     return controller.step(steps);
@@ -1345,8 +1797,9 @@ const simMcpController: SimMcpController = {
       throw new Error(`Simulation is ${status.state}; cannot enqueue commands.`);
     }
 
-    if (controller.isCommandIngressFrozen()) {
-      throw new Error(SIM_TOOLING_BUSY_ERROR);
+    const blockedError = getSimControllerBusyError(controller);
+    if (blockedError) {
+      throw blockedError;
     }
 
     controller.enqueueCommands(commands);
@@ -1432,18 +1885,19 @@ function enqueueOfflineCatchup(elapsedMs: number): void {
   if (!controller || !capabilities.supportsOfflineCatchup) {
     throw new Error('Simulation runtime does not support offline catch-up.');
   }
+  if (controller.isOfflineCatchupBusy()) {
+    throw new Error(SIM_OFFLINE_CATCHUP_BUSY_ERROR);
+  }
 
   const status = controller.getStatus();
   const payload: OfflineCatchupPayload = { elapsedMs };
-  controller.enqueueCommands([
-    {
-      type: RUNTIME_COMMAND_TYPES.OFFLINE_CATCHUP,
-      priority: CommandPriority.SYSTEM,
-      payload,
-      step: status.nextStep,
-      timestamp: status.nextStep * status.stepSizeMs,
-    },
-  ]);
+  controller.enqueueOfflineCatchupCommand({
+    type: RUNTIME_COMMAND_TYPES.OFFLINE_CATCHUP,
+    priority: CommandPriority.SYSTEM,
+    payload,
+    step: status.nextStep,
+    timestamp: status.nextStep * status.stepSizeMs,
+  });
 
   pushDiagnosticsLog({
     source: 'main',
@@ -1458,7 +1912,7 @@ function enqueueOfflineCatchup(elapsedMs: number): void {
 }
 
 function runSimToolingAction(label: string, action: () => Promise<void> | void): void {
-  if (simToolingBusy) {
+  if (isSimToolingActionBusy()) {
     return;
   }
 
@@ -1540,8 +1994,9 @@ const inputMcpController: InputMcpController = {
       throw new Error('Simulation is not running.');
     }
 
-    if (simWorkerController.isCommandIngressFrozen()) {
-      throw new Error(SIM_TOOLING_BUSY_ERROR);
+    const blockedError = getSimControllerBusyError(simWorkerController);
+    if (blockedError) {
+      throw blockedError;
     }
 
     simWorkerController.sendControlEvent(event);
@@ -1661,17 +2116,18 @@ function registerIpcHandlers(): void {
 }
 
 function installAppMenu(): void {
+  const isBusy = isSimToolingActionBusy();
   const hasSaveSupport =
     simWorkerController !== undefined &&
-    !simToolingBusy &&
+    !isBusy &&
     simRuntimeCapabilities.canSerialize;
   const hasLoadSupport =
     simWorkerController !== undefined &&
-    !simToolingBusy &&
+    !isBusy &&
     simRuntimeCapabilities.canHydrate;
   const hasOfflineCatchupSupport =
     simWorkerController !== undefined &&
-    !simToolingBusy &&
+    !isBusy &&
     simRuntimeCapabilities.supportsOfflineCatchup;
 
   const simulationSubmenu: MenuItemConstructorOptions[] = [
@@ -1769,6 +2225,7 @@ async function createMainWindow(): Promise<BrowserWindow> {
     simWorkerController.dispose();
     simWorkerController = createSimWorkerController(mainWindow, {
       onCapabilitiesChanged: updateSimRuntimeCapabilities,
+      onBusyChanged: installAppMenu,
     });
   });
 
@@ -1804,6 +2261,7 @@ app
     mainWindow = await createMainWindow();
     simWorkerController = createSimWorkerController(mainWindow, {
       onCapabilitiesChanged: updateSimRuntimeCapabilities,
+      onBusyChanged: installAppMenu,
     });
   })
   .catch((error: unknown) => {
@@ -1845,6 +2303,7 @@ app.on('activate', () => {
         mainWindow = createdWindow;
         simWorkerController = createSimWorkerController(createdWindow, {
           onCapabilitiesChanged: updateSimRuntimeCapabilities,
+          onBusyChanged: installAppMenu,
         });
       })
       .catch((error: unknown) => {

@@ -142,6 +142,15 @@ export type DrainCreditedBacklogOptions = Readonly<{
   readonly maxSteps?: number;
 }>;
 
+export type RuntimeTickOptions = Readonly<{
+  /**
+   * Caller-provided upper bound for this tick. The runtime also caps this by
+   * `maxStepsPerFrame`, so one call cannot process more than the configured
+   * frame budget.
+   */
+  readonly maxSteps?: number;
+}>;
+
 export type RuntimeAccumulatorBacklogSourceState = Readonly<{
   readonly hostFrameMs?: number;
   readonly creditedMs?: number;
@@ -701,7 +710,7 @@ export class IdleEngineRuntime {
    * Advance the simulation by `deltaMs`, clamping the number of processed
    * steps to avoid spiral of death scenarios.
    */
-  tick(deltaMs: number): number {
+  tick(deltaMs: number, options: RuntimeTickOptions = {}): number {
     if (!isFiniteNumber(deltaMs) || deltaMs <= 0) {
       return 0;
     }
@@ -709,7 +718,9 @@ export class IdleEngineRuntime {
     this.hostFrameAccumulator = normalizeBacklogMs(
       this.hostFrameAccumulator + deltaMs,
     );
-    return this.drainAccumulator(this.maxStepsPerFrame);
+    return this.drainAccumulator(
+      resolveDrainStepBudget(this.maxStepsPerFrame, options.maxSteps),
+    );
   }
 }
 

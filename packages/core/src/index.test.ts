@@ -1184,6 +1184,18 @@ describe('IdleEngineRuntime', () => {
     expect(runtime.getAccumulatorBacklogMs()).toBe(5);
   });
 
+  it('honors caller-provided live tick budgets below maxStepsPerFrame', () => {
+    const { runtime } = createRuntime({ stepSizeMs: 10, maxStepsPerFrame: 5 });
+
+    expect(runtime.tick(50, { maxSteps: 2 })).toBe(2);
+    expect(runtime.getCurrentStep()).toBe(2);
+    expect(runtime.getAccumulatorBacklogState()).toEqual({
+      totalMs: 30,
+      hostFrameMs: 30,
+      creditedMs: 0,
+    });
+  });
+
   it('caps credited backlog drains to maxStepsPerFrame', () => {
     const { runtime } = createRuntime({ stepSizeMs: 10, maxStepsPerFrame: 2 });
 

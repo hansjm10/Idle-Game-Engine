@@ -254,6 +254,7 @@ async function run(): Promise<void> {
 
   let ipcStatus = 'IPC pending…';
   let simStatus = 'Sim pending…';
+  let simOfflineCatchupBusy = false;
   let webgpuStatus = 'WebGPU pending…';
   let rendererState = 'initializing';
   let webgpuHealthStatus: RendererWebGpuHealthStatus = 'lost';
@@ -370,14 +371,19 @@ async function run(): Promise<void> {
   try {
     unsubscribeSimStatus = idleEngineApi.onSimStatus((status) => {
       if (status.kind === 'starting') {
+        simOfflineCatchupBusy = false;
         simStatus = 'Sim starting…';
         rendererState = 'starting';
       } else if (status.kind === 'running') {
-        simStatus = 'Sim running.';
+        simOfflineCatchupBusy = status.busy === 'offline-catchup';
+        simStatus = simOfflineCatchupBusy
+          ? 'Sim applying offline catch-up.'
+          : 'Sim running.';
         if (rendererState === 'starting') {
           rendererState = 'running';
         }
       } else {
+        simOfflineCatchupBusy = false;
         const exitCode = status.exitCode === undefined ? '' : ` (exitCode=${status.exitCode})`;
         simStatus = `Sim ${status.kind}${exitCode}: ${status.reason}. Reload to restart.`;
         rendererState = status.kind;
@@ -389,6 +395,7 @@ async function run(): Promise<void> {
       updateOutput();
     });
   } catch (error: unknown) {
+    simOfflineCatchupBusy = false;
     simStatus = `Sim error: ${String(error)}`;
     rendererState = 'sim-error';
     sendRendererLog('error', 'sim', 'Failed to subscribe to sim status updates.', { error: String(error) });
@@ -398,13 +405,16 @@ async function run(): Promise<void> {
   try {
     unsubscribeFrames = idleEngineApi.onFrame((frame) => {
       latestRcb = frame;
-      simStatus = `Sim step=${frame.frame.step} simTimeMs=${frame.frame.simTimeMs}`;
+      if (!simOfflineCatchupBusy) {
+        simStatus = `Sim step=${frame.frame.step} simTimeMs=${frame.frame.simTimeMs}`;
+      }
       if (rendererState === 'starting') {
         rendererState = 'running';
       }
       updateOutput();
     });
   } catch (error: unknown) {
+    simOfflineCatchupBusy = false;
     simStatus = `Sim error: ${String(error)}`;
     rendererState = 'sim-error';
     sendRendererLog('error', 'sim', 'Failed to subscribe to frame updates.', { error: String(error) });

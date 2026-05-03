@@ -4,6 +4,7 @@ import { createSimRuntime, loadSerializedSimRuntimeState } from './sim/sim-runti
 import type { SimRuntime } from './sim/sim-runtime.js';
 import {
   DEFAULT_SIM_RUNTIME_CAPABILITIES,
+  type SimOfflineCatchupStatus,
   type SimRuntimeCapabilities,
   type SimWorkerOutboundMessage,
 } from './sim/worker-protocol.js';
@@ -61,6 +62,41 @@ const emitRequestError = (requestId: string, error: string): void => {
   emit({ kind: 'requestError', requestId, error });
 };
 
+const buildRuntimeBacklogPatch = (
+  runtimeBacklog: ReturnType<SimRuntime['getRuntimeBacklog']> | undefined,
+): Readonly<{ runtimeBacklog: ReturnType<SimRuntime['getRuntimeBacklog']> }> | Record<string, never> =>
+  runtimeBacklog === undefined ? {} : { runtimeBacklog };
+
+const getRuntimeBacklog = (activeRuntime: SimRuntime): ReturnType<SimRuntime['getRuntimeBacklog']> | undefined =>
+  activeRuntime.getRuntimeBacklog?.();
+
+const buildOfflineCatchupPatch = (
+  offlineCatchup: SimOfflineCatchupStatus | undefined,
+): Readonly<{ offlineCatchup: SimOfflineCatchupStatus }> | Record<string, never> =>
+  offlineCatchup === undefined ? {} : { offlineCatchup };
+
+const getOfflineCatchupStatus = (activeRuntime: SimRuntime): SimOfflineCatchupStatus | undefined =>
+  activeRuntime.getOfflineCatchupStatus?.();
+
+const emitFrameResult = (result: ReturnType<SimRuntime['tick']>): void => {
+  const droppedFrames = result.droppedFrames ?? Math.max(0, result.frames.length - 1);
+  const frame = result.frame ?? result.frames.at(-1);
+  const message = {
+    kind: 'frame',
+    droppedFrames,
+    nextStep: result.nextStep,
+    ...buildRuntimeBacklogPatch(result.runtimeBacklog),
+    ...buildOfflineCatchupPatch(result.offlineCatchup),
+  } satisfies SimWorkerOutboundMessage;
+
+  if (frame) {
+    emit({ ...message, frame });
+    return;
+  }
+
+  emit(message);
+};
+
 parentPort.on('message', (message: unknown) => {
   try {
     if (typeof message !== 'object' || message === null || Array.isArray(message)) {
@@ -96,6 +132,8 @@ parentPort.on('message', (message: unknown) => {
         stepSizeMs: runtime.getStepSizeMs(),
         nextStep: runtime.getNextStep(),
         capabilities: getRuntimeCapabilities(runtime),
+        ...buildRuntimeBacklogPatch(getRuntimeBacklog(runtime)),
+        ...buildOfflineCatchupPatch(getOfflineCatchupStatus(runtime)),
       });
       return;
     }
@@ -107,13 +145,14 @@ parentPort.on('message', (message: unknown) => {
       }
       const activeRuntime = ensureRuntime();
       const result = activeRuntime.tick(tick.deltaMs);
-      const droppedFrames = result.droppedFrames ?? Math.max(0, result.frames.length - 1);
-      const frame = result.frame ?? result.frames.at(-1);
-      if (frame) {
-        emit({ kind: 'frame', frame, droppedFrames, nextStep: result.nextStep });
-      } else {
-        emit({ kind: 'frame', droppedFrames, nextStep: result.nextStep });
-      }
+      emitFrameResult(result);
+      return;
+    }
+
+    if (kind === 'drainOfflineCatchup') {
+      const activeRuntime = ensureRuntime();
+      const result = activeRuntime.drainOfflineCatchup();
+      emitFrameResult(result);
       return;
     }
 
@@ -181,6 +220,8 @@ parentPort.on('message', (message: unknown) => {
           nextStep: runtime.getNextStep(),
           capabilities: getRuntimeCapabilities(runtime),
           frame: runtime.renderCurrentFrame?.(),
+          ...buildRuntimeBacklogPatch(getRuntimeBacklog(runtime)),
+          ...buildOfflineCatchupPatch(getOfflineCatchupStatus(runtime)),
         });
       } catch (error: unknown) {
         emitRequestError(
