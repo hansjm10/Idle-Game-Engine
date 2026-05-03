@@ -744,6 +744,7 @@ function createSimWorkerController(
   let inFlightTickMessages = 0;
   let inFlightTickStepBudgets: number[] = [];
   let offlineCatchupBarriers: OfflineCatchupBarrier[] = [];
+  let queuedNonOfflineCommandSteps = new Set<number>();
   let offlineCatchupStatus: SimOfflineCatchupStatus = { busy: false, pendingSteps: 0 };
   let restorePausedAfterOfflineCatchup = false;
 
@@ -799,6 +800,15 @@ function createSimWorkerController(
     }
 
     return Math.min(deltaMs, Math.max(0, barrierStep - nextStep) * stepSizeMs);
+  };
+
+  const advanceLastTickAfterLiveDelta = (
+    nowMs: number,
+    availableDeltaMs: number,
+    postedDeltaMs: number,
+  ): void => {
+    const retainedDeltaMs = Math.max(0, availableDeltaMs - postedDeltaMs);
+    lastTickMs = retainedDeltaMs > 0 ? nowMs - retainedDeltaMs : nowMs;
   };
 
   const stopTickLoop = (): void => {
@@ -1150,8 +1160,8 @@ function createSimWorkerController(
     tickTimer = setInterval(() => {
       const nowMs = monotonicNowMs();
       const rawDeltaMs = nowMs - lastTickMs;
-      lastTickMs = nowMs;
       if (shouldDrivePausedOfflineCatchup()) {
+        lastTickMs = nowMs;
         if (inFlightTickMessages > 0) {
           return;
         }
@@ -1166,7 +1176,9 @@ function createSimWorkerController(
         return;
       }
       const deltaMs = clampTickDeltaMs(rawDeltaMs);
-      postTick(capTickDeltaAtOfflineCatchupBarrier(deltaMs));
+      const postedDeltaMs = capTickDeltaAtOfflineCatchupBarrier(deltaMs);
+      advanceLastTickAfterLiveDelta(nowMs, deltaMs, postedDeltaMs);
+      postTick(postedDeltaMs);
     }, tickIntervalMs);
 
     tickTimer.unref?.();
@@ -1317,6 +1329,7 @@ function createSimWorkerController(
     if (message.kind === 'ready') {
       stepSizeMs = message.stepSizeMs;
       nextStep = message.nextStep;
+      queuedNonOfflineCommandSteps.clear();
       isReady = true;
       runtimeCapabilities = message.capabilities ?? DEFAULT_SIM_RUNTIME_CAPABILITIES;
       updateOfflineCatchupBusyState(message.offlineCatchup);
@@ -1338,6 +1351,7 @@ function createSimWorkerController(
     if (message.kind === 'frame') {
       const clearableBarrierSteps = recordFrameMessage();
       nextStep = message.nextStep;
+      pruneQueuedNonOfflineCommandSteps();
       updateOfflineCatchupBusyState(message.offlineCatchup, { clearableBarrierSteps });
       resolvePendingStepCompletions();
       publishFrame(message.frame);
@@ -1352,6 +1366,7 @@ function createSimWorkerController(
     if (message.kind === 'hydrated') {
       rejectPendingStepCompletions(new Error(SIM_STEP_INVALIDATED_BY_LOAD_ERROR));
       nextStep = message.nextStep;
+      queuedNonOfflineCommandSteps.clear();
       runtimeCapabilities = message.capabilities ?? runtimeCapabilities;
       updateOfflineCatchupBusyState(message.offlineCatchup, {
         replaceBarriersFromStatus: true,
@@ -1473,7 +1488,7 @@ function createSimWorkerController(
       if (command.type === RUNTIME_COMMAND_TYPES.OFFLINE_CATCHUP) {
         hasOfflineCatchupCommand = true;
         if (typeof command.step === 'number' && Number.isFinite(command.step)) {
-          barrierSteps.push(Math.floor(command.step));
+          barrierSteps.push(getEffectiveCommandStep(command));
         }
         continue;
       }
@@ -1496,6 +1511,25 @@ function createSimWorkerController(
     return Math.max(projectedNextStep, Math.floor(command.step));
   };
 
+  const pruneQueuedNonOfflineCommandSteps = (): void => {
+    queuedNonOfflineCommandSteps = new Set(
+      Array.from(queuedNonOfflineCommandSteps).filter((step) => step >= nextStep),
+    );
+  };
+
+  const trackQueuedNonOfflineCommandSteps = (commands: readonly Command[]): void => {
+    for (const command of commands) {
+      if (command.type === RUNTIME_COMMAND_TYPES.OFFLINE_CATCHUP) {
+        continue;
+      }
+
+      queuedNonOfflineCommandSteps.add(getEffectiveCommandStep(command));
+    }
+  };
+
+  const hasQueuedNonOfflineCommandAtOrAfter = (candidateStep: number): boolean =>
+    Array.from(queuedNonOfflineCommandSteps).some((queuedStep) => queuedStep >= candidateStep);
+
   const hasCommandAtOrAfterOfflineCatchupBarrier = (commands: readonly Command[]): boolean => {
     const barrierStep = getEarliestOfflineCatchupBarrierStep();
     if (barrierStep === undefined) {
@@ -1508,6 +1542,12 @@ function createSimWorkerController(
     );
   };
 
+  const hasQueuedCommandAtOrAfterOfflineCatchupBatchBarrier = (
+    barrierSteps: readonly number[],
+  ): boolean => barrierSteps.some((barrierStep) =>
+    hasQueuedNonOfflineCommandAtOrAfter(barrierStep),
+  );
+
   const postEnqueueCommands = (commands: readonly Command[]): void => {
     const offlineCatchupBatch = inspectOfflineCatchupBatch(commands);
     if (offlineCatchupBatch.hasMixedCommandTypes) {
@@ -1516,10 +1556,18 @@ function createSimWorkerController(
     if (hasCommandAtOrAfterOfflineCatchupBarrier(commands)) {
       throw new Error(SIM_OFFLINE_CATCHUP_BUSY_ERROR);
     }
+    if (
+      hasQueuedCommandAtOrAfterOfflineCatchupBatchBarrier(offlineCatchupBatch.barrierSteps)
+    ) {
+      throw new Error(SIM_OFFLINE_CATCHUP_BUSY_ERROR);
+    }
+    if (!safePostMessage({ kind: 'enqueueCommands', commands })) {
+      return;
+    }
     if (offlineCatchupBatch.barrierSteps.length > 0) {
       beginOfflineCatchupBarriers(offlineCatchupBatch.barrierSteps);
     }
-    safePostMessage({ kind: 'enqueueCommands', commands });
+    trackQueuedNonOfflineCommandSteps(commands);
   };
 
   const enqueueCommands = (commands: readonly Command[]): void => {
